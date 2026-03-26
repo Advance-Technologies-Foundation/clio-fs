@@ -1,4 +1,5 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 export type FileSystemEntryKind = "file" | "directory";
 
@@ -17,6 +18,8 @@ export interface FileSystemAdapter {
   readdir: (directoryPath: string) => FileSystemDirectoryEntry[];
   stat: (path: string) => FileSystemStat;
   readFileText: (path: string) => string;
+  writeFileText: (path: string, content: string) => void;
+  exists: (path: string) => boolean;
 }
 
 export const nodeFileSystem: FileSystemAdapter = {
@@ -39,5 +42,12 @@ export const nodeFileSystem: FileSystemAdapter = {
   },
   readFileText(path) {
     return readFileSync(path, "utf8");
+  },
+  writeFileText(path, content) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, content, "utf8");
+  },
+  exists(path) {
+    return existsSync(path);
   }
 };

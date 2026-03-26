@@ -1,0 +1,129 @@
+import { createHash } from "node:crypto";
+import { join } from "node:path";
+import type { PutWorkspaceFileRequest, PutWorkspaceFileResponse, WorkspaceRecord } from "@clio-fs/contracts";
+import type { ChangeJournal } from "@clio-fs/database";
+import type { FileSystemAdapter } from "./filesystem.js";
+import { ensureRelativeWorkspacePath } from "./snapshot.js";
+
+export class FileWriteConflictError extends Error {
+  readonly details: Record<string, unknown>;
+
+  constructor(message: string, details: Record<string, unknown>) {
+    super(message);
+    this.name = "FileWriteConflictError";
+    this.details = details;
+  }
+}
+
+const sha256 = (content: string) =>
+  `sha256:${createHash("sha256").update(content, "utf8").digest("hex")}`;
+
+export const parsePutWorkspaceFileRequest = (value: unknown): PutWorkspaceFileRequest => {
+  if (typeof value !== "object" || value === null) {
+    throw new Error("request body must be a JSON object");
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (typeof record.content !== "string") {
+    throw new Error("content must be a utf8 string");
+  }
+
+  if (
+    record.origin !== "local-client" &&
+    record.origin !== "creatio" &&
+    record.origin !== "server-tool" &&
+    record.origin !== "unknown"
+  ) {
+    throw new Error("origin must be one of local-client, creatio, server-tool, unknown");
+  }
+
+  if (typeof record.baseFileRevision !== "undefined" && !Number.isInteger(record.baseFileRevision)) {
+    throw new Error("baseFileRevision must be omitted or an integer");
+  }
+
+  if (typeof record.baseContentHash !== "undefined" && typeof record.baseContentHash !== "string") {
+    throw new Error("baseContentHash must be omitted or a string");
+  }
+
+  if (typeof record.operationId !== "undefined" && typeof record.operationId !== "string") {
+    throw new Error("operationId must be omitted or a string");
+  }
+
+  if (typeof record.encoding !== "undefined" && record.encoding !== "utf8") {
+    throw new Error("only utf8 encoding is currently supported");
+  }
+
+  return {
+    operationId: typeof record.operationId === "string" ? record.operationId : undefined,
+    baseFileRevision:
+      typeof record.baseFileRevision === "number" ? record.baseFileRevision : undefined,
+    baseContentHash:
+      typeof record.baseContentHash === "string" ? record.baseContentHash : undefined,
+    encoding: "utf8",
+    content: record.content,
+    origin: record.origin
+  };
+};
+
+export const putWorkspaceFile = (
+  workspace: WorkspaceRecord,
+  rawPath: string,
+  input: PutWorkspaceFileRequest,
+  filesystem: FileSystemAdapter,
+  journal: ChangeJournal
+): PutWorkspaceFileResponse => {
+  const path = ensureRelativeWorkspacePath(rawPath);
+  const absolutePath = join(workspace.rootPath, path);
+  const existed = filesystem.exists(absolutePath);
+  const latestEvent = journal.getLatestForPath(workspace.workspaceId, path);
+  const currentFileRevision = latestEvent?.revision ?? 0;
+  const currentContentHash = existed ? sha256(filesystem.readFileText(absolutePath)) : null;
+
+  if (
+    typeof input.baseFileRevision === "number" &&
+    input.baseFileRevision !== currentFileRevision
+  ) {
+    throw new FileWriteConflictError("File has changed since the provided base revision", {
+      workspaceId: workspace.workspaceId,
+      path,
+      currentFileRevision,
+      currentWorkspaceRevision: workspace.currentRevision,
+      currentContentHash
+    });
+  }
+
+  if (
+    typeof input.baseContentHash === "string" &&
+    input.baseContentHash !== currentContentHash
+  ) {
+    throw new FileWriteConflictError("File has changed since the provided base revision", {
+      workspaceId: workspace.workspaceId,
+      path,
+      currentFileRevision,
+      currentWorkspaceRevision: workspace.currentRevision,
+      currentContentHash
+    });
+  }
+
+  filesystem.writeFileText(absolutePath, input.content);
+
+  const nextHash = sha256(input.content);
+  const event = journal.append({
+    workspaceId: workspace.workspaceId,
+    operation: existed ? "file_updated" : "file_created",
+    path,
+    origin: input.origin,
+    contentHash: nextHash,
+    size: Buffer.byteLength(input.content, "utf8"),
+    operationId: input.operationId
+  });
+
+  return {
+    workspaceId: workspace.workspaceId,
+    path,
+    fileRevision: event.revision,
+    workspaceRevision: event.revision,
+    contentHash: nextHash
+  };
+};

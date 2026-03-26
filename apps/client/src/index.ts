@@ -27,6 +27,7 @@ export interface MirrorClientOptions {
 export interface MirrorClient {
   bind: () => Promise<ClientBindState>;
   pollOnce: () => Promise<ClientBindState>;
+  pushFile: (path: string, content: string, options?: { baseFileRevision?: number }) => Promise<ClientBindState>;
   getState: () => ClientBindState | undefined;
 }
 
@@ -175,6 +176,28 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       });
 
       return applyChanges(controlPlane, filesystem, stateStore, bound, changes.items);
+    },
+    async pushFile(path, content, pushOptions) {
+      const bound = (await this.bind()) ?? stateStore.load(options.workspaceId);
+
+      if (!bound) {
+        throw new Error(`Workspace is not bound: ${options.workspaceId}`);
+      }
+
+      filesystem.writeFileText(join(bound.mirrorRoot, path), content);
+
+      const result = await controlPlane.putFile(bound.workspaceId, path, {
+        baseFileRevision: pushOptions?.baseFileRevision ?? bound.lastAppliedRevision,
+        content,
+        origin: "local-client"
+      });
+      const nextState = {
+        ...bound,
+        lastAppliedRevision: result.workspaceRevision
+      };
+
+      stateStore.save(nextState);
+      return nextState;
     },
     getState() {
       return stateStore.load(options.workspaceId);

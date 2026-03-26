@@ -10,9 +10,9 @@ import { type FileSystemAdapter, type FileSystemDirectoryEntry, nodeFileSystem }
 const normalizeWorkspacePath = (rootPath: string, absolutePath: string) =>
   relative(rootPath, absolutePath).replaceAll("\\", "/");
 
-const ensureRelativeFilePath = (path: string) => {
+export const ensureRelativeWorkspacePath = (path: string) => {
   if (typeof path !== "string" || path.trim().length === 0) {
-    throw new Error("materialize paths must be non-empty strings");
+    throw new Error("paths must be non-empty strings");
   }
 
   if (isAbsolute(path)) {
@@ -28,7 +28,7 @@ const ensureRelativeFilePath = (path: string) => {
     normalized === ".git" ||
     normalized.startsWith(".git/")
   ) {
-    throw new Error("materialize paths must stay inside the workspace root");
+    throw new Error("paths must stay inside the workspace root");
   }
 
   return normalized.replace(/^\.\/+/, "");
@@ -115,7 +115,7 @@ export const materializeWorkspaceFiles = (
     throw new Error("materialize request must provide a paths array");
   }
 
-  const uniquePaths = [...new Set(paths.map(ensureRelativeFilePath))].sort((left, right) =>
+  const uniquePaths = [...new Set(paths.map(ensureRelativeWorkspacePath))].sort((left, right) =>
     left.localeCompare(right)
   );
 

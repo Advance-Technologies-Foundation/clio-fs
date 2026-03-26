@@ -100,6 +100,14 @@ export class MockFileSystem implements FileSystemAdapter {
     return node.content ?? "";
   }
 
+  writeFileText(path: string, content: string) {
+    this.addFile(path, { content });
+  }
+
+  exists(path: string) {
+    return this.#nodes.has(toKey(path));
+  }
+
   #ensureParentDirectories(path: string) {
     const directoryChain: string[] = [];
     let current = dirname(toKey(path));

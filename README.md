@@ -104,6 +104,7 @@ Implemented today:
 - recursive snapshot manifest endpoint for initial hydrate preparation
 - bulk snapshot materialization endpoint for initial file content hydrate
 - in-memory per-workspace change feed endpoint for revision-ordered catch-up
+- conditional server-side utf8 file write endpoint with optimistic concurrency
 - optional `displayName`; most workspaces can rely on `workspaceId` alone
 - file-backed workspace registry stored in `.clio-fs/server/workspaces.json`
 - integration tests covering health, auth, registration, validation, and duplicate detection
@@ -121,6 +122,7 @@ Implemented today:
 - a compiled dev flow for `@clio-fs/server-ui`
 - an explicit opt-in local sync integration scenario specification in [docs/LOCAL_SYNC_INTEGRATION_SCENARIO.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/docs/LOCAL_SYNC_INTEGRATION_SCENARIO.md)
 - initial client mirror slice with bind state, snapshot hydrate, and polling-based change application
+- client-side push API for conditional text file writes
 - client tests covering hydrate and server-originated change application on mocked adapters
 
 ## Run The UI Locally
@@ -167,10 +169,11 @@ Current client behavior:
 - binds to one workspace
 - performs initial hydrate through `snapshot` and `snapshot-materialize`
 - polls `changes?since=` and applies server-originated create, update, and delete events
+- can push a conditional utf8 file write through the control plane
 
 Current client limitations:
 
-- no local write-back loop yet
+- no local watcher-driven write-back loop yet
 - no persistent client state store yet
 - `path_moved` currently falls back to a full rehydrate
 

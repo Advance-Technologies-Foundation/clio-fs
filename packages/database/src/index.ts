@@ -224,6 +224,7 @@ export interface ListChangeEventsOptions {
 export interface ChangeJournal {
   append: (input: AppendChangeEventInput) => ChangeEvent;
   listSince: (options: ListChangeEventsOptions) => { items: ChangeEvent[]; hasMore: boolean };
+  getLatestForPath: (workspaceId: string, path: string) => ChangeEvent | undefined;
 }
 
 export class InMemoryChangeJournal implements ChangeJournal {
@@ -275,6 +276,20 @@ export class InMemoryChangeJournal implements ChangeJournal {
       items: items.slice(0, limit),
       hasMore: items.length > limit
     };
+  }
+
+  getLatestForPath(workspaceId: string, path: string) {
+    const items = this.#eventsByWorkspace.get(workspaceId) ?? [];
+
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const event = items[index];
+
+      if (event?.path === path) {
+        return event;
+      }
+    }
+
+    return undefined;
   }
 }
 

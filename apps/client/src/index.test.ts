@@ -136,6 +136,40 @@ const createFetchStub = () => {
       );
     }
 
+    if (
+      url.pathname === "/workspaces/demo-workspace/file" &&
+      (init?.method ?? "GET") === "PUT"
+    ) {
+      const path = url.searchParams.get("path");
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        baseFileRevision?: number;
+        content: string;
+      };
+
+      if (body.baseFileRevision === 2) {
+        return new Response(
+          JSON.stringify({
+            workspaceId: "demo-workspace",
+            path,
+            fileRevision: 3,
+            workspaceRevision: 3,
+            contentHash: "sha256:write-success"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: "conflict",
+            message: "File has changed since the provided base revision"
+          }
+        }),
+        { status: 409, headers: { "content-type": "application/json" } }
+      );
+    }
+
     throw new Error(`Unexpected request: ${url.pathname}`);
   };
 };
@@ -190,4 +224,57 @@ test("pollOnce applies server-originated changes and advances bind state", async
     "alpha-updated-v2\n"
   );
   assert.equal(filesystem.exists("/mirror/demo-workspace/root.txt"), false);
+});
+
+test("pushFile sends a conditional write and advances local bind state", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: createFetchStub() as typeof fetch
+    }
+  });
+
+  await client.bind();
+  const nextState = await client.pushFile("packages/Alpha/readme.txt", "client-write-v2\n", {
+    baseFileRevision: 2
+  });
+
+  assert.equal(nextState.lastAppliedRevision, 3);
+  assert.equal(
+    filesystem.readFileText("/mirror/demo-workspace/packages/Alpha/readme.txt"),
+    "client-write-v2\n"
+  );
+});
+
+test("pushFile surfaces server conflict errors", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: createFetchStub() as typeof fetch
+    }
+  });
+
+  await client.bind();
+
+  await assert.rejects(
+    () =>
+      client.pushFile("packages/Alpha/readme.txt", "client-stale-write\n", {
+        baseFileRevision: 1
+      }),
+    /provided base revision/i
+  );
 });

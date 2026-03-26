@@ -1,5 +1,7 @@
 import type {
   ApiErrorShape,
+  PutWorkspaceFileRequest,
+  PutWorkspaceFileResponse,
   SnapshotMaterializeRequest,
   SnapshotMaterializeResponse,
   WorkspaceChangesResponse,
@@ -43,6 +45,23 @@ export class ClientControlPlane {
         body: JSON.stringify(input)
       }
     );
+  }
+
+  async putFile(
+    workspaceId: string,
+    path: string,
+    input: PutWorkspaceFileRequest
+  ): Promise<PutWorkspaceFileResponse> {
+    const url = new URL(`/workspaces/${encodeURIComponent(workspaceId)}/file`, this.#baseUrl);
+    url.searchParams.set("path", path);
+
+    return this.#request<PutWorkspaceFileResponse>(url, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(input)
+    });
   }
 
   async getChanges(

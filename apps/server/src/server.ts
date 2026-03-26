@@ -15,6 +15,7 @@ import {
   WorkspaceRegistryError
 } from "@clio-fs/database";
 import { type FileSystemAdapter, nodeFileSystem } from "./filesystem.js";
+import { FileWriteConflictError, parsePutWorkspaceFileRequest, putWorkspaceFile } from "./file-write.js";
 import { createWorkspaceSnapshot, materializeWorkspaceFiles } from "./snapshot.js";
 import { detectServerPlatform, parseRegisterWorkspaceInput } from "./workspace.js";
 
@@ -231,6 +232,55 @@ const routeRequest = async (
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid materialize request";
       writeError(response, 400, "invalid_request", message, { workspaceId });
+      return;
+    }
+  }
+
+  if (method === "PUT" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/file")) {
+    const [, , workspaceId] = url.pathname.split("/");
+    const path = url.searchParams.get("path");
+
+    if (!workspaceId) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    if (!path) {
+      writeError(response, 400, "invalid_request", "path query parameter is required", {
+        workspaceId
+      });
+      return;
+    }
+
+    const workspace = options.registry.get(workspaceId);
+
+    if (!workspace) {
+      writeError(response, 404, "not_found", "Workspace not found", { workspaceId });
+      return;
+    }
+
+    try {
+      const input = parsePutWorkspaceFileRequest(await readJsonBody(request));
+      json(
+        response,
+        200,
+        putWorkspaceFile(
+          workspace,
+          path,
+          input,
+          options.filesystem ?? nodeFileSystem,
+          options.journal!
+        )
+      );
+      return;
+    } catch (error) {
+      if (error instanceof FileWriteConflictError) {
+        writeError(response, 409, "conflict", error.message, error.details);
+        return;
+      }
+
+      const message = error instanceof Error ? error.message : "Invalid write request";
+      writeError(response, 400, "invalid_request", message, { workspaceId, path });
       return;
     }
   }

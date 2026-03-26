@@ -505,3 +505,106 @@ test("rejects invalid change feed query parameters", async () => {
     await server.close();
   }
 });
+
+test("writes a file through the API and advances revisions", async () => {
+  const mockFileSystem = createMockFileSystem();
+  mockFileSystem.addDirectory("/mock/write-main");
+  const server = await startTestServer({ filesystem: mockFileSystem });
+
+  try {
+    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "write-main",
+        rootPath: "/mock/write-main"
+      })
+    });
+
+    assert.equal(createResponse.status, 201);
+
+    const writeResponse = await fetch(
+      `${server.baseUrl}/workspaces/write-main/file?path=${encodeURIComponent("packages/Alpha/readme.txt")}`,
+      {
+        method: "PUT",
+        headers: {
+          authorization: `Bearer ${AUTH_TOKEN}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          baseFileRevision: 0,
+          content: "alpha-from-client-v1\n",
+          origin: "local-client"
+        })
+      }
+    );
+    const writeBody = await writeResponse.json();
+
+    assert.equal(writeResponse.status, 200);
+    assert.equal(writeBody.fileRevision, 1);
+    assert.equal(writeBody.workspaceRevision, 1);
+    assert.equal(
+      mockFileSystem.readFileText("/mock/write-main/packages/Alpha/readme.txt"),
+      "alpha-from-client-v1\n"
+    );
+    assert.equal(server.registry.get("write-main")?.currentRevision, 1);
+  } finally {
+    await server.close();
+  }
+});
+
+test("rejects conflicting file writes with 409", async () => {
+  const mockFileSystem = createMockFileSystem();
+  mockFileSystem.addDirectory("/mock/write-conflict");
+  mockFileSystem.addFile("/mock/write-conflict/root.txt", { content: "server-v1\n" });
+  const server = await startTestServer({ filesystem: mockFileSystem });
+
+  try {
+    await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "write-conflict",
+        rootPath: "/mock/write-conflict"
+      })
+    });
+
+    server.journal.append({
+      workspaceId: "write-conflict",
+      operation: "file_updated",
+      path: "root.txt",
+      origin: "server-tool",
+      size: 10
+    });
+
+    const writeResponse = await fetch(
+      `${server.baseUrl}/workspaces/write-conflict/file?path=${encodeURIComponent("root.txt")}`,
+      {
+        method: "PUT",
+        headers: {
+          authorization: `Bearer ${AUTH_TOKEN}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          baseFileRevision: 0,
+          content: "local-stale-write\n",
+          origin: "local-client"
+        })
+      }
+    );
+    const writeBody = await writeResponse.json();
+
+    assert.equal(writeResponse.status, 409);
+    assert.equal(writeBody.error.code, "conflict");
+    assert.equal(writeBody.error.details.currentFileRevision, 1);
+    assert.equal(mockFileSystem.readFileText("/mock/write-conflict/root.txt"), "server-v1\n");
+  } finally {
+    await server.close();
+  }
+});

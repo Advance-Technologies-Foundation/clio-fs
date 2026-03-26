@@ -561,6 +561,11 @@ Behavior:
 - if the write succeeds through the API, the API service itself must append the journal event and advance the workspace revision
 - watcher-observed echoes of the same write must be deduplicated and must not create additional revisions
 
+Current implementation note:
+
+- text writes are currently implemented for utf8 content
+- conflict detection uses `baseFileRevision` and optionally `baseContentHash`
+
 Response `200`:
 
 ```json

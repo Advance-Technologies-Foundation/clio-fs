@@ -80,6 +80,23 @@ export interface SnapshotMaterializeResponse {
   files: SnapshotMaterializeFile[];
 }
 
+export interface PutWorkspaceFileRequest {
+  operationId?: string;
+  baseFileRevision?: Revision;
+  baseContentHash?: string;
+  encoding?: "utf8";
+  content: string;
+  origin: ChangeOrigin;
+}
+
+export interface PutWorkspaceFileResponse {
+  workspaceId: WorkspaceId;
+  path: string;
+  fileRevision: Revision;
+  workspaceRevision: Revision;
+  contentHash: string;
+}
+
 export interface ChangeEvent {
   workspaceId: WorkspaceId;
   revision: Revision;
