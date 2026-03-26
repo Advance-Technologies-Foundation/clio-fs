@@ -48,7 +48,6 @@ Fields:
 - `workspaceId`
 - `displayName` optional
 - `rootPath`
-- `platform`
 - `status`
 - `currentRevision`
 - `createdAt`
@@ -61,7 +60,6 @@ Example:
 {
   "workspaceId": "crm-prod-main",
   "rootPath": "D:/creatio/workspaces/main",
-  "platform": "windows",
   "status": "active",
   "currentRevision": 18446,
   "createdAt": "2026-03-26T20:00:00Z",
@@ -75,6 +73,7 @@ Notes:
 - `workspaceId` must be immutable
 - `displayName` is optional presentation metadata and may be absent
 - `rootPath` must be unique within the control plane unless you intentionally support aliases
+- server platform is server-level metadata, not per-workspace state
 
 ## 2. WorkspacePolicy
 

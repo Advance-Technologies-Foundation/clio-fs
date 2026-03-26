@@ -35,7 +35,6 @@ const createWorkspaceRecord = (input: RegisterWorkspaceInput): WorkspaceRecord =
   workspaceId: input.workspaceId,
   displayName: input.displayName,
   rootPath: input.rootPath,
-  platform: input.platform,
   status: "active",
   currentRevision: 0,
   policies: {
@@ -101,7 +100,6 @@ const isWorkspaceRecord = (value: unknown): value is WorkspaceRecord => {
     typeof record.workspaceId === "string" &&
     (typeof record.displayName === "undefined" || typeof record.displayName === "string") &&
     typeof record.rootPath === "string" &&
-    (record.platform === "windows" || record.platform === "macos" || record.platform === "linux") &&
     (record.status === "active" || record.status === "disabled") &&
     typeof record.currentRevision === "number" &&
     typeof record.policies === "object" &&

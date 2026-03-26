@@ -4,6 +4,7 @@ import { healthSummary } from "@clio-fs/sync-core";
 import {
   type ApiErrorShape,
   type RegisterWorkspaceInput,
+  type WorkspacePlatform,
   type WorkspaceRecord
 } from "@clio-fs/contracts";
 import {
@@ -17,7 +18,7 @@ export interface WorkspaceServerOptions {
   port: number;
   authToken: string;
   registry: WorkspaceRegistry;
-  serverPlatform?: RegisterWorkspaceInput["platform"];
+  serverPlatform?: WorkspacePlatform;
 }
 
 export interface StartedWorkspaceServer {
@@ -85,7 +86,6 @@ const fullWorkspaceShape = (workspace: WorkspaceRecord) => ({
   workspaceId: workspace.workspaceId,
   displayName: workspace.displayName,
   rootPath: workspace.rootPath,
-  platform: workspace.platform,
   status: workspace.status,
   currentRevision: workspace.currentRevision,
   policies: workspace.policies
@@ -100,10 +100,12 @@ const routeRequest = async (
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
   if (method === "GET" && url.pathname === "/health") {
+    const serverPlatform = options.serverPlatform ?? detectServerPlatform();
     json(response, 200, {
       status: "ok",
       service: "clio-fs-server",
-      summary: healthSummary({ workspaceCount: options.registry.list().length })
+      summary: healthSummary({ workspaceCount: options.registry.list().length }),
+      platform: serverPlatform
     });
     return;
   }

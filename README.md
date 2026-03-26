@@ -95,7 +95,7 @@ Implemented today:
   - `GET /workspaces/:workspaceId`
   - `DELETE /workspaces/:workspaceId`
 - validation for `workspaceId` and absolute `rootPath`
-- server-derived `platform` during workspace registration
+- server-level `platform` reported via `GET /health`
 - optional `displayName`; most workspaces can rely on `workspaceId` alone
 - file-backed workspace registry stored in `.clio-fs/server/workspaces.json`
 - integration tests covering health, auth, registration, validation, and duplicate detection

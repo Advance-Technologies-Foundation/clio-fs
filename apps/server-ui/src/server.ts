@@ -225,7 +225,6 @@ const renderDashboard = async (
   state?: {
     notice?: { tone: "error" | "success"; message: string };
     formValues?: Partial<RegisterWorkspaceRequest>;
-    serverPlatform?: WorkspaceRecord["platform"];
   }
 ) => {
   const [health, workspaces] = await Promise.all([client.getHealth(), client.listWorkspaces()]);
@@ -241,6 +240,7 @@ const renderDashboard = async (
       <section class="grid">
         ${renderMetricCard("Service", health.service)}
         ${renderMetricCard("Health", health.status)}
+        ${renderMetricCard("Platform", health.platform)}
         ${renderMetricCard("Workspaces", String(workspaces.length))}
       </section>
       ${
@@ -252,7 +252,7 @@ const renderDashboard = async (
           health.summary
         )}</div>
       </section>
-      ${renderWorkspaceRegistrationForm(state?.formValues, state?.serverPlatform ?? "linux")}
+      ${renderWorkspaceRegistrationForm(state?.formValues, health.platform)}
       ${renderWorkspaceTable(workspaces)}
     `
   );
@@ -274,7 +274,6 @@ const renderWorkspaceDetail = (workspace: WorkspaceRecord) =>
       </section>
       <section class="grid">
         ${renderMetricCard("Revision", String(workspace.currentRevision))}
-        ${renderMetricCard("Platform", workspace.platform)}
         ${renderMetricCard("Status", workspace.status)}
       </section>
       <section class="panel stack">
@@ -323,16 +322,13 @@ const renderError = (message: string) =>
 export const createServerUi = (options: ServerUiOptions) => {
   const client = createControlPlaneClient(options);
   const selectDirectory = options.selectDirectory ?? selectDirectoryWithNativeDialog;
-  const serverPlatform =
-    process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux";
-
   return createServer(async (request, response) => {
     try {
       const method = request.method ?? "GET";
       const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
       if (method === "GET" && url.pathname === "/") {
-        writeHtml(response, 200, await renderDashboard(client, { serverPlatform }));
+        writeHtml(response, 200, await renderDashboard(client));
         return;
       }
 
@@ -356,8 +352,7 @@ export const createServerUi = (options: ServerUiOptions) => {
             400,
             await renderDashboard(client, {
               notice: { tone: "error", message },
-              formValues: input,
-              serverPlatform
+              formValues: input
             })
           );
           return;
@@ -382,8 +377,7 @@ export const createServerUi = (options: ServerUiOptions) => {
             response,
             400,
             await renderDashboard(client, {
-              notice: { tone: "error", message },
-              serverPlatform
+              notice: { tone: "error", message }
             })
           );
           return;

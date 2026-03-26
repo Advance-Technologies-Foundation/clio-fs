@@ -13,8 +13,7 @@ test("file workspace registry persists registrations to a JSON file", () => {
   registry.register({
     workspaceId: "persisted-main",
     displayName: "Persisted Main",
-    rootPath: "/srv/clio/persisted-main",
-    platform: "linux"
+    rootPath: "/srv/clio/persisted-main"
   });
 
   const saved = JSON.parse(readFileSync(filePath, "utf8")) as {
@@ -37,8 +36,7 @@ test("file workspace registry persists deletions to a JSON file", () => {
 
   registry.register({
     workspaceId: "delete-me",
-    rootPath: "/srv/clio/delete-me",
-    platform: "linux"
+    rootPath: "/srv/clio/delete-me"
   });
 
   registry.delete("delete-me");

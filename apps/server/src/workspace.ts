@@ -76,7 +76,6 @@ export const parseRegisterWorkspaceInput = (
         ? displayName.trim()
         : undefined,
     rootPath,
-    platform: serverPlatform,
     policies: {
       allowGit:
         typeof policies.allowGit === "boolean"

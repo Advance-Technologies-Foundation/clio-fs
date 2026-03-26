@@ -7,7 +7,6 @@ const createFetchStub = (
     workspaceId: string;
     displayName?: string;
     rootPath: string;
-    platform: "linux" | "macos" | "windows";
     status: "active" | "disabled";
     currentRevision: number;
     policies: {
@@ -20,7 +19,6 @@ const createFetchStub = (
       workspaceId: "demo-main",
       displayName: "Demo Main",
       rootPath: "/srv/clio/demo-main",
-      platform: "linux",
       status: "active",
       currentRevision: 0,
       policies: {
@@ -41,7 +39,8 @@ const createFetchStub = (
         JSON.stringify({
           status: "ok",
           service: "clio-fs-server",
-          summary: `sync-core ready; workspaces=${workspaces.length}`
+          summary: `sync-core ready; workspaces=${workspaces.length}`,
+          platform: "linux"
         }),
         { status: 200, headers: { "content-type": "application/json" } }
       );

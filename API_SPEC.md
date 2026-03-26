@@ -86,7 +86,6 @@ Example:
   "workspaceId": "crm-prod-main",
   "displayName": "CRM Prod Main",
   "rootPath": "D:/creatio/workspaces/main",
-  "platform": "windows",
   "status": "active",
   "currentRevision": 18442,
   "policies": {
@@ -154,6 +153,17 @@ Example:
 }
 ```
 
+### Server Health
+
+```json
+{
+  "status": "ok",
+  "service": "clio-fs-server",
+  "summary": "sync-core ready; workspaces=2",
+  "platform": "windows"
+}
+```
+
 ## Authentication and Authorization
 
 Rules:
@@ -194,7 +204,7 @@ Response `200`:
 
 Registers a workspace with the control plane.
 
-`platform` is not supplied by the caller. The control plane derives it from the server runtime and stores it in workspace metadata.
+`platform` is not supplied by the caller. The control plane derives it from the server runtime and exposes it through server-level health metadata.
 `displayName` is optional. If omitted, consumers should fall back to `workspaceId` for display.
 
 Request:
@@ -238,7 +248,6 @@ Response `200`:
   "workspaceId": "crm-prod-main",
   "displayName": "CRM Prod Main",
   "rootPath": "D:/creatio/workspaces/main",
-  "platform": "windows",
   "status": "active",
   "currentRevision": 18442,
   "policies": {

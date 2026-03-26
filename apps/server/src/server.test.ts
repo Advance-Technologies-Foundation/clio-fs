@@ -44,6 +44,7 @@ test("GET /health is public", async () => {
 
     assert.equal(response.status, 200);
     assert.equal(body.status, "ok");
+    assert.equal(body.platform, "linux");
   } finally {
     await server.close();
   }
@@ -103,7 +104,7 @@ test("registers and retrieves a workspace", async () => {
     assert.equal(detailResponse.status, 200);
     assert.equal(detailBody.rootPath, "/srv/clio/workspaces/main");
     assert.equal(detailBody.currentRevision, 0);
-    assert.equal(detailBody.platform, "linux");
+    assert.equal(detailBody.platform, undefined);
   } finally {
     await server.close();
   }
