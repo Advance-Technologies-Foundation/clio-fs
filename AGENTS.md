@@ -33,6 +33,7 @@ Optimize for:
 - implementation speed through explicit contracts
 - repository consistency
 - ease of use for the next maintainer or agent
+- easy installation, verification, and startup
 
 Do **not** optimize first for:
 
@@ -203,6 +204,7 @@ That means:
 - examples should match the current API and data model
 - filenames and directory structure should remain easy to navigate
 - setup and usage instructions should stay simple and current
+- install, verify, and run flows should stay short and obvious
 
 If you introduce new code modules, also introduce the minimum supporting artifacts needed to use them simply:
 
@@ -210,6 +212,14 @@ If you introduce new code modules, also introduce the minimum supporting artifac
 - test location
 - basic run instructions
 - clear naming
+
+If you introduce a new package or app, also provide:
+
+- install command
+- verification or test command
+- start or dev command
+
+These commands should be easy to discover from the repository root.
 
 ## Review Checklist For Agents
 
@@ -224,6 +234,7 @@ Before finishing, verify:
 - did the docs stay aligned with the code?
 - did tests get added or updated for the changed behavior?
 - would a new agent understand how to run or extend this change without extra tribal knowledge?
+- would a new developer know how to install, verify, and start it from the docs alone?
 
 ## Commit Guidance
 

@@ -16,6 +16,7 @@ Implementation preference:
 
 - use `TypeScript` for the server and local client implementation
 - include a server-side UI for administration, health visibility, and operational control
+- require simple installation, simple health verification, and simple startup commands for operators and developers
 
 ## Core Decision
 
@@ -488,6 +489,27 @@ Reasoning:
 - shared contracts reduce drift between API, data model, and runtime behavior
 - one language speeds up iteration across server, client, and shared packages
 - strong typing helps preserve sync and revision invariants
+
+## Operability Requirement
+
+The project must be easy to install, verify, and run.
+
+This is a product and delivery requirement, not only a documentation preference.
+
+Minimum expectations:
+
+- a new developer can install dependencies with one documented command sequence
+- a new developer can run the main verification checks with one documented command sequence
+- a new developer can start the server and local client with one documented command sequence
+- an operator can verify server health and UI availability without reading source code
+
+Preferred command shape:
+
+- one install command per app or one workspace bootstrap command
+- one test or check command per app or one root verification command
+- one dev-start command per app or one root dev command
+
+The eventual implementation should minimize hidden setup and manual environment reconstruction.
 
 ## Reliability Requirements
 

@@ -10,6 +10,7 @@ Before proposing implementation changes:
 2. update the corresponding document first
 3. keep MVP constraints explicit instead of widening them implicitly
 4. keep tests and usage documentation aligned with the change
+5. keep installation, verification, and startup instructions simple
 
 ## Source Documents
 
@@ -38,6 +39,7 @@ If a change affects behavior, contributors are expected to update:
 - the relevant design document
 - [README.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/README.md) if setup, usage, or structure changed
 - tests covering the changed behavior
+- install, verify, and run instructions if those flows changed
 
 At minimum:
 
@@ -69,6 +71,7 @@ Reviews should prioritize:
 - path and auth boundaries
 - test coverage for the changed behavior
 - whether the repo remains easy to understand and use
+- whether installation and startup remain straightforward
 
 ## Commit Style
 

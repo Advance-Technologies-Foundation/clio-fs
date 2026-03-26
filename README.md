@@ -11,6 +11,7 @@ The implementation target is:
 
 - `TypeScript` for both server and client codebases
 - a server-side control UI for operational visibility and administration
+- easy and predictable installation, verification, and run flows
 
 ## Problem
 
@@ -42,6 +43,7 @@ That requires:
 - `.git` is not mirrored locally in MVP
 - `TypeScript` is the preferred implementation language
 - the server side includes an operator-facing UI
+- installation, verification, and startup must be simple and documented
 
 ## Recommended Reading Order
 

@@ -19,6 +19,7 @@ This plan assumes the target system must support:
 - keep one local mirror daemon per workstation for MVP
 - avoid advanced merge and lock semantics in phase 1
 - prefer explicit conflict files over hidden auto-merge
+- require simple install, verify, and run workflows from the start
 
 ## Phase 0. Finalize Scope and Constraints
 
@@ -33,6 +34,7 @@ Deliverables:
 - freeze the conflict MVP rule as non-destructive local conflict blocking
 - freeze `TypeScript` as the implementation language for server, client, and shared contracts
 - freeze the inclusion of a server control UI in MVP scope
+- freeze a repo-wide requirement for easy install, easy verification, and easy startup
 
 Output:
 
@@ -54,6 +56,7 @@ Tasks:
 - implement `GET /workspaces`
 - implement `POST /workspaces/register`
 - implement `GET /workspaces/{workspaceId}`
+- define standard install and dev-run commands for the server package
 
 Acceptance criteria:
 
@@ -74,6 +77,7 @@ Tasks:
 - implement workspace list view
 - implement workspace detail view shell
 - implement diagnostics navigation shell
+- define standard install and dev-run commands for the server UI package
 
 Acceptance criteria:
 
@@ -167,6 +171,7 @@ Tasks:
 - implement self-write suppression
 - implement conflict artifact creation
 - implement conflict-blocked path state
+- define standard install, run, and smoke-check commands for the client package
 
 Acceptance criteria:
 
@@ -266,11 +271,25 @@ Tasks:
 - add structured logs
 - add workspace sync dashboards
 - add server UI panels for workspace health, client health, and conflict visibility
+- add documented verification commands for operators and developers
 
 Acceptance criteria:
 
 - operator can identify stuck clients, hot workspaces, and repeated conflicts
 - operator can do this from the server UI without reading raw logs first
+- a new contributor can validate the main system state with documented commands only
+
+## Developer Experience Requirement
+
+Every implementation stage should preserve simple entrypoints.
+
+Target shape:
+
+- one documented install command at repo root
+- one documented verification command at repo root
+- one documented dev-start command at repo root
+
+If app-specific commands are needed, they must still be discoverable from the root README without searching the codebase.
 
 ## Recommended MVP Cut
 
