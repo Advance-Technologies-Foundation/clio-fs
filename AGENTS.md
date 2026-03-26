@@ -22,6 +22,12 @@ Preferred implementation language:
 
 - `TypeScript`
 
+Preferred repository shape:
+
+- `pnpm` monorepo
+- runnable applications in `apps/*`
+- shared libraries in `packages/*`
+
 ## Primary Goal
 
 Optimize for:
@@ -111,6 +117,7 @@ Recommended order:
 4. journal ownership
 5. watcher ingestion
 6. local mirror client
+7. operator-facing server UI refinement
 
 ### 5. Keep Multi-Workspace Isolation Intact
 

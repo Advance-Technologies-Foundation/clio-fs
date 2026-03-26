@@ -26,6 +26,22 @@ That requires:
 
 ## Repository Structure
 
+Planned monorepo shape:
+
+- `apps/server`: server control plane
+- `apps/server-ui`: operator-facing server UI
+- `apps/client`: local mirror daemon
+- `packages/contracts`: shared contracts and schemas
+- `packages/config`: shared config loading and typing
+- `packages/database`: DB helpers and storage primitives
+- `packages/sync-core`: sync rules and shared sync logic
+- `packages/testkit`: shared test helpers
+- `packages/ui-kit`: shared UI primitives
+- `docs/`: additional operational docs
+- `scripts/`: repo-level helper scripts
+
+Current design documents:
+
 - [ARCHITECTURE.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/ARCHITECTURE.md): overall system architecture
 - [API_SPEC.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/API_SPEC.md): HTTP API contract
 - [DATA_MODEL.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/DATA_MODEL.md): persistent and local data model
@@ -44,6 +60,23 @@ That requires:
 - `TypeScript` is the preferred implementation language
 - the server side includes an operator-facing UI
 - installation, verification, and startup must be simple and documented
+- the repository is structured as a `pnpm` TypeScript monorepo
+
+## Standard Commands
+
+Root-level commands:
+
+- `corepack pnpm install`
+- `corepack pnpm check`
+- `corepack pnpm test`
+- `corepack pnpm dev`
+- `corepack pnpm build`
+
+App-level examples:
+
+- `corepack pnpm --filter @clio-fs/server dev`
+- `corepack pnpm --filter @clio-fs/server-ui dev`
+- `corepack pnpm --filter @clio-fs/client dev`
 
 ## Recommended Reading Order
 

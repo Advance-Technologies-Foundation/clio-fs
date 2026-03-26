@@ -1,0 +1,20 @@
+{
+  "name": "clio-fs",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.0.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "typescript": "^5.9.2"
+  },
+  "scripts": {
+    "build": "corepack pnpm -r build",
+    "check": "corepack pnpm -r check",
+    "dev": "node scripts/dev.mjs",
+    "test": "corepack pnpm -r test",
+    "format": "corepack pnpm -r format"
+  }
+}

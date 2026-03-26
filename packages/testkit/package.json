@@ -1,0 +1,17 @@
+{
+  "name": "@clio-fs/testkit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "dev": "node -e \"console.log('@clio-fs/testkit has no dev server')\"",
+    "test": "node ../../scripts/run-package-tests.mjs",
+    "format": "node -e \"console.log('No formatter configured for @clio-fs/testkit yet')\""
+  },
+  "dependencies": {
+    "@clio-fs/contracts": "workspace:*"
+  }
+}

@@ -20,6 +20,7 @@ This plan assumes the target system must support:
 - avoid advanced merge and lock semantics in phase 1
 - prefer explicit conflict files over hidden auto-merge
 - require simple install, verify, and run workflows from the start
+- use one `pnpm` TypeScript monorepo for apps and shared packages
 
 ## Phase 0. Finalize Scope and Constraints
 
@@ -35,11 +36,36 @@ Deliverables:
 - freeze `TypeScript` as the implementation language for server, client, and shared contracts
 - freeze the inclusion of a server control UI in MVP scope
 - freeze a repo-wide requirement for easy install, easy verification, and easy startup
+- freeze the monorepo layout for `apps/*` and `packages/*`
 
 Output:
 
 - frozen MVP scope
 - initial non-functional requirements
+
+## Phase 0a. Monorepo Scaffold
+
+Goal:
+
+- establish the repository layout and root commands before feature work
+
+Tasks:
+
+- create `pnpm-workspace.yaml`
+- create root `package.json`
+- create root TypeScript config
+- scaffold `apps/server`
+- scaffold `apps/server-ui`
+- scaffold `apps/client`
+- scaffold shared packages under `packages/*`
+- provide root `install`, `check`, `test`, `dev`, and `build` commands
+
+Acceptance criteria:
+
+- repo installs from the root
+- repo exposes one documented root verification command
+- repo exposes one documented root dev command
+- app and package boundaries are clear
 
 ## Phase 1. Server Control Plane Skeleton
 

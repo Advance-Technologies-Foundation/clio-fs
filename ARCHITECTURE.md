@@ -17,6 +17,7 @@ Implementation preference:
 - use `TypeScript` for the server and local client implementation
 - include a server-side UI for administration, health visibility, and operational control
 - require simple installation, simple health verification, and simple startup commands for operators and developers
+- use a `pnpm` monorepo with runnable apps separated from shared packages
 
 ## Core Decision
 
@@ -483,12 +484,27 @@ Recommended shape:
 - server control UI in `TypeScript`
 - local mirror daemon in `TypeScript`
 - shared contracts and validation schemas in `TypeScript`
+- monorepo structure with `apps/*` and `packages/*`
 
 Reasoning:
 
 - shared contracts reduce drift between API, data model, and runtime behavior
 - one language speeds up iteration across server, client, and shared packages
 - strong typing helps preserve sync and revision invariants
+
+Recommended repository layout:
+
+- `apps/server`
+- `apps/server-ui`
+- `apps/client`
+- `packages/contracts`
+- `packages/config`
+- `packages/database`
+- `packages/sync-core`
+- `packages/testkit`
+- `packages/ui-kit`
+- `docs`
+- `scripts`
 
 ## Operability Requirement
 

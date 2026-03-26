@@ -1,0 +1,18 @@
+{
+  "name": "@clio-fs/server-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "dev": "node --watch src/index.ts",
+    "test": "node ../../scripts/run-package-tests.mjs",
+    "format": "node -e \"console.log('No formatter configured for @clio-fs/server-ui yet')\""
+  },
+  "dependencies": {
+    "@clio-fs/contracts": "workspace:*",
+    "@clio-fs/ui-kit": "workspace:*"
+  }
+}
