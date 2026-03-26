@@ -4,7 +4,7 @@ import { promisify } from "node:util";
 import { URL } from "node:url";
 import type {
   ApiErrorShape,
-  RegisterWorkspaceInput,
+  RegisterWorkspaceRequest,
   ServerHealthResponse,
   WorkspaceListResponse,
   WorkspaceRecord
@@ -38,7 +38,7 @@ interface ControlPlaneClient {
   getHealth: () => Promise<ServerHealthResponse>;
   listWorkspaces: () => Promise<WorkspaceRecord[]>;
   getWorkspace: (workspaceId: string) => Promise<WorkspaceRecord | null>;
-  registerWorkspace: (input: RegisterWorkspaceInput) => Promise<{ workspaceId: string }>;
+  registerWorkspace: (input: RegisterWorkspaceRequest) => Promise<{ workspaceId: string }>;
 }
 
 const writeHtml = (response: ServerResponse, statusCode: number, html: string) => {
@@ -188,7 +188,7 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
 
       return (await response.json()) as WorkspaceRecord;
     },
-    async registerWorkspace(input: RegisterWorkspaceInput) {
+    async registerWorkspace(input: RegisterWorkspaceRequest) {
       return request<{ workspaceId: string }>("/workspaces/register", {
         method: "POST",
         headers: {
@@ -204,7 +204,8 @@ const renderDashboard = async (
   client: ControlPlaneClient,
   state?: {
     notice?: { tone: "error" | "success"; message: string };
-    formValues?: Partial<RegisterWorkspaceInput>;
+    formValues?: Partial<RegisterWorkspaceRequest>;
+    serverPlatform?: WorkspaceRecord["platform"];
   }
 ) => {
   const [health, workspaces] = await Promise.all([client.getHealth(), client.listWorkspaces()]);
@@ -231,7 +232,7 @@ const renderDashboard = async (
           health.summary
         )}</div>
       </section>
-      ${renderWorkspaceRegistrationForm(state?.formValues)}
+      ${renderWorkspaceRegistrationForm(state?.formValues, state?.serverPlatform ?? "linux")}
       ${renderWorkspaceTable(workspaces)}
     `
   );
@@ -300,6 +301,8 @@ const renderError = (message: string) =>
 export const createServerUi = (options: ServerUiOptions) => {
   const client = createControlPlaneClient(options);
   const selectDirectory = options.selectDirectory ?? selectDirectoryWithNativeDialog;
+  const serverPlatform =
+    process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux";
 
   return createServer(async (request, response) => {
     try {
@@ -307,17 +310,16 @@ export const createServerUi = (options: ServerUiOptions) => {
       const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
       if (method === "GET" && url.pathname === "/") {
-        writeHtml(response, 200, await renderDashboard(client));
+        writeHtml(response, 200, await renderDashboard(client, { serverPlatform }));
         return;
       }
 
       if (method === "POST" && url.pathname === "/workspaces/register") {
         const form = await readFormBody(request);
-        const input: RegisterWorkspaceInput = {
+        const input: RegisterWorkspaceRequest = {
           workspaceId: form.get("workspaceId")?.toString() ?? "",
           displayName: form.get("displayName")?.toString() ?? "",
-          rootPath: form.get("rootPath")?.toString() ?? "",
-          platform: (form.get("platform")?.toString() ?? "linux") as RegisterWorkspaceInput["platform"]
+          rootPath: form.get("rootPath")?.toString() ?? ""
         };
 
         try {
@@ -331,7 +333,8 @@ export const createServerUi = (options: ServerUiOptions) => {
             400,
             await renderDashboard(client, {
               notice: { tone: "error", message },
-              formValues: input
+              formValues: input,
+              serverPlatform
             })
           );
           return;

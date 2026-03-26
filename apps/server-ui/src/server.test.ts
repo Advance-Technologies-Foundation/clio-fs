@@ -114,6 +114,7 @@ test("renders dashboard with workspace content", async () => {
     assert.match(html, /Demo Main/);
     assert.match(html, /sync-core ready; workspaces=1/);
     assert.match(html, /Choose Folder/);
+    assert.match(html, /Platform is determined by the server/i);
   } finally {
     await server.close();
   }
@@ -147,8 +148,7 @@ test("submits workspace registration form and redirects to detail page", async (
       body: new URLSearchParams({
         workspaceId: "created-from-form",
         displayName: "Created From Form",
-        rootPath: "/srv/clio/created-from-form",
-        platform: "linux"
+        rootPath: "/srv/clio/created-from-form"
       }),
       redirect: "manual"
     });

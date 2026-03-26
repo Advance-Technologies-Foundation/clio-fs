@@ -10,7 +10,8 @@ const startTestServer = async () => {
     host: "127.0.0.1",
     port: 0,
     authToken: AUTH_TOKEN,
-    registry: createInMemoryWorkspaceRegistry()
+    registry: createInMemoryWorkspaceRegistry(),
+    serverPlatform: "linux"
   });
 
   await new Promise<void>((resolve) => {
@@ -75,8 +76,7 @@ test("registers and retrieves a workspace", async () => {
       body: JSON.stringify({
         workspaceId: "crm-prod-main",
         displayName: "CRM Prod Main",
-        rootPath: "/srv/clio/workspaces/main",
-        platform: "linux"
+        rootPath: "/srv/clio/workspaces/main"
       })
     });
 
@@ -103,6 +103,7 @@ test("registers and retrieves a workspace", async () => {
     assert.equal(detailResponse.status, 200);
     assert.equal(detailBody.rootPath, "/srv/clio/workspaces/main");
     assert.equal(detailBody.currentRevision, 0);
+    assert.equal(detailBody.platform, "linux");
   } finally {
     await server.close();
   }
@@ -121,8 +122,7 @@ test("rejects invalid root paths during registration", async () => {
       body: JSON.stringify({
         workspaceId: "invalid-root",
         displayName: "Invalid Root",
-        rootPath: "relative/path",
-        platform: "linux"
+        rootPath: "relative/path"
       })
     });
 
@@ -148,8 +148,7 @@ test("rejects duplicate workspace registration", async () => {
       body: JSON.stringify({
         workspaceId: "duplicate-workspace",
         displayName: "Duplicate Workspace",
-        rootPath: "C:\\clio\\workspace",
-        platform: "windows"
+        rootPath: "/srv/clio/duplicate-workspace"
       })
     };
 

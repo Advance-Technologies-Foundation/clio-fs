@@ -194,6 +194,8 @@ Response `200`:
 
 Registers a workspace with the control plane.
 
+`platform` is not supplied by the caller. The control plane derives it from the server runtime and stores it in workspace metadata.
+
 Request:
 
 ```json
@@ -201,7 +203,6 @@ Request:
   "workspaceId": "crm-prod-main",
   "displayName": "CRM Prod Main",
   "rootPath": "D:/creatio/workspaces/main",
-  "platform": "windows",
   "policies": {
     "allowGit": true,
     "allowBinaryWrites": true,

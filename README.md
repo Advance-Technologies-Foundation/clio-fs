@@ -93,7 +93,8 @@ Implemented today:
   - `GET /workspaces`
   - `POST /workspaces/register`
   - `GET /workspaces/:workspaceId`
-- validation for `workspaceId`, `platform`, and absolute `rootPath`
+- validation for `workspaceId` and absolute `rootPath`
+- server-derived `platform` during workspace registration
 - file-backed workspace registry stored in `.clio-fs/server/workspaces.json`
 - integration tests covering health, auth, registration, validation, and duplicate detection
 - a compiled dev flow for `@clio-fs/server` so `corepack pnpm --filter @clio-fs/server dev` runs against emitted `dist`
@@ -101,6 +102,7 @@ Implemented today:
 - server-rendered dashboard and workspace detail pages backed by control-plane API calls
 - registration form in the UI for creating workspaces without `curl`
 - native `Choose Folder` button for selecting `rootPath` through the operating system file explorer dialog
+- readonly `Platform` field in the UI; it is determined by the server and cannot be changed from the tool
 - integration tests covering dashboard rendering, workspace detail rendering, form submission, and not-found handling
 - a compiled dev flow for `@clio-fs/server-ui`
 

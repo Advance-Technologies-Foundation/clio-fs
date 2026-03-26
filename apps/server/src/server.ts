@@ -10,13 +10,14 @@ import {
   type WorkspaceRegistry,
   WorkspaceRegistryError
 } from "@clio-fs/database";
-import { parseRegisterWorkspaceInput } from "./workspace.js";
+import { detectServerPlatform, parseRegisterWorkspaceInput } from "./workspace.js";
 
 export interface WorkspaceServerOptions {
   host: string;
   port: number;
   authToken: string;
   registry: WorkspaceRegistry;
+  serverPlatform?: RegisterWorkspaceInput["platform"];
 }
 
 export interface StartedWorkspaceServer {
@@ -124,7 +125,7 @@ const routeRequest = async (
 
     try {
       const payload = await readJsonBody(request);
-      input = parseRegisterWorkspaceInput(payload);
+      input = parseRegisterWorkspaceInput(payload, options.serverPlatform ?? detectServerPlatform());
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid request body";
       writeError(response, 400, "invalid_request", message);

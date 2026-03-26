@@ -22,6 +22,13 @@ export interface WorkspaceRecord extends WorkspaceDescriptor {
   policies: WorkspacePolicies;
 }
 
+export interface RegisterWorkspaceRequest {
+  workspaceId: WorkspaceId;
+  displayName: string;
+  rootPath: string;
+  policies?: Partial<WorkspacePolicies>;
+}
+
 export interface ServerHealthResponse {
   status: "ok";
   service: string;
@@ -32,12 +39,8 @@ export interface WorkspaceListResponse {
   items: WorkspaceDescriptor[];
 }
 
-export interface RegisterWorkspaceInput {
-  workspaceId: WorkspaceId;
-  displayName: string;
-  rootPath: string;
+export interface RegisterWorkspaceInput extends RegisterWorkspaceRequest {
   platform: WorkspacePlatform;
-  policies?: Partial<WorkspacePolicies>;
 }
 
 export interface ApiErrorShape {

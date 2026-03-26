@@ -283,12 +283,14 @@ export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
   `;
 };
 
-export const renderWorkspaceRegistrationForm = (values?: {
-  workspaceId?: string;
-  displayName?: string;
-  rootPath?: string;
-  platform?: string;
-}) => `
+export const renderWorkspaceRegistrationForm = (
+  values?: {
+    workspaceId?: string;
+    displayName?: string;
+    rootPath?: string;
+  },
+  serverPlatform: "windows" | "macos" | "linux" = "linux"
+) => `
   <section class="panel" style="margin-bottom:18px;">
     <div class="metric">Register Workspace</div>
     <form method="post" action="/workspaces/register" style="display:grid;gap:16px;margin-top:18px;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
@@ -309,17 +311,11 @@ export const renderWorkspaceRegistrationForm = (values?: {
         <div class="helper-text" data-root-picker-status>Use the button to select a folder with the native file explorer.</div>
       </div>
       <div style="display:grid;gap:6px;">
-        <label for="platform">Platform</label>
-        <select id="platform" name="platform" style="padding:12px 14px;border:1px solid rgba(117,103,84,.28);border-radius:12px;background:white;">
-          ${["linux", "macos", "windows"]
-            .map(
-              (platform) =>
-                `<option value="${platform}"${
-                  (values?.platform ?? "linux") === platform ? " selected" : ""
-                }>${platform}</option>`
-            )
-            .join("")}
-        </select>
+        <label for="platformDisplay">Platform</label>
+        <input id="platformDisplay" value="${escapeHtml(
+          serverPlatform
+        )}" readonly aria-readonly="true" style="padding:12px 14px;border:1px solid rgba(117,103,84,.18);border-radius:12px;background:rgba(255,255,255,.65);color:#756754;" />
+        <div class="helper-text">Platform is determined by the server and cannot be changed from the UI.</div>
       </div>
       <div>
         <button type="submit" style="border:0;border-radius:999px;background:#733f1d;color:white;padding:12px 18px;font-weight:700;cursor:pointer;">Create Workspace</button>

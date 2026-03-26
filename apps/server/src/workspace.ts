@@ -10,12 +10,22 @@ const WORKSPACE_ID_PATTERN = /^[a-z0-9][a-z0-9-_]*$/;
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
-const parsePlatform = (value: unknown): WorkspacePlatform => {
-  if (value === "windows" || value === "macos" || value === "linux") {
-    return value;
+export const detectServerPlatform = (
+  nodePlatform: NodeJS.Platform = process.platform
+): WorkspacePlatform => {
+  if (nodePlatform === "win32") {
+    return "windows";
   }
 
-  throw new Error("platform must be one of: windows, macos, linux");
+  if (nodePlatform === "darwin") {
+    return "macos";
+  }
+
+  if (nodePlatform === "linux") {
+    return "linux";
+  }
+
+  throw new Error(`Unsupported server platform: ${nodePlatform}`);
 };
 
 const isAbsoluteRootPath = (value: string, platform: WorkspacePlatform) => {
@@ -26,7 +36,10 @@ const isAbsoluteRootPath = (value: string, platform: WorkspacePlatform) => {
   return path.posix.isAbsolute(value);
 };
 
-export const parseRegisterWorkspaceInput = (value: unknown): RegisterWorkspaceInput => {
+export const parseRegisterWorkspaceInput = (
+  value: unknown,
+  serverPlatform: WorkspacePlatform
+): RegisterWorkspaceInput => {
   if (!isObject(value)) {
     throw new Error("request body must be a JSON object");
   }
@@ -34,7 +47,6 @@ export const parseRegisterWorkspaceInput = (value: unknown): RegisterWorkspaceIn
   const workspaceId = value.workspaceId;
   const displayName = value.displayName;
   const rootPath = value.rootPath;
-  const platform = parsePlatform(value.platform);
 
   if (typeof workspaceId !== "string" || !WORKSPACE_ID_PATTERN.test(workspaceId)) {
     throw new Error("workspaceId must match /^[a-z0-9][a-z0-9-_]*$/");
@@ -48,8 +60,8 @@ export const parseRegisterWorkspaceInput = (value: unknown): RegisterWorkspaceIn
     throw new Error("rootPath must be a non-empty string");
   }
 
-  if (!isAbsoluteRootPath(rootPath, platform)) {
-    throw new Error("rootPath must be absolute for the selected platform");
+  if (!isAbsoluteRootPath(rootPath, serverPlatform)) {
+    throw new Error("rootPath must be absolute for the server platform");
   }
 
   const policies = isObject(value.policies) ? value.policies : {};
@@ -58,7 +70,7 @@ export const parseRegisterWorkspaceInput = (value: unknown): RegisterWorkspaceIn
     workspaceId,
     displayName: displayName.trim(),
     rootPath,
-    platform,
+    platform: serverPlatform,
     policies: {
       allowGit:
         typeof policies.allowGit === "boolean"
