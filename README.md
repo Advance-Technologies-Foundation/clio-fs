@@ -61,6 +61,7 @@ Current design documents:
 - the server side includes an operator-facing UI
 - installation, verification, and startup must be simple and documented
 - the repository is structured as a `pnpm` TypeScript monorepo
+- server and client implementations should expose filesystem and storage test seams so default tests can run on mocks instead of real disk
 
 ## Standard Commands
 

@@ -31,6 +31,7 @@ Use these documents as the contract set:
 - do not bypass workspace scoping
 - do not leave behavior changes undocumented
 - do not leave behavior changes untested when a reasonable test seam exists
+- do not bind core server or client tests to real disk IO when adapter-based mocks can verify the same behavior faster and more reliably
 
 ## Documentation And Test Expectations
 
@@ -46,6 +47,12 @@ At minimum:
 - bug fix -> add a regression test when feasible
 - new feature -> add success-path and failure-path tests
 - sync semantics update -> add tests for revision, retry, and conflict behavior
+
+For server and client sync logic, prefer:
+
+- mocked filesystem adapters for default API and sync tests
+- mocked storage adapters for default state and persistence tests
+- opt-in real-disk scenarios only for heavier integration coverage
 
 For UI changes, contributors should also verify the result in a browser automation tool such as `chromedevtools` or `Playwright`.
 

@@ -208,6 +208,12 @@ Prefer tests that verify:
 - workspace isolation
 - reconnect and retry semantics
 
+Testing seam rule:
+
+- both server and client code should be structured so core behavior can be tested against mocked filesystem and storage adapters
+- do not couple sync semantics tests to real disk IO by default when a clean abstraction can avoid it
+- real disk or heavier end-to-end scenarios should be opt-in, not the primary validation path
+
 For UI changes, do not stop at unit or integration tests alone.
 
 Agents are expected to verify visible UI behavior with a browser automation tool:

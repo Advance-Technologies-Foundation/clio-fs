@@ -103,6 +103,13 @@ Responsibilities:
 - normalize file events from both `Creatio` and API-originated writes
 - isolate multiple workspaces and multiple clients safely
 
+Testability requirement:
+
+- filesystem access and local persistence should sit behind explicit adapters
+- server control-plane logic should be testable against mocked filesystem and storage implementations
+- the same principle should be used for the local mirror client once implemented
+- real disk based scenarios remain valuable, but they should be heavier opt-in validation, not the default way to verify sync semantics
+
 Journal ownership rule:
 
 - the **Workspace API service is the only component allowed to append `ChangeEvent` records and advance workspace revisions**
@@ -234,6 +241,12 @@ Responsibilities:
 - keep local metadata database
 - surface conflicts explicitly
 - support paged or archive-based initial hydrate
+
+Client implementation requirement:
+
+- client filesystem operations and client-side persistence must be abstracted behind test seams
+- core sync behavior should be verifiable with mocked adapters without depending on a real local mirror directory
+- OS-specific filesystem behavior should be isolated near the adapter boundary, not spread across sync logic
 
 Local metadata per file:
 
