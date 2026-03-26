@@ -149,10 +149,93 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
         border-color: rgba(166, 61, 64, 0.28);
         background: rgba(166, 61, 64, 0.06);
       }
+      .field-row {
+        display: flex;
+        gap: 10px;
+        align-items: stretch;
+      }
+      .field-row input {
+        flex: 1;
+        min-width: 0;
+      }
+      .secondary-button {
+        border: 1px solid rgba(117,103,84,.28);
+        border-radius: 12px;
+        background: white;
+        color: var(--accent-strong);
+        padding: 12px 14px;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .helper-text {
+        margin-top: 8px;
+        color: var(--muted);
+        font: 13px/1.5 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
     </style>
   </head>
   <body>
     <main class="shell">${body}</main>
+    <script>
+      (() => {
+        const pickerButton = document.querySelector("[data-root-path-picker]");
+        if (!(pickerButton instanceof HTMLButtonElement)) {
+          return;
+        }
+
+        const targetId = pickerButton.getAttribute("data-target-input");
+        const targetInput = targetId ? document.getElementById(targetId) : null;
+        const statusNode = document.querySelector("[data-root-picker-status]");
+
+        const setStatus = (text, isError = false) => {
+          if (!(statusNode instanceof HTMLElement)) {
+            return;
+          }
+
+          statusNode.textContent = text;
+          statusNode.style.color = isError ? "var(--danger)" : "var(--muted)";
+        };
+
+        pickerButton.addEventListener("click", async () => {
+          if (!(targetInput instanceof HTMLInputElement)) {
+            return;
+          }
+
+          pickerButton.disabled = true;
+          setStatus("Opening folder picker...");
+
+          try {
+            const response = await fetch("/native/select-directory", { method: "POST" });
+
+            if (response.status === 204) {
+              setStatus("Folder selection was canceled.");
+              return;
+            }
+
+            if (!response.ok) {
+              const error = await response.json().catch(() => ({ error: { message: "Folder picker failed" } }));
+              setStatus(error?.error?.message ?? "Folder picker failed", true);
+              return;
+            }
+
+            const payload = await response.json();
+            if (typeof payload.path === "string" && payload.path.length > 0) {
+              targetInput.value = payload.path;
+              setStatus("Selected folder: " + payload.path);
+              targetInput.dispatchEvent(new Event("input", { bubbles: true }));
+              return;
+            }
+
+            setStatus("Folder picker returned no path.", true);
+          } catch (error) {
+            setStatus(error instanceof Error ? error.message : "Folder picker failed", true);
+          } finally {
+            pickerButton.disabled = false;
+          }
+        });
+      })();
+    </script>
   </body>
 </html>`;
 
@@ -219,7 +302,11 @@ export const renderWorkspaceRegistrationForm = (values?: {
       </div>
       <div style="display:grid;gap:6px;">
         <label for="rootPath">Root Path</label>
-        <input id="rootPath" name="rootPath" required value="${escapeHtml(values?.rootPath ?? "")}" style="padding:12px 14px;border:1px solid rgba(117,103,84,.28);border-radius:12px;background:white;" />
+        <div class="field-row">
+          <input id="rootPath" name="rootPath" required value="${escapeHtml(values?.rootPath ?? "")}" style="padding:12px 14px;border:1px solid rgba(117,103,84,.28);border-radius:12px;background:white;" />
+          <button type="button" class="secondary-button" data-root-path-picker data-target-input="rootPath">Choose Folder</button>
+        </div>
+        <div class="helper-text" data-root-picker-status>Use the button to select a folder with the native file explorer.</div>
       </div>
       <div style="display:grid;gap:6px;">
         <label for="platform">Platform</label>

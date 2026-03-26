@@ -79,7 +79,8 @@ const startTestServer = async () => {
     port: 0,
     controlPlaneBaseUrl: "http://127.0.0.1:4010",
     controlPlaneAuthToken: "test-token",
-    fetchImpl: createFetchStub() as typeof fetch
+    fetchImpl: createFetchStub() as typeof fetch,
+    selectDirectory: async () => "/srv/clio/picked-from-dialog"
   });
 
   await new Promise<void>((resolve) => {
@@ -112,6 +113,23 @@ test("renders dashboard with workspace content", async () => {
     assert.match(html, /Control plane visibility/i);
     assert.match(html, /Demo Main/);
     assert.match(html, /sync-core ready; workspaces=1/);
+    assert.match(html, /Choose Folder/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("returns a native-picked folder path", async () => {
+  const server = await startTestServer();
+
+  try {
+    const response = await fetch(`${server.baseUrl}/native/select-directory`, {
+      method: "POST"
+    });
+    const body = (await response.json()) as { path: string };
+
+    assert.equal(response.status, 200);
+    assert.equal(body.path, "/srv/clio/picked-from-dialog");
   } finally {
     await server.close();
   }

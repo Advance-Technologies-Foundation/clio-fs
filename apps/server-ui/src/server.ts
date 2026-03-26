@@ -1,4 +1,6 @@
+import { execFile } from "node:child_process";
 import { createServer, type ServerResponse } from "node:http";
+import { promisify } from "node:util";
 import { URL } from "node:url";
 import type {
   ApiErrorShape,
@@ -23,6 +25,7 @@ export interface ServerUiOptions {
   controlPlaneBaseUrl: string;
   controlPlaneAuthToken: string;
   fetchImpl?: typeof fetch;
+  selectDirectory?: () => Promise<string | null>;
 }
 
 export interface StartedServerUi {
@@ -43,6 +46,11 @@ const writeHtml = (response: ServerResponse, statusCode: number, html: string) =
   response.end(html);
 };
 
+const writeJson = (response: ServerResponse, statusCode: number, body: unknown) => {
+  response.writeHead(statusCode, { "content-type": "application/json; charset=utf-8" });
+  response.end(JSON.stringify(body));
+};
+
 const redirect = (response: ServerResponse, location: string) => {
   response.writeHead(303, { location });
   response.end();
@@ -56,6 +64,69 @@ const readFormBody = async (request: AsyncIterable<Buffer | string>) => {
   }
 
   return new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
+};
+
+const execFileAsync = promisify(execFile);
+
+const selectDirectoryWithNativeDialog = async (): Promise<string | null> => {
+  if (process.platform === "darwin") {
+    const { stdout } = await execFileAsync("osascript", [
+      "-e",
+      'try',
+      "-e",
+      'POSIX path of (choose folder with prompt "Select workspace root")',
+      "-e",
+      'on error number -128',
+      "-e",
+      'return ""',
+      "-e",
+      'end try'
+    ]);
+
+    const path = stdout.trim();
+    return path.length > 0 ? path : null;
+  }
+
+  if (process.platform === "win32") {
+    const { stdout } = await execFileAsync("powershell.exe", [
+      "-NoProfile",
+      "-Command",
+      [
+        "Add-Type -AssemblyName System.Windows.Forms;",
+        "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog;",
+        '$dialog.Description = "Select workspace root";',
+        'if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {',
+        "  Write-Output $dialog.SelectedPath",
+        "}"
+      ].join(" ")
+    ]);
+
+    const path = stdout.trim();
+    return path.length > 0 ? path : null;
+  }
+
+  try {
+    const { stdout } = await execFileAsync("zenity", [
+      "--file-selection",
+      "--directory",
+      "--title=Select workspace root"
+    ]);
+    const path = stdout.trim();
+    return path.length > 0 ? path : null;
+  } catch {
+    try {
+      const { stdout } = await execFileAsync("kdialog", [
+        "--getexistingdirectory",
+        ".",
+        "--title",
+        "Select workspace root"
+      ]);
+      const path = stdout.trim();
+      return path.length > 0 ? path : null;
+    } catch {
+      throw new Error("No supported native folder picker is available on this machine");
+    }
+  }
 };
 
 const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient => {
@@ -228,6 +299,7 @@ const renderError = (message: string) =>
 
 export const createServerUi = (options: ServerUiOptions) => {
   const client = createControlPlaneClient(options);
+  const selectDirectory = options.selectDirectory ?? selectDirectoryWithNativeDialog;
 
   return createServer(async (request, response) => {
     try {
@@ -262,6 +334,31 @@ export const createServerUi = (options: ServerUiOptions) => {
               formValues: input
             })
           );
+          return;
+        }
+      }
+
+      if (method === "POST" && url.pathname === "/native/select-directory") {
+        try {
+          const selectedPath = await selectDirectory();
+
+          if (!selectedPath) {
+            response.writeHead(204);
+            response.end();
+            return;
+          }
+
+          writeJson(response, 200, { path: selectedPath });
+          return;
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Native folder picker failed";
+          writeJson(response, 500, {
+            error: {
+              code: "native_picker_failed",
+              message
+            }
+          });
           return;
         }
       }
