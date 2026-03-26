@@ -115,6 +115,7 @@ test("renders dashboard with workspace content", async () => {
     assert.match(html, /sync-core ready; workspaces=1/);
     assert.match(html, /Choose Folder/);
     assert.match(html, /Platform is determined by the server/i);
+    assert.match(html, /Demo Main \(demo-main\)/);
   } finally {
     await server.close();
   }
@@ -155,6 +156,24 @@ test("submits workspace registration form and redirects to detail page", async (
 
     assert.equal(response.status, 303);
     assert.equal(response.headers.get("location"), "/workspaces/created-from-form");
+  } finally {
+    await server.close();
+  }
+});
+
+test("allows omitting display name in workspace registration form", async () => {
+  const server = await startTestServer();
+
+  try {
+    const response = await fetch(`${server.baseUrl}/`, { method: "GET" });
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.doesNotMatch(html, /name="displayName" required/);
+    assert.match(html, /Optional\. If omitted, the UI will show only the workspace ID\./);
+    assert.match(html, /<th>Name<\/th>/);
+    assert.doesNotMatch(html, /<th>Display Name<\/th>/);
+    assert.doesNotMatch(html, /<th>Workspace ID<\/th>/);
   } finally {
     await server.close();
   }

@@ -109,6 +109,38 @@ test("registers and retrieves a workspace", async () => {
   }
 });
 
+test("allows workspace registration without display name", async () => {
+  const server = await startTestServer();
+
+  try {
+    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "workspace-id-only",
+        rootPath: "/srv/clio/workspaces/id-only"
+      })
+    });
+
+    const detailResponse = await fetch(`${server.baseUrl}/workspaces/workspace-id-only`, {
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`
+      }
+    });
+    const detailBody = await detailResponse.json();
+
+    assert.equal(createResponse.status, 201);
+    assert.equal(detailResponse.status, 200);
+    assert.equal(detailBody.workspaceId, "workspace-id-only");
+    assert.equal(detailBody.displayName, undefined);
+  } finally {
+    await server.close();
+  }
+});
+
 test("rejects invalid root paths during registration", async () => {
   const server = await startTestServer();
 

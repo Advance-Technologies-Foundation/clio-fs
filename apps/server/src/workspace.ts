@@ -52,8 +52,11 @@ export const parseRegisterWorkspaceInput = (
     throw new Error("workspaceId must match /^[a-z0-9][a-z0-9-_]*$/");
   }
 
-  if (typeof displayName !== "string" || displayName.trim().length === 0) {
-    throw new Error("displayName must be a non-empty string");
+  if (
+    typeof displayName !== "undefined" &&
+    typeof displayName !== "string"
+  ) {
+    throw new Error("displayName must be omitted or a non-empty string");
   }
 
   if (typeof rootPath !== "string" || rootPath.trim().length === 0) {
@@ -68,7 +71,10 @@ export const parseRegisterWorkspaceInput = (
 
   return {
     workspaceId,
-    displayName: displayName.trim(),
+    displayName:
+      typeof displayName === "string" && displayName.trim().length > 0
+        ? displayName.trim()
+        : undefined,
     rootPath,
     platform: serverPlatform,
     policies: {

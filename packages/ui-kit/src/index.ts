@@ -20,6 +20,16 @@ export const renderStatusBadge = (status: WorkspaceStatus) =>
     status
   )}</span>`;
 
+export const formatWorkspaceLabel = (workspace: Pick<WorkspaceRecord, "workspaceId" | "displayName">) => {
+  const displayName = workspace.displayName?.trim();
+
+  if (displayName) {
+    return `${displayName} (${workspace.workspaceId})`;
+  }
+
+  return workspace.workspaceId;
+};
+
 export const renderPage = (title: string, body: string) => `<!doctype html>
 <html lang="en">
   <head>
@@ -186,7 +196,42 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
 
         const targetId = pickerButton.getAttribute("data-target-input");
         const targetInput = targetId ? document.getElementById(targetId) : null;
+        const workspaceIdInput = document.getElementById("workspaceId");
+        const displayNameInput = document.getElementById("displayName");
         const statusNode = document.querySelector("[data-root-picker-status]");
+
+        const inferFolderName = (selectedPath) => {
+          const normalized = selectedPath.replace(/[\\\\/]+$/, "");
+          const parts = normalized.split(/[\\\\/]/).filter(Boolean);
+          return parts.at(-1) ?? "";
+        };
+
+        const slugifyWorkspaceId = (name) =>
+          name
+            .normalize("NFKD")
+            .replace(/[^\\w\\s-]/g, "")
+            .trim()
+            .toLowerCase()
+            .replace(/[\\s_]+/g, "-")
+            .replace(/-+/g, "-")
+            .replace(/^-|-$/g, "");
+
+        const applyFolderDefaults = (selectedPath) => {
+          const folderName = inferFolderName(selectedPath);
+
+          if (workspaceIdInput instanceof HTMLInputElement && workspaceIdInput.value.trim() === "") {
+            const candidate = slugifyWorkspaceId(folderName);
+            if (candidate) {
+              workspaceIdInput.value = candidate;
+              workspaceIdInput.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+          }
+
+          if (displayNameInput instanceof HTMLInputElement && displayNameInput.value.trim() === "") {
+            displayNameInput.value = folderName;
+            displayNameInput.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+        };
 
         const setStatus = (text, isError = false) => {
           if (!(statusNode instanceof HTMLElement)) {
@@ -222,6 +267,7 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
             const payload = await response.json();
             if (typeof payload.path === "string" && payload.path.length > 0) {
               targetInput.value = payload.path;
+              applyFolderDefaults(payload.path);
               setStatus("Selected folder: " + payload.path);
               targetInput.dispatchEvent(new Event("input", { bubbles: true }));
               return;
@@ -256,9 +302,8 @@ export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
       (workspace) => `
         <tr>
           <td><a href="/workspaces/${encodeURIComponent(workspace.workspaceId)}">${escapeHtml(
-            workspace.displayName
+            formatWorkspaceLabel(workspace)
           )}</a></td>
-          <td>${escapeHtml(workspace.workspaceId)}</td>
           <td>${renderStatusBadge(workspace.status)}</td>
           <td>${String(workspace.currentRevision)}</td>
         </tr>
@@ -271,8 +316,7 @@ export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
       <table>
         <thead>
           <tr>
-            <th>Display Name</th>
-            <th>Workspace ID</th>
+            <th>Name</th>
             <th>Status</th>
             <th>Revision</th>
           </tr>
@@ -300,7 +344,8 @@ export const renderWorkspaceRegistrationForm = (
       </div>
       <div style="display:grid;gap:6px;">
         <label for="displayName">Display Name</label>
-        <input id="displayName" name="displayName" required value="${escapeHtml(values?.displayName ?? "")}" style="padding:12px 14px;border:1px solid rgba(117,103,84,.28);border-radius:12px;background:white;" />
+        <input id="displayName" name="displayName" value="${escapeHtml(values?.displayName ?? "")}" style="padding:12px 14px;border:1px solid rgba(117,103,84,.28);border-radius:12px;background:white;" />
+        <div class="helper-text">Optional. If omitted, the UI will show only the workspace ID.</div>
       </div>
       <div style="display:grid;gap:6px;">
         <label for="rootPath">Root Path</label>

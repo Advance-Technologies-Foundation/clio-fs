@@ -11,7 +11,7 @@ export interface WorkspacePolicies {
 
 export interface WorkspaceDescriptor {
   workspaceId: WorkspaceId;
-  displayName: string;
+  displayName?: string;
   currentRevision: Revision;
 }
 
@@ -24,7 +24,7 @@ export interface WorkspaceRecord extends WorkspaceDescriptor {
 
 export interface RegisterWorkspaceRequest {
   workspaceId: WorkspaceId;
-  displayName: string;
+  displayName?: string;
   rootPath: string;
   policies?: Partial<WorkspacePolicies>;
 }

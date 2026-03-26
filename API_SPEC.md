@@ -195,13 +195,13 @@ Response `200`:
 Registers a workspace with the control plane.
 
 `platform` is not supplied by the caller. The control plane derives it from the server runtime and stores it in workspace metadata.
+`displayName` is optional. If omitted, consumers should fall back to `workspaceId` for display.
 
 Request:
 
 ```json
 {
   "workspaceId": "crm-prod-main",
-  "displayName": "CRM Prod Main",
   "rootPath": "D:/creatio/workspaces/main",
   "policies": {
     "allowGit": true,

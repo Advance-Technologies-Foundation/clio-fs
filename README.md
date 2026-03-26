@@ -95,6 +95,7 @@ Implemented today:
   - `GET /workspaces/:workspaceId`
 - validation for `workspaceId` and absolute `rootPath`
 - server-derived `platform` during workspace registration
+- optional `displayName`; most workspaces can rely on `workspaceId` alone
 - file-backed workspace registry stored in `.clio-fs/server/workspaces.json`
 - integration tests covering health, auth, registration, validation, and duplicate detection
 - a compiled dev flow for `@clio-fs/server` so `corepack pnpm --filter @clio-fs/server dev` runs against emitted `dist`
@@ -103,6 +104,8 @@ Implemented today:
 - registration form in the UI for creating workspaces without `curl`
 - native `Choose Folder` button for selecting `rootPath` through the operating system file explorer dialog
 - readonly `Platform` field in the UI; it is determined by the server and cannot be changed from the tool
+- auto-fill of `workspaceId` and `displayName` from the selected folder when those fields are empty
+- simplified workspace list UI that shows either `Display Name (workspaceId)` or just `workspaceId`
 - integration tests covering dashboard rendering, workspace detail rendering, form submission, and not-found handling
 - a compiled dev flow for `@clio-fs/server-ui`
 

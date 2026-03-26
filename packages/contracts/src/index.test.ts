@@ -5,10 +5,10 @@ import type { WorkspaceDescriptor } from "@clio-fs/contracts";
 test("workspace descriptor shape stays minimal and explicit", () => {
   const workspace: WorkspaceDescriptor = {
     workspaceId: "main",
-    displayName: "Main",
     currentRevision: 1
   };
 
   assert.equal(workspace.workspaceId, "main");
   assert.equal(workspace.currentRevision, 1);
+  assert.equal(workspace.displayName, undefined);
 });

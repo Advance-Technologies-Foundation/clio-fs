@@ -10,6 +10,7 @@ import type {
   WorkspaceRecord
 } from "@clio-fs/contracts";
 import {
+  formatWorkspaceLabel,
   renderMetricCard,
   renderNotice,
   renderPage,
@@ -240,15 +241,17 @@ const renderDashboard = async (
 
 const renderWorkspaceDetail = (workspace: WorkspaceRecord) =>
   renderPage(
-    `${workspace.displayName} | Clio FS`,
+    `${formatWorkspaceLabel(workspace)} | Clio FS`,
     `
       <div class="nav"><a href="/">← Back to dashboard</a></div>
       <section class="hero" style="margin-bottom:20px;">
         <div class="eyebrow">Workspace Detail</div>
-        <h1>${escapeHtml(workspace.displayName)}</h1>
+        <h1>${escapeHtml(formatWorkspaceLabel(workspace))}</h1>
         <p class="lede">Operator view for workspace <code>${escapeHtml(
           workspace.workspaceId
-        )}</code>.</p>
+        )}</code>${workspace.displayName?.trim() ? ` with explicit display name <code>${escapeHtml(
+          workspace.displayName
+        )}</code>` : ""}.</p>
       </section>
       <section class="grid">
         ${renderMetricCard("Revision", String(workspace.currentRevision))}
@@ -316,9 +319,10 @@ export const createServerUi = (options: ServerUiOptions) => {
 
       if (method === "POST" && url.pathname === "/workspaces/register") {
         const form = await readFormBody(request);
+        const displayName = form.get("displayName")?.toString().trim() ?? "";
         const input: RegisterWorkspaceRequest = {
           workspaceId: form.get("workspaceId")?.toString() ?? "",
-          displayName: form.get("displayName")?.toString() ?? "",
+          displayName: displayName.length > 0 ? displayName : undefined,
           rootPath: form.get("rootPath")?.toString() ?? ""
         };
 

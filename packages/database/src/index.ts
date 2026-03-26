@@ -90,7 +90,7 @@ const isWorkspaceRecord = (value: unknown): value is WorkspaceRecord => {
 
   return (
     typeof record.workspaceId === "string" &&
-    typeof record.displayName === "string" &&
+    (typeof record.displayName === "undefined" || typeof record.displayName === "string") &&
     typeof record.rootPath === "string" &&
     (record.platform === "windows" || record.platform === "macos" || record.platform === "linux") &&
     (record.status === "active" || record.status === "disabled") &&

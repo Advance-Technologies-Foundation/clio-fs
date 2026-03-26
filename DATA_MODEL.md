@@ -46,7 +46,7 @@ Represents one canonical project root on the server.
 Fields:
 
 - `workspaceId`
-- `displayName`
+- `displayName` optional
 - `rootPath`
 - `platform`
 - `status`
@@ -60,7 +60,6 @@ Example:
 ```json
 {
   "workspaceId": "crm-prod-main",
-  "displayName": "CRM Prod Main",
   "rootPath": "D:/creatio/workspaces/main",
   "platform": "windows",
   "status": "active",
@@ -74,6 +73,7 @@ Example:
 Notes:
 
 - `workspaceId` must be immutable
+- `displayName` is optional presentation metadata and may be absent
 - `rootPath` must be unique within the control plane unless you intentionally support aliases
 
 ## 2. WorkspacePolicy
