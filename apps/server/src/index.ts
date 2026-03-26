@@ -1,5 +1,12 @@
 import { appConfig } from "@clio-fs/config";
-import { healthSummary } from "@clio-fs/sync-core";
+import { createInMemoryWorkspaceRegistry } from "@clio-fs/database";
+import { startWorkspaceServer } from "./server.js";
 
-console.log(`[server] ${appConfig.server.name} starting on port ${appConfig.server.port}`);
-console.log(`[server] ${healthSummary()}`);
+const registry = createInMemoryWorkspaceRegistry();
+
+await startWorkspaceServer({
+  host: appConfig.server.host,
+  port: appConfig.server.port,
+  authToken: appConfig.server.authToken,
+  registry
+});

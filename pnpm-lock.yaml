@@ -55,7 +55,11 @@ importers:
 
   packages/contracts: {}
 
-  packages/database: {}
+  packages/database:
+    dependencies:
+      '@clio-fs/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/sync-core:
     dependencies:

@@ -78,6 +78,24 @@ App-level examples:
 - `corepack pnpm --filter @clio-fs/server-ui dev`
 - `corepack pnpm --filter @clio-fs/client dev`
 
+## Current Implementation Status
+
+Phase 1 has started in `apps/server`.
+
+Implemented today:
+
+- a working TypeScript server entrypoint with a minimal HTTP control plane
+- bearer-token auth for protected workspace routes
+- in-memory multi-workspace registry for early development
+- first endpoints:
+  - `GET /health`
+  - `GET /workspaces`
+  - `POST /workspaces/register`
+  - `GET /workspaces/:workspaceId`
+- validation for `workspaceId`, `platform`, and absolute `rootPath`
+- integration tests covering health, auth, registration, validation, and duplicate detection
+- a compiled dev flow for `@clio-fs/server` so `corepack pnpm --filter @clio-fs/server dev` runs against emitted `dist`
+
 ## Recommended Reading Order
 
 1. [ARCHITECTURE.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/ARCHITECTURE.md)
@@ -88,11 +106,9 @@ App-level examples:
 
 ## Next Step
 
-The next practical milestone is scaffolding:
+The next practical milestone is extending implementation beyond the initial server slice:
 
-- server control plane
-- server control UI
-- local mirror daemon
-- shared contract/types package
-
-against the frozen MVP semantics already documented in this repository.
+- persistent workspace registry storage
+- workspace snapshot and change-feed endpoints
+- server control UI shell
+- local mirror daemon sync loop
