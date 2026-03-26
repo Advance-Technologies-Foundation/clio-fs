@@ -9,6 +9,7 @@ Before proposing implementation changes:
 1. check whether the change affects architecture, API, data model, or sync semantics
 2. update the corresponding document first
 3. keep MVP constraints explicit instead of widening them implicitly
+4. keep tests and usage documentation aligned with the change
 
 ## Source Documents
 
@@ -27,6 +28,24 @@ Use these documents as the contract set:
 - do not introduce `.git` mirroring in MVP
 - do not weaken conflict safety to optimize for convenience
 - do not bypass workspace scoping
+- do not leave behavior changes undocumented
+- do not leave behavior changes untested when a reasonable test seam exists
+
+## Documentation And Test Expectations
+
+If a change affects behavior, contributors are expected to update:
+
+- the relevant design document
+- [README.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/README.md) if setup, usage, or structure changed
+- tests covering the changed behavior
+
+At minimum:
+
+- bug fix -> add a regression test when feasible
+- new feature -> add success-path and failure-path tests
+- sync semantics update -> add tests for revision, retry, and conflict behavior
+
+If tests are not added, the PR should explain why.
 
 ## Pull Requests
 
@@ -36,6 +55,8 @@ Every PR should:
 - name the affected documents or components
 - explain whether behavior, scope, or only wording changed
 - note any unresolved tradeoffs
+- state what tests were added or updated
+- state what docs were updated
 
 ## Review Focus
 
@@ -46,6 +67,8 @@ Reviews should prioritize:
 - replay and recovery semantics
 - conflict safety
 - path and auth boundaries
+- test coverage for the changed behavior
+- whether the repo remains easy to understand and use
 
 ## Commit Style
 

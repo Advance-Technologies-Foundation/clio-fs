@@ -26,6 +26,8 @@ Optimize for:
 - conflict safety
 - workspace isolation
 - implementation speed through explicit contracts
+- repository consistency
+- ease of use for the next maintainer or agent
 
 Do **not** optimize first for:
 
@@ -123,6 +125,7 @@ To move fast without breaking the design:
 - keep transport and storage choices boring
 - use idempotency and revision checks instead of implicit coordination
 - avoid adding optional behavior to MVP unless a document already requires it
+- leave the repository in a more runnable, more documented, and more testable state than you found it
 
 ## Implementation Bias
 
@@ -154,6 +157,54 @@ If your change affects behavior, update the matching document in the same change
 
 Do not let code outrun the documented contract.
 
+If you add implementation code, also update:
+
+- [README.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/README.md) when setup, usage, or project structure changed
+- developer-facing docs when commands, env vars, or operational flows changed
+
+Documentation must stay current enough that the next agent can start work without reconstructing intent from code alone.
+
+## Testing Rules
+
+When implementation code exists, agents are expected to add or update tests for every meaningful behavior change.
+
+Minimum rule:
+
+- bug fix -> add a regression test when feasible
+- new behavior -> add tests for success path and main failure path
+- sync semantics change -> add tests that cover revisioning, retries, and conflict behavior
+
+Do not ship behavior changes with no test coverage unless:
+
+- there is no reasonable test seam yet, and
+- the limitation is called out explicitly in the final summary and, if needed, in docs
+
+Prefer tests that verify:
+
+- revision ownership
+- deduplication of watcher echoes
+- conflict-blocked path behavior
+- workspace isolation
+- reconnect and retry semantics
+
+## Consistency Rules
+
+Agents are responsible for keeping the repository internally consistent.
+
+That means:
+
+- docs, code, and tests must agree
+- examples should match the current API and data model
+- filenames and directory structure should remain easy to navigate
+- setup and usage instructions should stay simple and current
+
+If you introduce new code modules, also introduce the minimum supporting artifacts needed to use them simply:
+
+- entrypoint documentation
+- test location
+- basic run instructions
+- clear naming
+
 ## Review Checklist For Agents
 
 Before finishing, verify:
@@ -165,6 +216,8 @@ Before finishing, verify:
 - are retry and reconnect semantics still coherent?
 - are subtree moves and path rebasing still correct?
 - did the docs stay aligned with the code?
+- did tests get added or updated for the changed behavior?
+- would a new agent understand how to run or extend this change without extra tribal knowledge?
 
 ## Commit Guidance
 
