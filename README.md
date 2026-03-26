@@ -70,6 +70,7 @@ Root-level commands:
 - `corepack pnpm check`
 - `corepack pnpm test`
 - `corepack pnpm dev`
+- `corepack pnpm run server`
 - `corepack pnpm build`
 
 App-level examples:
@@ -101,6 +102,17 @@ Implemented today:
 - a compiled dev flow for `@clio-fs/server-ui`
 
 ## Run The UI Locally
+
+Single-command server-side startup:
+
+`corepack pnpm run server`
+
+This starts:
+
+- `@clio-fs/server` on `http://127.0.0.1:4010`
+- `@clio-fs/server-ui` on `http://127.0.0.1:4020`
+
+If you prefer separate terminals:
 
 1. Start the control plane:
 

@@ -1,0 +1,29 @@
+import { spawn } from "node:child_process";
+
+const tasks = [
+  ["corepack", ["pnpm", "--filter", "@clio-fs/server", "dev"]],
+  ["corepack", ["pnpm", "--filter", "@clio-fs/server-ui", "dev"]]
+];
+
+const children = tasks.map(([cmd, args]) =>
+  spawn(cmd, args, { stdio: "inherit", shell: process.platform === "win32" })
+);
+
+const shutdown = (code = 0) => {
+  for (const child of children) {
+    child.kill("SIGTERM");
+  }
+
+  process.exit(code);
+};
+
+for (const child of children) {
+  child.on("exit", (code) => {
+    if (code && code !== 0) {
+      shutdown(code);
+    }
+  });
+}
+
+process.on("SIGINT", () => shutdown(0));
+process.on("SIGTERM", () => shutdown(0));
