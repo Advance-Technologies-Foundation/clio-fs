@@ -301,3 +301,111 @@ test("returns a recursive snapshot manifest for a workspace", async () => {
     await server.close();
   }
 });
+
+test("materializes file contents for a workspace snapshot", async () => {
+  const mockFileSystem = createMockFileSystem();
+  mockFileSystem.addDirectory("/mock/materialize");
+  mockFileSystem.addDirectory("/mock/materialize/packages");
+  mockFileSystem.addDirectory("/mock/materialize/packages/Alpha");
+  mockFileSystem.addFile("/mock/materialize/root.txt", { content: "root-seed-v1\n" });
+  mockFileSystem.addFile("/mock/materialize/packages/Alpha/readme.txt", {
+    content: "alpha-seed-v1\n"
+  });
+
+  const server = await startTestServer({ filesystem: mockFileSystem });
+
+  try {
+    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "materialize-main",
+        rootPath: "/mock/materialize"
+      })
+    });
+
+    assert.equal(createResponse.status, 201);
+
+    const materializeResponse = await fetch(
+      `${server.baseUrl}/workspaces/materialize-main/snapshot-materialize`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${AUTH_TOKEN}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          paths: ["packages/Alpha/readme.txt", "root.txt", "root.txt"]
+        })
+      }
+    );
+    const materializeBody = await materializeResponse.json();
+
+    assert.equal(materializeResponse.status, 200);
+    assert.equal(materializeBody.workspaceId, "materialize-main");
+    assert.deepEqual(materializeBody.files, [
+      {
+        path: "packages/Alpha/readme.txt",
+        content: "alpha-seed-v1\n",
+        fileRevision: 0,
+        workspaceRevision: 0
+      },
+      {
+        path: "root.txt",
+        content: "root-seed-v1\n",
+        fileRevision: 0,
+        workspaceRevision: 0
+      }
+    ]);
+  } finally {
+    await server.close();
+  }
+});
+
+test("rejects invalid materialize paths", async () => {
+  const mockFileSystem = createMockFileSystem();
+  mockFileSystem.addDirectory("/mock/materialize-invalid");
+  mockFileSystem.addFile("/mock/materialize-invalid/root.txt", { content: "root\n" });
+
+  const server = await startTestServer({ filesystem: mockFileSystem });
+
+  try {
+    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "materialize-invalid",
+        rootPath: "/mock/materialize-invalid"
+      })
+    });
+
+    assert.equal(createResponse.status, 201);
+
+    const materializeResponse = await fetch(
+      `${server.baseUrl}/workspaces/materialize-invalid/snapshot-materialize`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${AUTH_TOKEN}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          paths: ["../escape.txt"]
+        })
+      }
+    );
+    const materializeBody = await materializeResponse.json();
+
+    assert.equal(materializeResponse.status, 400);
+    assert.equal(materializeBody.error.code, "invalid_request");
+    assert.match(materializeBody.error.message, /inside the workspace root/i);
+  } finally {
+    await server.close();
+  }
+});

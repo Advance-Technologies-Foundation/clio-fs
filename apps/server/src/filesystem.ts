@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 
 export type FileSystemEntryKind = "file" | "directory";
 
@@ -16,6 +16,7 @@ export interface FileSystemStat {
 export interface FileSystemAdapter {
   readdir: (directoryPath: string) => FileSystemDirectoryEntry[];
   stat: (path: string) => FileSystemStat;
+  readFileText: (path: string) => string;
 }
 
 export const nodeFileSystem: FileSystemAdapter = {
@@ -35,5 +36,8 @@ export const nodeFileSystem: FileSystemAdapter = {
       size: stats.size,
       mtime: stats.mtime
     };
+  },
+  readFileText(path) {
+    return readFileSync(path, "utf8");
   }
 };

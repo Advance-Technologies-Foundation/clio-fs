@@ -11,6 +11,7 @@ interface MockNode {
   path: string;
   size: number;
   mtime: Date;
+  content?: string;
 }
 
 const toKey = (path: string) => normalize(path);
@@ -30,16 +31,19 @@ export class MockFileSystem implements FileSystemAdapter {
   addFile(
     path: string,
     options: {
+      content?: string;
       size?: number;
       mtime?: Date;
     } = {}
   ) {
     this.#ensureParentDirectories(path);
+    const content = options.content ?? "";
     this.#nodes.set(toKey(path), {
       kind: "file",
       path: toKey(path),
-      size: options.size ?? 0,
-      mtime: options.mtime ?? new Date("2026-03-27T00:00:00.000Z")
+      size: options.size ?? Buffer.byteLength(content, "utf8"),
+      mtime: options.mtime ?? new Date("2026-03-27T00:00:00.000Z"),
+      content
     });
   }
 
@@ -84,6 +88,16 @@ export class MockFileSystem implements FileSystemAdapter {
       size: node.size,
       mtime: node.mtime
     };
+  }
+
+  readFileText(path: string): string {
+    const node = this.#nodes.get(toKey(path));
+
+    if (!node || node.kind !== "file") {
+      throw new Error(`Mock file not found: ${path}`);
+    }
+
+    return node.content ?? "";
   }
 
   #ensureParentDirectories(path: string) {

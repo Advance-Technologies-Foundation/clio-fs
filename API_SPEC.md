@@ -298,6 +298,57 @@ Possible errors:
 
 - `404` if the workspace does not exist
 
+### POST /workspaces/{workspaceId}/snapshot-materialize
+
+Returns file contents for a requested set of workspace-relative file paths.
+
+Rules:
+
+- intended for initial hydrate after the client receives a snapshot manifest
+- request paths must be workspace-relative
+- request paths must not escape the workspace root
+- `.git` paths are rejected in MVP
+- duplicate request paths may be deduplicated by the server
+
+Request:
+
+```json
+{
+  "paths": [
+    "packages/MyPkg/descriptor.json",
+    "root.txt"
+  ]
+}
+```
+
+Response `200`:
+
+```json
+{
+  "workspaceId": "crm-prod-main",
+  "currentRevision": 18442,
+  "files": [
+    {
+      "path": "packages/MyPkg/descriptor.json",
+      "content": "{\n  \"name\": \"MyPkg\"\n}\n",
+      "fileRevision": 18442,
+      "workspaceRevision": 18442
+    },
+    {
+      "path": "root.txt",
+      "content": "server-seed-v1\n",
+      "fileRevision": 18442,
+      "workspaceRevision": 18442
+    }
+  ]
+}
+```
+
+Possible errors:
+
+- `400` if any path is invalid or not a file
+- `404` if the workspace does not exist
+
 ### DELETE /workspaces/{workspaceId}
 
 Deletes a workspace registration from the control plane.

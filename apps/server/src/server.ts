@@ -4,6 +4,7 @@ import { healthSummary } from "@clio-fs/sync-core";
 import {
   type ApiErrorShape,
   type RegisterWorkspaceInput,
+  type SnapshotMaterializeRequest,
   type WorkspacePlatform,
   type WorkspaceRecord
 } from "@clio-fs/contracts";
@@ -12,7 +13,7 @@ import {
   WorkspaceRegistryError
 } from "@clio-fs/database";
 import { type FileSystemAdapter, nodeFileSystem } from "./filesystem.js";
-import { createWorkspaceSnapshot } from "./snapshot.js";
+import { createWorkspaceSnapshot, materializeWorkspaceFiles } from "./snapshot.js";
 import { detectServerPlatform, parseRegisterWorkspaceInput } from "./workspace.js";
 
 export interface WorkspaceServerOptions {
@@ -153,6 +154,38 @@ const routeRequest = async (
       }
 
       throw error;
+    }
+  }
+
+  if (method === "POST" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/snapshot-materialize")) {
+    const [, , workspaceId] = url.pathname.split("/");
+
+    if (!workspaceId) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    const workspace = options.registry.get(workspaceId);
+
+    if (!workspace) {
+      writeError(response, 404, "not_found", "Workspace not found", { workspaceId });
+      return;
+    }
+
+    let input: SnapshotMaterializeRequest;
+
+    try {
+      input = (await readJsonBody(request)) as SnapshotMaterializeRequest;
+      json(
+        response,
+        200,
+        materializeWorkspaceFiles(workspace, input.paths, options.filesystem ?? nodeFileSystem)
+      );
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid materialize request";
+      writeError(response, 400, "invalid_request", message, { workspaceId });
+      return;
     }
   }
 

@@ -55,6 +55,23 @@ export interface WorkspaceSnapshotResponse {
   items: SnapshotEntry[];
 }
 
+export interface SnapshotMaterializeRequest {
+  paths: string[];
+}
+
+export interface SnapshotMaterializeFile {
+  path: string;
+  content: string;
+  fileRevision: Revision;
+  workspaceRevision: Revision;
+}
+
+export interface SnapshotMaterializeResponse {
+  workspaceId: WorkspaceId;
+  currentRevision: Revision;
+  files: SnapshotMaterializeFile[];
+}
+
 export interface RegisterWorkspaceInput extends RegisterWorkspaceRequest {}
 
 export interface ApiErrorShape {

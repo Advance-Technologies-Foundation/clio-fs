@@ -1,9 +1,38 @@
-import { join, relative } from "node:path";
-import type { SnapshotEntry, WorkspaceRecord, WorkspaceSnapshotResponse } from "@clio-fs/contracts";
+import { isAbsolute, join, normalize, relative } from "node:path";
+import type {
+  SnapshotEntry,
+  SnapshotMaterializeResponse,
+  WorkspaceRecord,
+  WorkspaceSnapshotResponse
+} from "@clio-fs/contracts";
 import { type FileSystemAdapter, type FileSystemDirectoryEntry, nodeFileSystem } from "./filesystem.js";
 
 const normalizeWorkspacePath = (rootPath: string, absolutePath: string) =>
   relative(rootPath, absolutePath).replaceAll("\\", "/");
+
+const ensureRelativeFilePath = (path: string) => {
+  if (typeof path !== "string" || path.trim().length === 0) {
+    throw new Error("materialize paths must be non-empty strings");
+  }
+
+  if (isAbsolute(path)) {
+    throw new Error("materialize paths must be workspace-relative");
+  }
+
+  const normalized = normalize(path).replaceAll("\\", "/");
+
+  if (
+    normalized === "." ||
+    normalized.startsWith("../") ||
+    normalized.includes("/../") ||
+    normalized === ".git" ||
+    normalized.startsWith(".git/")
+  ) {
+    throw new Error("materialize paths must stay inside the workspace root");
+  }
+
+  return normalized.replace(/^\.\/+/, "");
+};
 
 const isIgnoredEntry = (entry: FileSystemDirectoryEntry, relativePath: string) =>
   entry.name === ".git" || relativePath === ".git" || relativePath.startsWith(".git/");
@@ -74,5 +103,41 @@ export const createWorkspaceSnapshot = (
     workspaceId: workspace.workspaceId,
     currentRevision: workspace.currentRevision,
     items: entries
+  };
+};
+
+export const materializeWorkspaceFiles = (
+  workspace: WorkspaceRecord,
+  paths: string[],
+  filesystem: FileSystemAdapter = nodeFileSystem
+): SnapshotMaterializeResponse => {
+  if (!Array.isArray(paths)) {
+    throw new Error("materialize request must provide a paths array");
+  }
+
+  const uniquePaths = [...new Set(paths.map(ensureRelativeFilePath))].sort((left, right) =>
+    left.localeCompare(right)
+  );
+
+  const files = uniquePaths.map((path) => {
+    const absolutePath = join(workspace.rootPath, path);
+    const stats = filesystem.stat(absolutePath);
+
+    if (stats.kind !== "file") {
+      throw new Error(`materialize path is not a file: ${path}`);
+    }
+
+    return {
+      path,
+      content: filesystem.readFileText(absolutePath),
+      fileRevision: workspace.currentRevision,
+      workspaceRevision: workspace.currentRevision
+    };
+  });
+
+  return {
+    workspaceId: workspace.workspaceId,
+    currentRevision: workspace.currentRevision,
+    files
   };
 };
