@@ -197,7 +197,6 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
         const targetId = pickerButton.getAttribute("data-target-input");
         const targetInput = targetId ? document.getElementById(targetId) : null;
         const workspaceIdInput = document.getElementById("workspaceId");
-        const displayNameInput = document.getElementById("displayName");
         const statusNode = document.querySelector("[data-root-picker-status]");
 
         const inferFolderName = (selectedPath) => {
@@ -227,10 +226,6 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
             }
           }
 
-          if (displayNameInput instanceof HTMLInputElement && displayNameInput.value.trim() === "") {
-            displayNameInput.value = folderName;
-            displayNameInput.dispatchEvent(new Event("input", { bubbles: true }));
-          }
         };
 
         const setStatus = (text, isError = false) => {
@@ -306,6 +301,15 @@ export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
           )}</a></td>
           <td>${renderStatusBadge(workspace.status)}</td>
           <td>${String(workspace.currentRevision)}</td>
+          <td>
+            <form method="post" action="/workspaces/${encodeURIComponent(
+              workspace.workspaceId
+            )}/delete" onsubmit="return confirm('Delete workspace ${escapeHtml(
+              workspace.workspaceId
+            )}?');">
+              <button type="submit" class="secondary-button">Delete</button>
+            </form>
+          </td>
         </tr>
       `
     )
@@ -319,6 +323,7 @@ export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
             <th>Name</th>
             <th>Status</th>
             <th>Revision</th>
+            <th>Actions</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -345,7 +350,7 @@ export const renderWorkspaceRegistrationForm = (
       <div style="display:grid;gap:6px;">
         <label for="displayName">Display Name</label>
         <input id="displayName" name="displayName" value="${escapeHtml(values?.displayName ?? "")}" style="padding:12px 14px;border:1px solid rgba(117,103,84,.28);border-radius:12px;background:white;" />
-        <div class="helper-text">Optional. If omitted, the UI will show only the workspace ID.</div>
+        <div class="helper-text">Optional. If omitted, the UI will show only the workspace ID. Folder selection no longer fills this field automatically.</div>
       </div>
       <div style="display:grid;gap:6px;">
         <label for="rootPath">Root Path</label>

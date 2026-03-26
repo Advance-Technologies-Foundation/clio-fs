@@ -57,6 +57,10 @@ const createFetchStub = () => {
       );
     }
 
+    if (url.pathname === `/workspaces/${workspace.workspaceId}` && (init?.method ?? "GET") === "DELETE") {
+      return new Response(null, { status: 204 });
+    }
+
     if (url.pathname === `/workspaces/${workspace.workspaceId}`) {
       return new Response(JSON.stringify(workspace), {
         status: 200,
@@ -116,6 +120,7 @@ test("renders dashboard with workspace content", async () => {
     assert.match(html, /Choose Folder/);
     assert.match(html, /Platform is determined by the server/i);
     assert.match(html, /Demo Main \(demo-main\)/);
+    assert.match(html, /Delete/);
   } finally {
     await server.close();
   }
@@ -132,6 +137,22 @@ test("returns a native-picked folder path", async () => {
 
     assert.equal(response.status, 200);
     assert.equal(body.path, "/srv/clio/picked-from-dialog");
+  } finally {
+    await server.close();
+  }
+});
+
+test("deletes workspace from the UI and redirects to dashboard", async () => {
+  const server = await startTestServer();
+
+  try {
+    const response = await fetch(`${server.baseUrl}/workspaces/demo-main/delete`, {
+      method: "POST",
+      redirect: "manual"
+    });
+
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.get("location"), "/");
   } finally {
     await server.close();
   }

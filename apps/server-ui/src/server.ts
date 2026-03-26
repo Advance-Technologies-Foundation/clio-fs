@@ -40,6 +40,7 @@ interface ControlPlaneClient {
   listWorkspaces: () => Promise<WorkspaceRecord[]>;
   getWorkspace: (workspaceId: string) => Promise<WorkspaceRecord | null>;
   registerWorkspace: (input: RegisterWorkspaceRequest) => Promise<{ workspaceId: string }>;
+  deleteWorkspace: (workspaceId: string) => Promise<void>;
 }
 
 const writeHtml = (response: ServerResponse, statusCode: number, html: string) => {
@@ -197,6 +198,24 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
         },
         body: JSON.stringify(input)
       });
+    },
+    async deleteWorkspace(workspaceId: string) {
+      const response = await fetchImpl(
+        new URL(`/workspaces/${encodeURIComponent(workspaceId)}`, options.controlPlaneBaseUrl),
+        {
+          method: "DELETE",
+          headers: {
+            authorization: `Bearer ${options.controlPlaneAuthToken}`
+          }
+        }
+      );
+
+      if (response.status === 204) {
+        return;
+      }
+
+      const error = (await response.json()) as ApiErrorShape;
+      throw new Error(error.error.message);
     }
   };
 };
@@ -338,6 +357,32 @@ export const createServerUi = (options: ServerUiOptions) => {
             await renderDashboard(client, {
               notice: { tone: "error", message },
               formValues: input,
+              serverPlatform
+            })
+          );
+          return;
+        }
+      }
+
+      if (method === "POST" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/delete")) {
+        const [, , workspaceId] = url.pathname.split("/");
+
+        if (!workspaceId) {
+          writeHtml(response, 404, renderNotFound());
+          return;
+        }
+
+        try {
+          await client.deleteWorkspace(workspaceId);
+          redirect(response, "/");
+          return;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to delete workspace";
+          writeHtml(
+            response,
+            400,
+            await renderDashboard(client, {
+              notice: { tone: "error", message },
               serverPlatform
             })
           );

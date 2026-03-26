@@ -93,6 +93,7 @@ Implemented today:
   - `GET /workspaces`
   - `POST /workspaces/register`
   - `GET /workspaces/:workspaceId`
+  - `DELETE /workspaces/:workspaceId`
 - validation for `workspaceId` and absolute `rootPath`
 - server-derived `platform` during workspace registration
 - optional `displayName`; most workspaces can rely on `workspaceId` alone
@@ -104,7 +105,8 @@ Implemented today:
 - registration form in the UI for creating workspaces without `curl`
 - native `Choose Folder` button for selecting `rootPath` through the operating system file explorer dialog
 - readonly `Platform` field in the UI; it is determined by the server and cannot be changed from the tool
-- auto-fill of `workspaceId` and `displayName` from the selected folder when those fields are empty
+- auto-fill of `workspaceId` from the selected folder when that field is empty
+- delete actions for removing workspaces from the dashboard
 - simplified workspace list UI that shows either `Display Name (workspaceId)` or just `workspaceId`
 - integration tests covering dashboard rendering, workspace detail rendering, form submission, and not-found handling
 - a compiled dev flow for `@clio-fs/server-ui`

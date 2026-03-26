@@ -13,7 +13,7 @@ export interface DatabaseHandle {
 export const createDatabaseHandle = (kind: DatabaseHandle["kind"]): DatabaseHandle => ({ kind });
 
 export class WorkspaceRegistryError extends Error {
-  readonly code: "duplicate_workspace" | "invalid_workspace";
+  readonly code: "duplicate_workspace" | "invalid_workspace" | "workspace_not_found";
   readonly details?: Record<string, unknown>;
 
   constructor(
@@ -48,6 +48,7 @@ export interface WorkspaceRegistry {
   list: () => WorkspaceRecord[];
   get: (workspaceId: string) => WorkspaceRecord | undefined;
   register: (input: RegisterWorkspaceInput) => WorkspaceRecord;
+  delete: (workspaceId: string) => void;
 }
 
 export class InMemoryWorkspaceRegistry implements WorkspaceRegistry {
@@ -72,6 +73,14 @@ export class InMemoryWorkspaceRegistry implements WorkspaceRegistry {
 
     this.workspaces.set(workspace.workspaceId, workspace);
     return workspace;
+  }
+
+  delete(workspaceId: string) {
+    if (!this.workspaces.delete(workspaceId)) {
+      throw new WorkspaceRegistryError("workspace_not_found", "Workspace not found", {
+        workspaceId
+      });
+    }
   }
 }
 
@@ -146,6 +155,11 @@ export class FileWorkspaceRegistry extends InMemoryWorkspaceRegistry {
     const workspace = super.register(input);
     this.flush();
     return workspace;
+  }
+
+  override delete(workspaceId: string) {
+    super.delete(workspaceId);
+    this.flush();
   }
 
   private flush() {

@@ -195,3 +195,41 @@ test("rejects duplicate workspace registration", async () => {
     await server.close();
   }
 });
+
+test("deletes a workspace", async () => {
+  const server = await startTestServer();
+
+  try {
+    await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "to-delete",
+        rootPath: "/srv/clio/to-delete"
+      })
+    });
+
+    const deleteResponse = await fetch(`${server.baseUrl}/workspaces/to-delete`, {
+      method: "DELETE",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`
+      }
+    });
+
+    const detailResponse = await fetch(`${server.baseUrl}/workspaces/to-delete`, {
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`
+      }
+    });
+    const detailBody = await detailResponse.json();
+
+    assert.equal(deleteResponse.status, 204);
+    assert.equal(detailResponse.status, 404);
+    assert.equal(detailBody.error.code, "not_found");
+  } finally {
+    await server.close();
+  }
+});

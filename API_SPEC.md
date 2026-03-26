@@ -249,6 +249,18 @@ Response `200`:
 }
 ```
 
+### DELETE /workspaces/{workspaceId}
+
+Deletes a workspace registration from the control plane.
+
+Response `204`:
+
+- empty response body
+
+Possible errors:
+
+- `404` if `workspaceId` does not exist
+
 ## Snapshot and Tree APIs
 
 ### GET /workspaces/{workspaceId}/snapshot

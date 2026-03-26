@@ -170,6 +170,29 @@ const routeRequest = async (
     return;
   }
 
+  if (method === "DELETE" && url.pathname.startsWith("/workspaces/")) {
+    const [, , workspaceId] = url.pathname.split("/");
+
+    if (!workspaceId) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    try {
+      options.registry.delete(workspaceId);
+      noContent(response, 204);
+      return;
+    } catch (error) {
+      if (error instanceof WorkspaceRegistryError) {
+        const statusCode = error.code === "workspace_not_found" ? 404 : 400;
+        writeError(response, statusCode, error.code, error.message, error.details);
+        return;
+      }
+
+      throw error;
+    }
+  }
+
   noContent(response, 404);
 };
 
