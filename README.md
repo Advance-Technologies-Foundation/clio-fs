@@ -124,6 +124,7 @@ Implemented today:
 - initial client mirror slice with bind state, snapshot hydrate, and polling-based change application
 - client-side push API for conditional text file writes
 - file-backed client bind state store at `.clio-fs/client/state.json`
+- local watcher-driven push loop for file create/update events
 - client tests covering hydrate and server-originated change application on mocked adapters
 
 ## Run The UI Locally
@@ -171,10 +172,11 @@ Current client behavior:
 - performs initial hydrate through `snapshot` and `snapshot-materialize`
 - polls `changes?since=` and applies server-originated create, update, and delete events
 - can push a conditional utf8 file write through the control plane
+- can watch the local mirror and push changed files automatically
 
 Current client limitations:
 
-- no local watcher-driven write-back loop yet
+- local delete propagation is not implemented yet
 - `path_moved` currently falls back to a full rehydrate
 
 ## Opt-In Local Sync Scenario

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { ChangeEvent, SnapshotEntry } from "@clio-fs/contracts";
@@ -13,6 +14,11 @@ import {
   type ClientBindState,
   type ClientStateStore
 } from "./state.js";
+import {
+  createPollingMirrorWatcher,
+  type MirrorWatcher,
+  type MirrorWatcherEvent
+} from "./watcher.js";
 
 export interface MirrorClientOptions {
   workspaceId: string;
@@ -21,6 +27,7 @@ export interface MirrorClientOptions {
   controlPlaneOptions?: ClientControlPlaneOptions;
   filesystem?: ClientFileSystemAdapter;
   stateStore?: ClientStateStore;
+  watcher?: MirrorWatcher;
   pollLimit?: number;
 }
 
@@ -28,10 +35,39 @@ export interface MirrorClient {
   bind: () => Promise<ClientBindState>;
   pollOnce: () => Promise<ClientBindState>;
   pushFile: (path: string, content: string, options?: { baseFileRevision?: number }) => Promise<ClientBindState>;
+  startLocalWatchLoop: () => Promise<void>;
+  stopLocalWatchLoop: () => void;
   getState: () => ClientBindState | undefined;
 }
 
 const isFileEntry = (entry: SnapshotEntry) => entry.kind === "file";
+
+const hashText = (content: string) =>
+  `sha256:${createHash("sha256").update(content, "utf8").digest("hex")}`;
+
+const collectFilePaths = (
+  filesystem: ClientFileSystemAdapter,
+  rootPath: string,
+  directoryPath = rootPath,
+  results: string[] = []
+) => {
+  if (!filesystem.exists(directoryPath)) {
+    return results;
+  }
+
+  for (const entry of filesystem.readdir(directoryPath)) {
+    const absolutePath = join(directoryPath, entry.name);
+
+    if (entry.kind === "directory") {
+      collectFilePaths(filesystem, rootPath, absolutePath, results);
+      continue;
+    }
+
+    results.push(absolutePath.slice(rootPath.length).replace(/^[/\\]/, "").replaceAll("\\", "/"));
+  }
+
+  return results;
+};
 
 const ensureHydratedMirror = async (
   controlPlane: ClientControlPlane,
@@ -147,8 +183,54 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
         authToken: appConfig.client.controlPlaneAuthToken
       }
     );
+  const watcher =
+    options.watcher ??
+    createPollingMirrorWatcher({
+      filesystem,
+      rootPath: options.mirrorRoot,
+      pollIntervalMs: appConfig.client.pollIntervalMs
+    });
+  const suppressedHashes = new Map<string, string>();
 
-  return {
+  const suppressPath = (path: string, content: string) => {
+    suppressedHashes.set(path, hashText(content));
+  };
+
+  const refreshSuppressionFromMirror = (mirrorRoot: string) => {
+    for (const path of collectFilePaths(filesystem, mirrorRoot)) {
+      suppressPath(path, filesystem.readFileText(join(mirrorRoot, path)));
+    }
+  };
+
+  let client!: MirrorClient;
+
+  const applyWatcherEvent = async (event: MirrorWatcherEvent) => {
+    const bound = stateStore.load(options.workspaceId);
+
+    if (!bound?.hydrated) {
+      return;
+    }
+
+    if (event.type === "file_deleted") {
+      console.warn(`[client] local file deletion is not pushed yet: ${event.path}`);
+      return;
+    }
+
+    const suppressedHash = suppressedHashes.get(event.path);
+
+    if (suppressedHash && suppressedHash === event.contentHash) {
+      suppressedHashes.delete(event.path);
+      return;
+    }
+
+    if (typeof event.content !== "string") {
+      return;
+    }
+
+    await client.pushFile(event.path, event.content);
+  };
+
+  client = {
     async bind() {
       const existing = stateStore.load(options.workspaceId);
 
@@ -156,16 +238,19 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
         return existing;
       }
 
-      return ensureHydratedMirror(
+      const nextState = await ensureHydratedMirror(
         controlPlane,
         filesystem,
         stateStore,
         options.workspaceId,
         options.mirrorRoot
       );
+
+      refreshSuppressionFromMirror(nextState.mirrorRoot);
+      return nextState;
     },
     async pollOnce() {
-      const bound = (await this.bind()) ?? stateStore.load(options.workspaceId);
+      const bound = (await client.bind()) ?? stateStore.load(options.workspaceId);
 
       if (!bound) {
         throw new Error(`Workspace is not bound: ${options.workspaceId}`);
@@ -175,11 +260,21 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
         since: bound.lastAppliedRevision,
         limit: options.pollLimit
       });
+      const nextState = await applyChanges(controlPlane, filesystem, stateStore, bound, changes.items);
 
-      return applyChanges(controlPlane, filesystem, stateStore, bound, changes.items);
+      for (const change of changes.items) {
+        if (
+          (change.operation === "file_created" || change.operation === "file_updated") &&
+          filesystem.exists(join(nextState.mirrorRoot, change.path))
+        ) {
+          suppressPath(change.path, filesystem.readFileText(join(nextState.mirrorRoot, change.path)));
+        }
+      }
+
+      return nextState;
     },
     async pushFile(path, content, pushOptions) {
-      const bound = (await this.bind()) ?? stateStore.load(options.workspaceId);
+      const bound = (await client.bind()) ?? stateStore.load(options.workspaceId);
 
       if (!bound) {
         throw new Error(`Workspace is not bound: ${options.workspaceId}`);
@@ -200,10 +295,23 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       stateStore.save(nextState);
       return nextState;
     },
+    async startLocalWatchLoop() {
+      await client.bind();
+      watcher.start((event) => {
+        applyWatcherEvent(event).catch((error) => {
+          console.error("[client] local watcher push failed:", error);
+        });
+      });
+    },
+    stopLocalWatchLoop() {
+      watcher.stop();
+    },
     getState() {
       return stateStore.load(options.workspaceId);
     }
   };
+
+  return client;
 };
 
 export const runClientDaemon = async () => {
@@ -225,6 +333,7 @@ export const runClientDaemon = async () => {
     mirrorRoot
   });
   const state = await client.bind();
+  await client.startLocalWatchLoop();
 
   console.log(
     `[client] bound workspace ${state.workspaceId} at ${state.mirrorRoot}; revision=${state.lastAppliedRevision}`

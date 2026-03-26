@@ -3,12 +3,14 @@ import test from "node:test";
 import { createMirrorClient } from "./index.js";
 import { createInMemoryClientFileSystem } from "./filesystem.js";
 import { createInMemoryClientStateStore } from "./state.js";
+import { createManualMirrorWatcher } from "./watcher.js";
 
 const createFetchStub = () => {
   let snapshotCalls = 0;
   let changeCalls = 0;
+  const putCalls: Array<{ path: string | null; baseFileRevision?: number; content: string }> = [];
 
-  return async (input: string | URL | Request, init?: RequestInit) => {
+  const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
 
     if (url.pathname === "/workspaces/demo-workspace/snapshot") {
@@ -145,6 +147,11 @@ const createFetchStub = () => {
         baseFileRevision?: number;
         content: string;
       };
+      putCalls.push({
+        path,
+        baseFileRevision: body.baseFileRevision,
+        content: body.content
+      });
 
       if (body.baseFileRevision === 2) {
         return new Response(
@@ -172,6 +179,10 @@ const createFetchStub = () => {
 
     throw new Error(`Unexpected request: ${url.pathname}`);
   };
+
+  return Object.assign(fetchImpl, {
+    getPutCalls: () => putCalls
+  });
 };
 
 test("bind hydrates the local mirror from snapshot and materialize", async () => {
@@ -277,4 +288,45 @@ test("pushFile surfaces server conflict errors", async () => {
       }),
     /provided base revision/i
   );
+});
+
+test("local watch loop pushes changed files through the control plane", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const watcher = createManualMirrorWatcher();
+  const fetchStub = createFetchStub();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    watcher,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchStub as unknown as typeof fetch
+    }
+  });
+
+  await client.bind();
+  await client.startLocalWatchLoop();
+
+  watcher.emit({
+    type: "file_changed",
+    path: "packages/Alpha/readme.txt",
+    content: "watcher-write-v3\n",
+    contentHash: "sha256:watcher-write-v3"
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(fetchStub.getPutCalls(), [
+    {
+      path: "packages/Alpha/readme.txt",
+      baseFileRevision: 2,
+      content: "watcher-write-v3\n"
+    }
+  ]);
+
+  client.stopLocalWatchLoop();
 });
