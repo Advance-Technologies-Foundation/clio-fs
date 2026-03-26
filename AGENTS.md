@@ -16,6 +16,11 @@ The target system must support:
 - multiple local clients per workspace
 - server-side file mutations produced by `Creatio`
 - local coding tools that can only work with normal folders
+- an operator-facing server UI
+
+Preferred implementation language:
+
+- `TypeScript`
 
 ## Primary Goal
 
@@ -136,6 +141,7 @@ Prefer:
 - local SQLite for mirror-client state
 - explicit reconciliation flows
 - simple polling before more complex push mechanisms
+- one `TypeScript` monorepo spanning server, server UI, client, and shared contracts
 
 Avoid in early implementation:
 

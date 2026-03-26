@@ -7,6 +7,11 @@
 - multi-workspace and multi-client operation
 - environments where `sshfs`, `SMB`, or system extensions cannot be relied on
 
+The implementation target is:
+
+- `TypeScript` for both server and client codebases
+- a server-side control UI for operational visibility and administration
+
 ## Problem
 
 The target system needs to present a normal local directory to coding tools while preserving the server workspace as the single source of truth.
@@ -35,6 +40,8 @@ That requires:
 - initial hydrate uses paged manifest plus bulk materialization
 - conflict handling is non-destructive for the local working file
 - `.git` is not mirrored locally in MVP
+- `TypeScript` is the preferred implementation language
+- the server side includes an operator-facing UI
 
 ## Recommended Reading Order
 
@@ -49,6 +56,7 @@ That requires:
 The next practical milestone is scaffolding:
 
 - server control plane
+- server control UI
 - local mirror daemon
 - shared contract/types package
 

@@ -12,6 +12,11 @@ This is intended for a setup where:
 - custom services can be installed on the server
 - one server-side client/service may need to serve multiple `Creatio` instances and multiple workspaces at the same time
 
+Implementation preference:
+
+- use `TypeScript` for the server and local client implementation
+- include a server-side UI for administration, health visibility, and operational control
+
 ## Core Decision
 
 Do not treat the local folder and the server folder as equal peers.
@@ -34,6 +39,7 @@ Server
   Real workspace directory
   Creatio instance
   Workspace API service
+  Server control UI
   File watcher / change journal
   Git
 
@@ -135,6 +141,44 @@ Suggested endpoints:
 - `POST /workspaces/{workspaceId}/snapshot-materialize`
 - `POST /git/status`
 - `POST /git/diff`
+
+### 2a. Server Control UI
+
+The server must provide an operator-facing UI.
+
+This UI is part of the product, not an optional debug console.
+
+Primary goals:
+
+- inspect workspace health
+- inspect connected clients
+- inspect revision lag and sync lag
+- inspect conflicts and blocked paths
+- inspect watcher status and overflow conditions
+- inspect recent journal activity
+- manage workspace registration and visibility
+
+Minimum server UI views:
+
+- workspace list
+- workspace detail page
+- connected clients page
+- conflicts page
+- health and diagnostics page
+
+Minimum server UI actions:
+
+- register or disable a workspace
+- inspect workspace metadata and revision head
+- inspect client binding state
+- inspect recent change events
+- inspect conflict records
+- surface degraded watcher or reconciliation state
+
+Implementation note:
+
+- the server UI should be implemented in `TypeScript` as part of the same monorepo
+- it may be served by the server control plane directly in MVP
 
 ### 3. Server Change Journal
 
@@ -425,6 +469,25 @@ Do not require:
 - `sshfs`
 - `SMB`
 - system extensions
+
+## Implementation Stack Preference
+
+Preferred implementation language:
+
+- `TypeScript`
+
+Recommended shape:
+
+- server control plane in `TypeScript`
+- server control UI in `TypeScript`
+- local mirror daemon in `TypeScript`
+- shared contracts and validation schemas in `TypeScript`
+
+Reasoning:
+
+- shared contracts reduce drift between API, data model, and runtime behavior
+- one language speeds up iteration across server, client, and shared packages
+- strong typing helps preserve sync and revision invariants
 
 ## Reliability Requirements
 

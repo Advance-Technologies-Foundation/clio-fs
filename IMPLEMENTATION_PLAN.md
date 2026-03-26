@@ -10,6 +10,7 @@ This plan assumes the target system must support:
 - multiple local clients per workspace
 - `Creatio` writing directly into the server workspace
 - coding apps operating only on local folders
+- operator control through a server-side UI
 
 ## Delivery Principles
 
@@ -30,6 +31,8 @@ Deliverables:
 - confirm whether binary asset editing is required in MVP
 - freeze the `.git` MVP rule as server-side only
 - freeze the conflict MVP rule as non-destructive local conflict blocking
+- freeze `TypeScript` as the implementation language for server, client, and shared contracts
+- freeze the inclusion of a server control UI in MVP scope
 
 Output:
 
@@ -57,6 +60,26 @@ Acceptance criteria:
 - server can register multiple workspaces
 - each workspace has isolated metadata and revision head
 - path traversal is blocked
+
+## Phase 1a. Server Control UI Skeleton
+
+Goal:
+
+- provide an operator-facing UI for monitoring and administration
+
+Tasks:
+
+- scaffold server UI application in `TypeScript`
+- connect UI to server control-plane APIs
+- implement workspace list view
+- implement workspace detail view shell
+- implement diagnostics navigation shell
+
+Acceptance criteria:
+
+- operator can open the UI and see registered workspaces
+- operator can navigate to one workspace detail page
+- UI is served or launched as part of the server product shape
 
 ## Phase 2. Core Read Path
 
@@ -202,6 +225,7 @@ Tasks:
 - add periodic full reconciliation
 - add watcher overflow handling
 - add journal retention policy
+- surface degraded state clearly in server UI
 
 Acceptance criteria:
 
@@ -241,10 +265,12 @@ Tasks:
 - add health endpoints
 - add structured logs
 - add workspace sync dashboards
+- add server UI panels for workspace health, client health, and conflict visibility
 
 Acceptance criteria:
 
 - operator can identify stuck clients, hot workspaces, and repeated conflicts
+- operator can do this from the server UI without reading raw logs first
 
 ## Recommended MVP Cut
 
