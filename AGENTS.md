@@ -28,6 +28,12 @@ Preferred repository shape:
 - runnable applications in `apps/*`
 - shared libraries in `packages/*`
 
+Development assumptions:
+
+- developers may work on either macOS or Windows
+- core development workflows must stay usable on both operating systems
+- do not introduce one-OS-only developer tooling unless the limitation is explicitly documented
+
 ## Primary Goal
 
 Optimize for:
@@ -40,6 +46,7 @@ Optimize for:
 - repository consistency
 - ease of use for the next maintainer or agent
 - easy installation, verification, and startup
+- cross-platform developer usability
 
 Do **not** optimize first for:
 
@@ -210,6 +217,13 @@ Agents are expected to verify visible UI behavior with a browser automation tool
 
 This applies to layout changes, form flows, navigation changes, stateful UI behavior, and any operator-facing workflow.
 
+Cross-platform workflow rule:
+
+- anything added for development, validation, or routine local use should work on both macOS and Windows
+- prefer Node-based scripts over shell-specific automation
+- prefer `os.tmpdir()`, Node path utilities, and Node process APIs for portable tooling
+- if a workflow is temporarily not cross-platform, document that limitation in the same change
+
 ## Consistency Rules
 
 Agents are responsible for keeping the repository internally consistent.
@@ -237,6 +251,8 @@ If you introduce a new package or app, also provide:
 
 These commands should be easy to discover from the repository root.
 
+Developer workflows should also be easy to invoke on both macOS and Windows from the same documented root command whenever possible.
+
 ## Review Checklist For Agents
 
 Before finishing, verify:
@@ -252,6 +268,7 @@ Before finishing, verify:
 - if UI changed, was it exercised through `chromedevtools` or `Playwright`?
 - would a new agent understand how to run or extend this change without extra tribal knowledge?
 - would a new developer know how to install, verify, and start it from the docs alone?
+- can a developer on macOS and a developer on Windows both run the intended workflow?
 
 ## Commit Guidance
 

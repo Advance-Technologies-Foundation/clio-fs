@@ -78,6 +78,7 @@ App-level examples:
 - `corepack pnpm --filter @clio-fs/server dev`
 - `corepack pnpm --filter @clio-fs/server-ui dev`
 - `corepack pnpm --filter @clio-fs/client dev`
+- `corepack pnpm run scenario:local-sync`
 
 ## Current Implementation Status
 
@@ -110,6 +111,7 @@ Implemented today:
 - simplified workspace list UI that shows either `Display Name (workspaceId)` or just `workspaceId`
 - integration tests covering dashboard rendering, workspace detail rendering, form submission, and not-found handling
 - a compiled dev flow for `@clio-fs/server-ui`
+- an explicit opt-in local sync integration scenario specification in [docs/LOCAL_SYNC_INTEGRATION_SCENARIO.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/docs/LOCAL_SYNC_INTEGRATION_SCENARIO.md)
 
 ## Run The UI Locally
 
@@ -137,6 +139,22 @@ If you prefer separate terminals:
 By default the UI talks to the local control plane at `http://127.0.0.1:4010` using the development bearer token from [packages/config/src/index.ts](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/packages/config/src/index.ts).
 Registered workspaces are persisted to [`.clio-fs/server/workspaces.json`](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/.clio-fs/server/workspaces.json) at the repository root once you create them through the UI or API.
 On the workspace registration form, `Choose Folder` opens the native directory picker on the machine running `server-ui` and fills `rootPath` with the selected absolute path.
+
+## Opt-In Local Sync Scenario
+
+The repository also contains a dedicated specification for a heavier local integration scenario where the server and client run on the same machine but use different temporary folders as sync roots:
+
+- [docs/LOCAL_SYNC_INTEGRATION_SCENARIO.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/docs/LOCAL_SYNC_INTEGRATION_SCENARIO.md)
+
+Reserved root command:
+
+```bash
+corepack pnpm run scenario:local-sync
+```
+
+This command is intentionally opt-in and separate from the default test suite.
+Right now it prints the frozen scenario contract and its execution requirements.
+It must not be reported as a real sync pass until the mirror client implementation exists.
 
 ## Recommended Reading Order
 

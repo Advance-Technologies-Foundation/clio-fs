@@ -15,6 +15,7 @@
     "check": "corepack pnpm -r check",
     "dev": "node scripts/dev.mjs",
     "server": "node scripts/dev-server.mjs",
+    "scenario:local-sync": "node scripts/run-local-sync-scenario.mjs",
     "test": "corepack pnpm -r test",
     "format": "corepack pnpm -r format"
   }
