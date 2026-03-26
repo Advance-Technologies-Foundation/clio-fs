@@ -108,6 +108,16 @@ export class MockFileSystem implements FileSystemAdapter {
     return this.#nodes.has(toKey(path));
   }
 
+  removePath(path: string) {
+    const key = toKey(path);
+
+    for (const nodePath of [...this.#nodes.keys()]) {
+      if (nodePath === key || nodePath.startsWith(`${key}/`) || nodePath.startsWith(`${key}\\`)) {
+        this.#nodes.delete(nodePath);
+      }
+    }
+  }
+
   #ensureParentDirectories(path: string) {
     const directoryChain: string[] = [];
     let current = dirname(toKey(path));

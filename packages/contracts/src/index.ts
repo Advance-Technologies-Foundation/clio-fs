@@ -97,6 +97,20 @@ export interface PutWorkspaceFileResponse {
   contentHash: string;
 }
 
+export interface DeleteWorkspaceFileRequest {
+  operationId?: string;
+  baseFileRevision?: Revision;
+  baseContentHash?: string;
+  origin: ChangeOrigin;
+}
+
+export interface DeleteWorkspaceFileResponse {
+  workspaceId: WorkspaceId;
+  path: string;
+  workspaceRevision: Revision;
+  deleted: true;
+}
+
 export interface ChangeEvent {
   workspaceId: WorkspaceId;
   revision: Revision;

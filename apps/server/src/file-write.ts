@@ -1,6 +1,12 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import type { PutWorkspaceFileRequest, PutWorkspaceFileResponse, WorkspaceRecord } from "@clio-fs/contracts";
+import type {
+  DeleteWorkspaceFileRequest,
+  DeleteWorkspaceFileResponse,
+  PutWorkspaceFileRequest,
+  PutWorkspaceFileResponse,
+  WorkspaceRecord
+} from "@clio-fs/contracts";
 import type { ChangeJournal } from "@clio-fs/database";
 import type { FileSystemAdapter } from "./filesystem.js";
 import { ensureRelativeWorkspacePath } from "./snapshot.js";
@@ -66,6 +72,44 @@ export const parsePutWorkspaceFileRequest = (value: unknown): PutWorkspaceFileRe
   };
 };
 
+export const parseDeleteWorkspaceFileRequest = (value: unknown): DeleteWorkspaceFileRequest => {
+  if (typeof value !== "object" || value === null) {
+    throw new Error("request body must be a JSON object");
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (
+    record.origin !== "local-client" &&
+    record.origin !== "creatio" &&
+    record.origin !== "server-tool" &&
+    record.origin !== "unknown"
+  ) {
+    throw new Error("origin must be one of local-client, creatio, server-tool, unknown");
+  }
+
+  if (typeof record.baseFileRevision !== "undefined" && !Number.isInteger(record.baseFileRevision)) {
+    throw new Error("baseFileRevision must be omitted or an integer");
+  }
+
+  if (typeof record.baseContentHash !== "undefined" && typeof record.baseContentHash !== "string") {
+    throw new Error("baseContentHash must be omitted or a string");
+  }
+
+  if (typeof record.operationId !== "undefined" && typeof record.operationId !== "string") {
+    throw new Error("operationId must be omitted or a string");
+  }
+
+  return {
+    operationId: typeof record.operationId === "string" ? record.operationId : undefined,
+    baseFileRevision:
+      typeof record.baseFileRevision === "number" ? record.baseFileRevision : undefined,
+    baseContentHash:
+      typeof record.baseContentHash === "string" ? record.baseContentHash : undefined,
+    origin: record.origin
+  };
+};
+
 export const putWorkspaceFile = (
   workspace: WorkspaceRecord,
   rawPath: string,
@@ -125,5 +169,73 @@ export const putWorkspaceFile = (
     fileRevision: event.revision,
     workspaceRevision: event.revision,
     contentHash: nextHash
+  };
+};
+
+export const deleteWorkspacePath = (
+  workspace: WorkspaceRecord,
+  rawPath: string,
+  input: DeleteWorkspaceFileRequest,
+  filesystem: FileSystemAdapter,
+  journal: ChangeJournal
+): DeleteWorkspaceFileResponse => {
+  const path = ensureRelativeWorkspacePath(rawPath);
+  const absolutePath = join(workspace.rootPath, path);
+
+  if (!filesystem.exists(absolutePath)) {
+    throw new Error("target path does not exist");
+  }
+
+  const stats = filesystem.stat(absolutePath);
+  const latestEvent = journal.getLatestForPath(workspace.workspaceId, path);
+  const currentFileRevision = latestEvent?.revision ?? 0;
+  const currentContentHash =
+    stats.kind === "file" ? sha256(filesystem.readFileText(absolutePath)) : null;
+
+  if (
+    stats.kind === "file" &&
+    typeof input.baseFileRevision === "number" &&
+    input.baseFileRevision !== currentFileRevision
+  ) {
+    throw new FileWriteConflictError("File has changed since the provided base revision", {
+      workspaceId: workspace.workspaceId,
+      path,
+      currentFileRevision,
+      currentWorkspaceRevision: workspace.currentRevision,
+      currentContentHash
+    });
+  }
+
+  if (
+    stats.kind === "file" &&
+    typeof input.baseContentHash === "string" &&
+    input.baseContentHash !== currentContentHash
+  ) {
+    throw new FileWriteConflictError("File has changed since the provided base revision", {
+      workspaceId: workspace.workspaceId,
+      path,
+      currentFileRevision,
+      currentWorkspaceRevision: workspace.currentRevision,
+      currentContentHash
+    });
+  }
+
+  filesystem.removePath(absolutePath);
+
+  const event = journal.append({
+    workspaceId: workspace.workspaceId,
+    operation: stats.kind === "file" ? "file_deleted" : "directory_deleted",
+    path,
+    origin: input.origin,
+    contentHash: null,
+    size: null,
+    operationId: input.operationId
+  });
+
+  return {
+    workspaceId: workspace.workspaceId,
+    path,
+    workspaceRevision: event.revision,
+    deleted: true
   };
 };

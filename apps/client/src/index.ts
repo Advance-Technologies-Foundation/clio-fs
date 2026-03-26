@@ -35,6 +35,7 @@ export interface MirrorClient {
   bind: () => Promise<ClientBindState>;
   pollOnce: () => Promise<ClientBindState>;
   pushFile: (path: string, content: string, options?: { baseFileRevision?: number }) => Promise<ClientBindState>;
+  deleteFile: (path: string, options?: { baseFileRevision?: number }) => Promise<ClientBindState>;
   startLocalWatchLoop: () => Promise<void>;
   stopLocalWatchLoop: () => void;
   getState: () => ClientBindState | undefined;
@@ -191,6 +192,7 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       pollIntervalMs: appConfig.client.pollIntervalMs
     });
   const suppressedHashes = new Map<string, string>();
+  const suppressedDeletes = new Set<string>();
 
   const suppressPath = (path: string, content: string) => {
     suppressedHashes.set(path, hashText(content));
@@ -212,7 +214,12 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
     }
 
     if (event.type === "file_deleted") {
-      console.warn(`[client] local file deletion is not pushed yet: ${event.path}`);
+      if (suppressedDeletes.has(event.path)) {
+        suppressedDeletes.delete(event.path);
+        return;
+      }
+
+      await client.deleteFile(event.path);
       return;
     }
 
@@ -269,6 +276,10 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
         ) {
           suppressPath(change.path, filesystem.readFileText(join(nextState.mirrorRoot, change.path)));
         }
+
+        if (change.operation === "file_deleted" || change.operation === "directory_deleted") {
+          suppressedDeletes.add(change.path);
+        }
       }
 
       return nextState;
@@ -285,6 +296,28 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       const result = await controlPlane.putFile(bound.workspaceId, path, {
         baseFileRevision: pushOptions?.baseFileRevision ?? bound.lastAppliedRevision,
         content,
+        origin: "local-client"
+      });
+      const nextState = {
+        ...bound,
+        lastAppliedRevision: result.workspaceRevision
+      };
+
+      stateStore.save(nextState);
+      return nextState;
+    },
+    async deleteFile(path, deleteOptions) {
+      const bound = (await client.bind()) ?? stateStore.load(options.workspaceId);
+
+      if (!bound) {
+        throw new Error(`Workspace is not bound: ${options.workspaceId}`);
+      }
+
+      suppressedDeletes.add(path);
+      filesystem.removePath(join(bound.mirrorRoot, path));
+
+      const result = await controlPlane.deleteFile(bound.workspaceId, path, {
+        baseFileRevision: deleteOptions?.baseFileRevision ?? bound.lastAppliedRevision,
         origin: "local-client"
       });
       const nextState = {

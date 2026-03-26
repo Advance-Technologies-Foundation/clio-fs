@@ -608,3 +608,107 @@ test("rejects conflicting file writes with 409", async () => {
     await server.close();
   }
 });
+
+test("deletes a file through the API and advances revisions", async () => {
+  const mockFileSystem = createMockFileSystem();
+  mockFileSystem.addDirectory("/mock/delete-main");
+  mockFileSystem.addFile("/mock/delete-main/root.txt", { content: "delete-me\n" });
+  const server = await startTestServer({ filesystem: mockFileSystem });
+
+  try {
+    await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "delete-main",
+        rootPath: "/mock/delete-main"
+      })
+    });
+
+    server.journal.append({
+      workspaceId: "delete-main",
+      operation: "file_created",
+      path: "root.txt",
+      origin: "server-tool",
+      size: 10
+    });
+
+    const deleteResponse = await fetch(
+      `${server.baseUrl}/workspaces/delete-main/file?path=${encodeURIComponent("root.txt")}`,
+      {
+        method: "DELETE",
+        headers: {
+          authorization: `Bearer ${AUTH_TOKEN}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          baseFileRevision: 1,
+          origin: "local-client"
+        })
+      }
+    );
+    const deleteBody = await deleteResponse.json();
+
+    assert.equal(deleteResponse.status, 200);
+    assert.equal(deleteBody.deleted, true);
+    assert.equal(deleteBody.workspaceRevision, 2);
+    assert.equal(mockFileSystem.exists("/mock/delete-main/root.txt"), false);
+    assert.equal(server.registry.get("delete-main")?.currentRevision, 2);
+  } finally {
+    await server.close();
+  }
+});
+
+test("rejects conflicting file deletes with 409", async () => {
+  const mockFileSystem = createMockFileSystem();
+  mockFileSystem.addDirectory("/mock/delete-conflict");
+  mockFileSystem.addFile("/mock/delete-conflict/root.txt", { content: "delete-me\n" });
+  const server = await startTestServer({ filesystem: mockFileSystem });
+
+  try {
+    await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "delete-conflict",
+        rootPath: "/mock/delete-conflict"
+      })
+    });
+
+    server.journal.append({
+      workspaceId: "delete-conflict",
+      operation: "file_updated",
+      path: "root.txt",
+      origin: "server-tool",
+      size: 10
+    });
+
+    const deleteResponse = await fetch(
+      `${server.baseUrl}/workspaces/delete-conflict/file?path=${encodeURIComponent("root.txt")}`,
+      {
+        method: "DELETE",
+        headers: {
+          authorization: `Bearer ${AUTH_TOKEN}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          baseFileRevision: 0,
+          origin: "local-client"
+        })
+      }
+    );
+    const deleteBody = await deleteResponse.json();
+
+    assert.equal(deleteResponse.status, 409);
+    assert.equal(deleteBody.error.code, "conflict");
+    assert.equal(mockFileSystem.exists("/mock/delete-conflict/root.txt"), true);
+  } finally {
+    await server.close();
+  }
+});

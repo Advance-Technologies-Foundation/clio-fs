@@ -105,6 +105,7 @@ Implemented today:
 - bulk snapshot materialization endpoint for initial file content hydrate
 - in-memory per-workspace change feed endpoint for revision-ordered catch-up
 - conditional server-side utf8 file write endpoint with optimistic concurrency
+- conditional server-side delete endpoint for files and directories with revision-aware conflict checks
 - optional `displayName`; most workspaces can rely on `workspaceId` alone
 - file-backed workspace registry stored in `.clio-fs/server/workspaces.json`
 - integration tests covering health, auth, registration, validation, and duplicate detection
@@ -123,8 +124,9 @@ Implemented today:
 - an explicit opt-in local sync integration scenario specification in [docs/LOCAL_SYNC_INTEGRATION_SCENARIO.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/docs/LOCAL_SYNC_INTEGRATION_SCENARIO.md)
 - initial client mirror slice with bind state, snapshot hydrate, and polling-based change application
 - client-side push API for conditional text file writes
+- client-side delete API for conditional file removal
 - file-backed client bind state store at `.clio-fs/client/state.json`
-- local watcher-driven push loop for file create/update events
+- local watcher-driven push loop for file create/update/delete events
 - client tests covering hydrate and server-originated change application on mocked adapters
 
 ## Run The UI Locally
@@ -172,11 +174,11 @@ Current client behavior:
 - performs initial hydrate through `snapshot` and `snapshot-materialize`
 - polls `changes?since=` and applies server-originated create, update, and delete events
 - can push a conditional utf8 file write through the control plane
-- can watch the local mirror and push changed files automatically
+- can push a conditional delete through the control plane
+- can watch the local mirror and push changed and deleted files automatically
 
 Current client limitations:
 
-- local delete propagation is not implemented yet
 - `path_moved` currently falls back to a full rehydrate
 
 ## Opt-In Local Sync Scenario

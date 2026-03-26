@@ -650,6 +650,11 @@ Response `200`:
 }
 ```
 
+Current implementation note:
+
+- file delete is implemented with optimistic concurrency checks
+- directory delete is accepted by the API and journaled, but client-side local delete propagation currently targets file deletions only
+
 Directory move semantics:
 
 - if the target is a directory, this is a subtree move

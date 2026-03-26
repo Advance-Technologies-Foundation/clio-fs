@@ -1,5 +1,7 @@
 import type {
   ApiErrorShape,
+  DeleteWorkspaceFileRequest,
+  DeleteWorkspaceFileResponse,
   PutWorkspaceFileRequest,
   PutWorkspaceFileResponse,
   SnapshotMaterializeRequest,
@@ -57,6 +59,23 @@ export class ClientControlPlane {
 
     return this.#request<PutWorkspaceFileResponse>(url, {
       method: "PUT",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(input)
+    });
+  }
+
+  async deleteFile(
+    workspaceId: string,
+    path: string,
+    input: DeleteWorkspaceFileRequest
+  ): Promise<DeleteWorkspaceFileResponse> {
+    const url = new URL(`/workspaces/${encodeURIComponent(workspaceId)}/file`, this.#baseUrl);
+    url.searchParams.set("path", path);
+
+    return this.#request<DeleteWorkspaceFileResponse>(url, {
+      method: "DELETE",
       headers: {
         "content-type": "application/json"
       },

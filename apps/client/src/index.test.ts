@@ -9,6 +9,7 @@ const createFetchStub = () => {
   let snapshotCalls = 0;
   let changeCalls = 0;
   const putCalls: Array<{ path: string | null; baseFileRevision?: number; content: string }> = [];
+  const deleteCalls: Array<{ path: string | null; baseFileRevision?: number }> = [];
 
   const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
@@ -177,11 +178,48 @@ const createFetchStub = () => {
       );
     }
 
+    if (
+      url.pathname === "/workspaces/demo-workspace/file" &&
+      (init?.method ?? "GET") === "DELETE"
+    ) {
+      const path = url.searchParams.get("path");
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        baseFileRevision?: number;
+      };
+      deleteCalls.push({
+        path,
+        baseFileRevision: body.baseFileRevision
+      });
+
+      if (body.baseFileRevision === 2 || body.baseFileRevision === 4) {
+        return new Response(
+          JSON.stringify({
+            workspaceId: "demo-workspace",
+            path,
+            workspaceRevision: (body.baseFileRevision ?? 0) + 1,
+            deleted: true
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: "conflict",
+            message: "File has changed since the provided base revision"
+          }
+        }),
+        { status: 409, headers: { "content-type": "application/json" } }
+      );
+    }
+
     throw new Error(`Unexpected request: ${url.pathname}`);
   };
 
   return Object.assign(fetchImpl, {
-    getPutCalls: () => putCalls
+    getPutCalls: () => putCalls,
+    getDeleteCalls: () => deleteCalls
   });
 };
 
@@ -290,6 +328,37 @@ test("pushFile surfaces server conflict errors", async () => {
   );
 });
 
+test("deleteFile sends a conditional delete and advances local bind state", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const fetchStub = createFetchStub();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchStub as unknown as typeof fetch
+    }
+  });
+
+  await client.bind();
+  const nextState = await client.deleteFile("root.txt", {
+    baseFileRevision: 2
+  });
+
+  assert.equal(nextState.lastAppliedRevision, 3);
+  assert.equal(filesystem.exists("/mirror/demo-workspace/root.txt"), false);
+  assert.deepEqual(fetchStub.getDeleteCalls(), [
+    {
+      path: "root.txt",
+      baseFileRevision: 2
+    }
+  ]);
+});
+
 test("local watch loop pushes changed files through the control plane", async () => {
   const filesystem = createInMemoryClientFileSystem();
   const stateStore = createInMemoryClientStateStore();
@@ -325,6 +394,45 @@ test("local watch loop pushes changed files through the control plane", async ()
       path: "packages/Alpha/readme.txt",
       baseFileRevision: 2,
       content: "watcher-write-v3\n"
+    }
+  ]);
+
+  client.stopLocalWatchLoop();
+});
+
+test("local watch loop pushes deleted files through the control plane", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const watcher = createManualMirrorWatcher();
+  const fetchStub = createFetchStub();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    watcher,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchStub as unknown as typeof fetch
+    }
+  });
+
+  await client.bind();
+  await client.startLocalWatchLoop();
+
+  filesystem.removePath("/mirror/demo-workspace/root.txt");
+  watcher.emit({
+    type: "file_deleted",
+    path: "root.txt"
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(fetchStub.getDeleteCalls(), [
+    {
+      path: "root.txt",
+      baseFileRevision: 2
     }
   ]);
 
