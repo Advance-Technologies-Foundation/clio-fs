@@ -10,6 +10,8 @@ import {
 } from "@clio-fs/contracts";
 import {
   type WorkspaceRegistry,
+  type ChangeJournal,
+  createInMemoryChangeJournal,
   WorkspaceRegistryError
 } from "@clio-fs/database";
 import { type FileSystemAdapter, nodeFileSystem } from "./filesystem.js";
@@ -21,6 +23,7 @@ export interface WorkspaceServerOptions {
   port: number;
   authToken: string;
   registry: WorkspaceRegistry;
+  journal?: ChangeJournal;
   serverPlatform?: WorkspacePlatform;
   filesystem?: FileSystemAdapter;
 }
@@ -116,6 +119,49 @@ const routeRequest = async (
 
   if (!isAuthorized(request, options.authToken)) {
     writeError(response, 401, "unauthorized", "Missing or invalid bearer token");
+    return;
+  }
+
+  if (method === "GET" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/changes")) {
+    const [, , workspaceId] = url.pathname.split("/");
+
+    if (!workspaceId) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    const workspace = options.registry.get(workspaceId);
+
+    if (!workspace) {
+      writeError(response, 404, "not_found", "Workspace not found", { workspaceId });
+      return;
+    }
+
+    const sinceValue = url.searchParams.get("since");
+    const limitValue = url.searchParams.get("limit");
+    const since = Number(sinceValue);
+    const limit = typeof limitValue === "string" ? Number(limitValue) : undefined;
+
+    if (
+      !Number.isInteger(since) ||
+      since < 0 ||
+      (typeof limit !== "undefined" && (!Number.isInteger(limit) || limit <= 0))
+    ) {
+      writeError(response, 400, "invalid_request", "since must be a non-negative integer and limit must be a positive integer", {
+        workspaceId
+      });
+      return;
+    }
+
+    const result = options.journal!.listSince({ workspaceId, since, limit });
+
+    json(response, 200, {
+      workspaceId,
+      fromRevision: since,
+      toRevision: result.items.at(-1)?.revision ?? workspace.currentRevision,
+      hasMore: result.hasMore,
+      items: result.items
+    });
     return;
   }
 
@@ -244,15 +290,21 @@ const routeRequest = async (
   noContent(response, 404);
 };
 
-export const createWorkspaceServer = (options: WorkspaceServerOptions) =>
-  createServer(async (request, response) => {
+export const createWorkspaceServer = (options: WorkspaceServerOptions) => {
+  const resolvedOptions: WorkspaceServerOptions = {
+    ...options,
+    journal: options.journal ?? createInMemoryChangeJournal(options.registry)
+  };
+
+  return createServer(async (request, response) => {
     try {
-      await routeRequest(request, response, options);
+      await routeRequest(request, response, resolvedOptions);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Internal server error";
       writeError(response, 500, "internal_error", message);
     }
   });
+};
 
 export const startWorkspaceServer = async (
   options: WorkspaceServerOptions

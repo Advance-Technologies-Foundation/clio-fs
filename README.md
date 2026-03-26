@@ -97,11 +97,13 @@ Implemented today:
   - `GET /workspaces/:workspaceId`
   - `GET /workspaces/:workspaceId/snapshot`
   - `POST /workspaces/:workspaceId/snapshot-materialize`
+  - `GET /workspaces/:workspaceId/changes?since=`
   - `DELETE /workspaces/:workspaceId`
 - validation for `workspaceId` and absolute `rootPath`
 - server-level `platform` reported via `GET /health`
 - recursive snapshot manifest endpoint for initial hydrate preparation
 - bulk snapshot materialization endpoint for initial file content hydrate
+- in-memory per-workspace change feed endpoint for revision-ordered catch-up
 - optional `displayName`; most workspaces can rely on `workspaceId` alone
 - file-backed workspace registry stored in `.clio-fs/server/workspaces.json`
 - integration tests covering health, auth, registration, validation, and duplicate detection

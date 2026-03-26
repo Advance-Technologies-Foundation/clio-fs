@@ -689,6 +689,12 @@ Query params:
 - `since` required
 - `limit` optional, default `500`
 
+Current implementation note:
+
+- the change feed is currently backed by an in-memory per-workspace journal
+- it is suitable for API contract development and client integration work
+- durable journal persistence is still a later milestone
+
 Response `200`:
 
 ```json

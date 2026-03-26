@@ -3,6 +3,14 @@ export type Revision = number;
 export type WorkspacePlatform = "windows" | "macos" | "linux";
 export type WorkspaceStatus = "active" | "disabled";
 export type SnapshotEntryKind = "file" | "directory";
+export type ChangeOperation =
+  | "file_created"
+  | "file_updated"
+  | "file_deleted"
+  | "directory_created"
+  | "directory_deleted"
+  | "path_moved";
+export type ChangeOrigin = "creatio" | "local-client" | "server-tool" | "unknown";
 
 export interface WorkspacePolicies {
   allowGit: boolean;
@@ -70,6 +78,27 @@ export interface SnapshotMaterializeResponse {
   workspaceId: WorkspaceId;
   currentRevision: Revision;
   files: SnapshotMaterializeFile[];
+}
+
+export interface ChangeEvent {
+  workspaceId: WorkspaceId;
+  revision: Revision;
+  timestamp: string;
+  operation: ChangeOperation;
+  path: string;
+  oldPath: string | null;
+  origin: ChangeOrigin;
+  contentHash: string | null;
+  size: number | null;
+  operationId: string | null;
+}
+
+export interface WorkspaceChangesResponse {
+  workspaceId: WorkspaceId;
+  fromRevision: Revision;
+  toRevision: Revision;
+  hasMore: boolean;
+  items: ChangeEvent[];
 }
 
 export interface RegisterWorkspaceInput extends RegisterWorkspaceRequest {}

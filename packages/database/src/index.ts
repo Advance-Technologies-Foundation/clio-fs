@@ -2,7 +2,11 @@ import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import {
   DEFAULT_WORKSPACE_POLICIES,
+  type ChangeEvent,
+  type ChangeOperation,
+  type ChangeOrigin,
   type RegisterWorkspaceInput,
+  type Revision,
   type WorkspaceRecord
 } from "@clio-fs/contracts";
 
@@ -48,6 +52,7 @@ export interface WorkspaceRegistry {
   get: (workspaceId: string) => WorkspaceRecord | undefined;
   register: (input: RegisterWorkspaceInput) => WorkspaceRecord;
   delete: (workspaceId: string) => void;
+  advanceRevision: (workspaceId: string, revision: Revision) => WorkspaceRecord;
 }
 
 export class InMemoryWorkspaceRegistry implements WorkspaceRegistry {
@@ -80,6 +85,24 @@ export class InMemoryWorkspaceRegistry implements WorkspaceRegistry {
         workspaceId
       });
     }
+  }
+
+  advanceRevision(workspaceId: string, revision: Revision): WorkspaceRecord {
+    const workspace = this.workspaces.get(workspaceId);
+
+    if (!workspace) {
+      throw new WorkspaceRegistryError("workspace_not_found", "Workspace not found", {
+        workspaceId
+      });
+    }
+
+    const nextWorkspace = {
+      ...workspace,
+      currentRevision: revision
+    };
+
+    this.workspaces.set(workspaceId, nextWorkspace);
+    return nextWorkspace;
   }
 }
 
@@ -160,6 +183,12 @@ export class FileWorkspaceRegistry extends InMemoryWorkspaceRegistry {
     this.flush();
   }
 
+  override advanceRevision(workspaceId: string, revision: Revision): WorkspaceRecord {
+    const workspace = super.advanceRevision(workspaceId, revision);
+    this.flush();
+    return workspace;
+  }
+
   private flush() {
     mkdirSync(dirname(this.#filePath), { recursive: true });
 
@@ -174,3 +203,80 @@ export class FileWorkspaceRegistry extends InMemoryWorkspaceRegistry {
 }
 
 export const createFileWorkspaceRegistry = (filePath: string) => new FileWorkspaceRegistry(filePath);
+
+export interface AppendChangeEventInput {
+  workspaceId: string;
+  operation: ChangeOperation;
+  path: string;
+  oldPath?: string | null;
+  origin: ChangeOrigin;
+  contentHash?: string | null;
+  size?: number | null;
+  operationId?: string | null;
+}
+
+export interface ListChangeEventsOptions {
+  workspaceId: string;
+  since: Revision;
+  limit?: number;
+}
+
+export interface ChangeJournal {
+  append: (input: AppendChangeEventInput) => ChangeEvent;
+  listSince: (options: ListChangeEventsOptions) => { items: ChangeEvent[]; hasMore: boolean };
+}
+
+export class InMemoryChangeJournal implements ChangeJournal {
+  readonly #eventsByWorkspace = new Map<string, ChangeEvent[]>();
+  readonly #registry: WorkspaceRegistry;
+
+  constructor(registry: WorkspaceRegistry) {
+    this.#registry = registry;
+  }
+
+  append(input: AppendChangeEventInput): ChangeEvent {
+    const workspace = this.#registry.get(input.workspaceId);
+
+    if (!workspace) {
+      throw new WorkspaceRegistryError("workspace_not_found", "Workspace not found", {
+        workspaceId: input.workspaceId
+      });
+    }
+
+    const revision = workspace.currentRevision + 1;
+    const event: ChangeEvent = {
+      workspaceId: input.workspaceId,
+      revision,
+      timestamp: new Date().toISOString(),
+      operation: input.operation,
+      path: input.path,
+      oldPath: input.oldPath ?? null,
+      origin: input.origin,
+      contentHash: input.contentHash ?? null,
+      size: input.size ?? null,
+      operationId: input.operationId ?? null
+    };
+
+    const items = this.#eventsByWorkspace.get(input.workspaceId) ?? [];
+    items.push(event);
+    this.#eventsByWorkspace.set(input.workspaceId, items);
+    this.#registry.advanceRevision(input.workspaceId, revision);
+
+    return event;
+  }
+
+  listSince(options: ListChangeEventsOptions) {
+    const items = (this.#eventsByWorkspace.get(options.workspaceId) ?? []).filter(
+      (event) => event.revision > options.since
+    );
+    const limit = options.limit ?? 500;
+
+    return {
+      items: items.slice(0, limit),
+      hasMore: items.length > limit
+    };
+  }
+}
+
+export const createInMemoryChangeJournal = (registry: WorkspaceRegistry) =>
+  new InMemoryChangeJournal(registry);

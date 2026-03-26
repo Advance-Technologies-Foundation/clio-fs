@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createInMemoryWorkspaceRegistry } from "@clio-fs/database";
+import { createInMemoryChangeJournal, createInMemoryWorkspaceRegistry } from "@clio-fs/database";
 import { createMockFileSystem } from "./filesystem.testkit.js";
 import { createWorkspaceServer } from "./server.js";
 
@@ -11,11 +11,14 @@ const startTestServer = async (
     filesystem?: Parameters<typeof createWorkspaceServer>[0]["filesystem"];
   } = {}
 ) => {
+  const registry = createInMemoryWorkspaceRegistry();
+  const journal = createInMemoryChangeJournal(registry);
   const server = createWorkspaceServer({
     host: "127.0.0.1",
     port: 0,
     authToken: AUTH_TOKEN,
-    registry: createInMemoryWorkspaceRegistry(),
+    registry,
+    journal,
     serverPlatform: "linux",
     filesystem: options.filesystem
   });
@@ -34,6 +37,8 @@ const startTestServer = async (
 
   return {
     baseUrl,
+    journal,
+    registry,
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
@@ -405,6 +410,97 @@ test("rejects invalid materialize paths", async () => {
     assert.equal(materializeResponse.status, 400);
     assert.equal(materializeBody.error.code, "invalid_request");
     assert.match(materializeBody.error.message, /inside the workspace root/i);
+  } finally {
+    await server.close();
+  }
+});
+
+test("returns ordered change events after the requested revision", async () => {
+  const server = await startTestServer();
+
+  try {
+    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "changes-main",
+        rootPath: "/srv/clio/changes-main"
+      })
+    });
+
+    assert.equal(createResponse.status, 201);
+
+    server.journal.append({
+      workspaceId: "changes-main",
+      operation: "file_created",
+      path: "root.txt",
+      origin: "server-tool",
+      size: 12
+    });
+    server.journal.append({
+      workspaceId: "changes-main",
+      operation: "file_updated",
+      path: "root.txt",
+      origin: "local-client",
+      size: 18
+    });
+
+    const changesResponse = await fetch(`${server.baseUrl}/workspaces/changes-main/changes?since=0`, {
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`
+      }
+    });
+    const changesBody = await changesResponse.json();
+
+    assert.equal(changesResponse.status, 200);
+    assert.equal(changesBody.workspaceId, "changes-main");
+    assert.equal(changesBody.fromRevision, 0);
+    assert.equal(changesBody.toRevision, 2);
+    assert.equal(changesBody.hasMore, false);
+    assert.deepEqual(
+      changesBody.items.map((item: { revision: number; operation: string }) => ({
+        revision: item.revision,
+        operation: item.operation
+      })),
+      [
+        { revision: 1, operation: "file_created" },
+        { revision: 2, operation: "file_updated" }
+      ]
+    );
+    assert.equal(server.registry.get("changes-main")?.currentRevision, 2);
+  } finally {
+    await server.close();
+  }
+});
+
+test("rejects invalid change feed query parameters", async () => {
+  const server = await startTestServer();
+
+  try {
+    await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "changes-invalid",
+        rootPath: "/srv/clio/changes-invalid"
+      })
+    });
+
+    const response = await fetch(`${server.baseUrl}/workspaces/changes-invalid/changes?since=-1`, {
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`
+      }
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.equal(body.error.code, "invalid_request");
   } finally {
     await server.close();
   }

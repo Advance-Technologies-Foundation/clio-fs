@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createFileWorkspaceRegistry } from "./index.js";
+import { createFileWorkspaceRegistry, createInMemoryChangeJournal, createInMemoryWorkspaceRegistry } from "./index.js";
 
 test("file workspace registry persists registrations to a JSON file", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "clio-fs-registry-"));
@@ -51,4 +51,40 @@ test("file workspace registry persists deletions to a JSON file", () => {
 
   assert.equal(reloaded.get("delete-me"), undefined);
   assert.equal(reloaded.list().length, 0);
+});
+
+test("change journal advances workspace revisions monotonically", () => {
+  const registry = createInMemoryWorkspaceRegistry();
+  registry.register({
+    workspaceId: "journal-main",
+    rootPath: "/srv/clio/journal-main"
+  });
+
+  const journal = createInMemoryChangeJournal(registry);
+  const first = journal.append({
+    workspaceId: "journal-main",
+    operation: "file_created",
+    path: "root.txt",
+    origin: "server-tool",
+    size: 12
+  });
+  const second = journal.append({
+    workspaceId: "journal-main",
+    operation: "file_updated",
+    path: "root.txt",
+    origin: "local-client",
+    size: 18
+  });
+
+  assert.equal(first.revision, 1);
+  assert.equal(second.revision, 2);
+  assert.equal(registry.get("journal-main")?.currentRevision, 2);
+
+  const changes = journal.listSince({ workspaceId: "journal-main", since: 0 });
+
+  assert.equal(changes.hasMore, false);
+  assert.deepEqual(
+    changes.items.map((event) => event.revision),
+    [1, 2]
+  );
 });
