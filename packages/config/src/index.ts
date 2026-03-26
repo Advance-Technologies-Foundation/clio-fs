@@ -13,6 +13,9 @@ export const appConfig = {
     controlPlaneAuthToken: "dev-token"
   },
   client: {
-    defaultWorkspaceRoot: "./workspaces"
+    controlPlaneBaseUrl: "http://127.0.0.1:4010",
+    controlPlaneAuthToken: "dev-token",
+    defaultWorkspaceRoot: "./workspaces",
+    pollIntervalMs: 1000
   }
 };

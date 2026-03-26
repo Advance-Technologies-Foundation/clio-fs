@@ -120,6 +120,8 @@ Implemented today:
 - integration tests covering dashboard rendering, workspace detail rendering, form submission, and not-found handling
 - a compiled dev flow for `@clio-fs/server-ui`
 - an explicit opt-in local sync integration scenario specification in [docs/LOCAL_SYNC_INTEGRATION_SCENARIO.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/docs/LOCAL_SYNC_INTEGRATION_SCENARIO.md)
+- initial client mirror slice with bind state, snapshot hydrate, and polling-based change application
+- client tests covering hydrate and server-originated change application on mocked adapters
 
 ## Run The UI Locally
 
@@ -147,6 +149,30 @@ If you prefer separate terminals:
 By default the UI talks to the local control plane at `http://127.0.0.1:4010` using the development bearer token from [packages/config/src/index.ts](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/packages/config/src/index.ts).
 Registered workspaces are persisted to [`.clio-fs/server/workspaces.json`](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/.clio-fs/server/workspaces.json) at the repository root once you create them through the UI or API.
 On the workspace registration form, `Choose Folder` opens the native directory picker on the machine running `server-ui` and fills `rootPath` with the selected absolute path.
+
+## Run The Client Slice Locally
+
+The current client slice is headless and driven through environment variables.
+
+Example:
+
+```bash
+CLIO_FS_WORKSPACE_ID=forecast-hierarchy \
+CLIO_FS_MIRROR_ROOT=./tmp/forecast-hierarchy-mirror \
+corepack pnpm --filter @clio-fs/client dev
+```
+
+Current client behavior:
+
+- binds to one workspace
+- performs initial hydrate through `snapshot` and `snapshot-materialize`
+- polls `changes?since=` and applies server-originated create, update, and delete events
+
+Current client limitations:
+
+- no local write-back loop yet
+- no persistent client state store yet
+- `path_moved` currently falls back to a full rehydrate
 
 ## Opt-In Local Sync Scenario
 

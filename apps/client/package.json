@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
     "dev": "node --watch src/index.ts",
-    "test": "node ../../scripts/run-package-tests.mjs",
+    "test": "corepack pnpm build && node --test dist/**/*.test.js",
     "format": "node -e \"console.log('No formatter configured for @clio-fs/client yet')\""
   },
   "dependencies": {
