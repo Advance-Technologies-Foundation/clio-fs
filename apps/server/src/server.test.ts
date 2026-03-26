@@ -556,6 +556,94 @@ test("writes a file through the API and advances revisions", async () => {
   }
 });
 
+test("creates a directory through the API and advances revisions", async () => {
+  const mockFileSystem = createMockFileSystem();
+  mockFileSystem.addDirectory("/mock/mkdir-main");
+  const server = await startTestServer({ filesystem: mockFileSystem });
+
+  try {
+    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "mkdir-main",
+        rootPath: "/mock/mkdir-main"
+      })
+    });
+
+    assert.equal(createResponse.status, 201);
+
+    const mkdirResponse = await fetch(
+      `${server.baseUrl}/workspaces/mkdir-main/mkdir?path=packages/Gamma`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${AUTH_TOKEN}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          origin: "local-client"
+        })
+      }
+    );
+    const mkdirBody = await mkdirResponse.json();
+
+    assert.equal(mkdirResponse.status, 201);
+    assert.equal(mkdirBody.created, true);
+    assert.equal(mkdirBody.workspaceRevision, 1);
+    assert.equal(mockFileSystem.exists("/mock/mkdir-main/packages/Gamma"), true);
+    assert.equal(mockFileSystem.stat("/mock/mkdir-main/packages/Gamma").kind, "directory");
+    assert.equal(server.registry.get("mkdir-main")?.currentRevision, 1);
+  } finally {
+    await server.close();
+  }
+});
+
+test("rejects creating a directory when the path already exists", async () => {
+  const mockFileSystem = createMockFileSystem();
+  mockFileSystem.addDirectory("/mock/mkdir-conflict");
+  mockFileSystem.addDirectory("/mock/mkdir-conflict/packages");
+  const server = await startTestServer({ filesystem: mockFileSystem });
+
+  try {
+    await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "mkdir-conflict",
+        rootPath: "/mock/mkdir-conflict"
+      })
+    });
+
+    const mkdirResponse = await fetch(
+      `${server.baseUrl}/workspaces/mkdir-conflict/mkdir?path=packages`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${AUTH_TOKEN}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          origin: "local-client"
+        })
+      }
+    );
+    const mkdirBody = await mkdirResponse.json();
+
+    assert.equal(mkdirResponse.status, 400);
+    assert.equal(mkdirBody.error.code, "invalid_request");
+    assert.match(mkdirBody.error.message, /already exists/i);
+  } finally {
+    await server.close();
+  }
+});
+
 test("rejects conflicting file writes with 409", async () => {
   const mockFileSystem = createMockFileSystem();
   mockFileSystem.addDirectory("/mock/write-conflict");

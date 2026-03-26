@@ -620,6 +620,12 @@ Response `201`:
 }
 ```
 
+Current implementation note:
+
+- directory creation is implemented for workspace-relative paths
+- duplicate directory creation currently returns `400 invalid_request`
+- local watcher-driven empty-directory propagation is not implemented yet on the client side
+
 ### DELETE /workspaces/{workspaceId}/file
 
 Deletes a file or empty directory using conditional checks.

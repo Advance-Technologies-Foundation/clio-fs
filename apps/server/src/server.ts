@@ -16,8 +16,10 @@ import {
 } from "@clio-fs/database";
 import { type FileSystemAdapter, nodeFileSystem } from "./filesystem.js";
 import {
+  createWorkspaceDirectory,
   deleteWorkspacePath,
   FileWriteConflictError,
+  parseCreateWorkspaceDirectoryRequest,
   parseDeleteWorkspaceFileRequest,
   parsePutWorkspaceFileRequest,
   putWorkspaceFile
@@ -238,6 +240,51 @@ const routeRequest = async (
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid materialize request";
       writeError(response, 400, "invalid_request", message, { workspaceId });
+      return;
+    }
+  }
+
+  if (method === "POST" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/mkdir")) {
+    const [, , workspaceId] = url.pathname.split("/");
+    const path = url.searchParams.get("path");
+
+    if (!workspaceId) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    if (!path) {
+      writeError(response, 400, "invalid_request", "path query parameter is required", {
+        workspaceId
+      });
+      return;
+    }
+
+    const workspace = options.registry.get(workspaceId);
+
+    if (!workspace) {
+      writeError(response, 404, "not_found", "Workspace not found", { workspaceId });
+      return;
+    }
+
+    try {
+      const payload = await readJsonBody(request);
+      const input = parseCreateWorkspaceDirectoryRequest(payload);
+      json(
+        response,
+        201,
+        createWorkspaceDirectory(
+          workspace,
+          path,
+          input,
+          options.filesystem ?? nodeFileSystem,
+          options.journal!
+        )
+      );
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid directory create request";
+      writeError(response, 400, "invalid_request", message, { workspaceId, path });
       return;
     }
   }

@@ -1,5 +1,7 @@
 import type {
   ApiErrorShape,
+  CreateWorkspaceDirectoryRequest,
+  CreateWorkspaceDirectoryResponse,
   DeleteWorkspaceFileRequest,
   DeleteWorkspaceFileResponse,
   PutWorkspaceFileRequest,
@@ -76,6 +78,23 @@ export class ClientControlPlane {
 
     return this.#request<DeleteWorkspaceFileResponse>(url, {
       method: "DELETE",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(input)
+    });
+  }
+
+  async createDirectory(
+    workspaceId: string,
+    path: string,
+    input: CreateWorkspaceDirectoryRequest
+  ): Promise<CreateWorkspaceDirectoryResponse> {
+    const url = new URL(`/workspaces/${encodeURIComponent(workspaceId)}/mkdir`, this.#baseUrl);
+    url.searchParams.set("path", path);
+
+    return this.#request<CreateWorkspaceDirectoryResponse>(url, {
+      method: "POST",
       headers: {
         "content-type": "application/json"
       },

@@ -10,6 +10,7 @@ const createFetchStub = () => {
   let changeCalls = 0;
   const putCalls: Array<{ path: string | null; baseFileRevision?: number; content: string }> = [];
   const deleteCalls: Array<{ path: string | null; baseFileRevision?: number }> = [];
+  const mkdirCalls: Array<{ path: string | null }> = [];
 
   const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
@@ -140,6 +141,24 @@ const createFetchStub = () => {
     }
 
     if (
+      url.pathname === "/workspaces/demo-workspace/mkdir" &&
+      (init?.method ?? "GET") === "POST"
+    ) {
+      const path = url.searchParams.get("path");
+      mkdirCalls.push({ path });
+
+      return new Response(
+        JSON.stringify({
+          workspaceId: "demo-workspace",
+          path,
+          workspaceRevision: 3,
+          created: true
+        }),
+        { status: 201, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    if (
       url.pathname === "/workspaces/demo-workspace/file" &&
       (init?.method ?? "GET") === "PUT"
     ) {
@@ -218,6 +237,7 @@ const createFetchStub = () => {
   };
 
   return Object.assign(fetchImpl, {
+    getMkdirCalls: () => mkdirCalls,
     getPutCalls: () => putCalls,
     getDeleteCalls: () => deleteCalls
   });
@@ -326,6 +346,34 @@ test("pushFile surfaces server conflict errors", async () => {
       }),
     /provided base revision/i
   );
+});
+
+test("createDirectory sends a directory create request and advances local bind state", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const fetchStub = createFetchStub();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchStub as unknown as typeof fetch
+    }
+  });
+
+  await client.bind();
+  const nextState = await client.createDirectory("packages/Gamma");
+
+  assert.equal(nextState.lastAppliedRevision, 3);
+  assert.equal(filesystem.exists("/mirror/demo-workspace/packages/Gamma"), true);
+  assert.deepEqual(fetchStub.getMkdirCalls(), [
+    {
+      path: "packages/Gamma"
+    }
+  ]);
 });
 
 test("deleteFile sends a conditional delete and advances local bind state", async () => {

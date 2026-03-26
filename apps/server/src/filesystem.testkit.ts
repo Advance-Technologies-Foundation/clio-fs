@@ -104,6 +104,13 @@ export class MockFileSystem implements FileSystemAdapter {
     this.addFile(path, { content });
   }
 
+  ensureDirectory(path: string) {
+    this.#ensureParentDirectories(path);
+    if (!this.#nodes.has(toKey(path))) {
+      this.addDirectory(path);
+    }
+  }
+
   exists(path: string) {
     return this.#nodes.has(toKey(path));
   }

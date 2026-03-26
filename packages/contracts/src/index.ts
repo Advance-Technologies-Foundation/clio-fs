@@ -97,6 +97,18 @@ export interface PutWorkspaceFileResponse {
   contentHash: string;
 }
 
+export interface CreateWorkspaceDirectoryRequest {
+  operationId?: string;
+  origin: ChangeOrigin;
+}
+
+export interface CreateWorkspaceDirectoryResponse {
+  workspaceId: WorkspaceId;
+  path: string;
+  workspaceRevision: Revision;
+  created: true;
+}
+
 export interface DeleteWorkspaceFileRequest {
   operationId?: string;
   baseFileRevision?: Revision;

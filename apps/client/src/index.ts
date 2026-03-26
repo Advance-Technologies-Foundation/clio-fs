@@ -35,6 +35,7 @@ export interface MirrorClient {
   bind: () => Promise<ClientBindState>;
   pollOnce: () => Promise<ClientBindState>;
   pushFile: (path: string, content: string, options?: { baseFileRevision?: number }) => Promise<ClientBindState>;
+  createDirectory: (path: string) => Promise<ClientBindState>;
   deleteFile: (path: string, options?: { baseFileRevision?: number }) => Promise<ClientBindState>;
   startLocalWatchLoop: () => Promise<void>;
   stopLocalWatchLoop: () => void;
@@ -296,6 +297,26 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       const result = await controlPlane.putFile(bound.workspaceId, path, {
         baseFileRevision: pushOptions?.baseFileRevision ?? bound.lastAppliedRevision,
         content,
+        origin: "local-client"
+      });
+      const nextState = {
+        ...bound,
+        lastAppliedRevision: result.workspaceRevision
+      };
+
+      stateStore.save(nextState);
+      return nextState;
+    },
+    async createDirectory(path) {
+      const bound = (await client.bind()) ?? stateStore.load(options.workspaceId);
+
+      if (!bound) {
+        throw new Error(`Workspace is not bound: ${options.workspaceId}`);
+      }
+
+      filesystem.ensureDirectory(join(bound.mirrorRoot, path));
+
+      const result = await controlPlane.createDirectory(bound.workspaceId, path, {
         origin: "local-client"
       });
       const nextState = {

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type {
+  CreateWorkspaceDirectoryRequest,
+  CreateWorkspaceDirectoryResponse,
   DeleteWorkspaceFileRequest,
   DeleteWorkspaceFileResponse,
   PutWorkspaceFileRequest,
@@ -106,6 +108,34 @@ export const parseDeleteWorkspaceFileRequest = (value: unknown): DeleteWorkspace
       typeof record.baseFileRevision === "number" ? record.baseFileRevision : undefined,
     baseContentHash:
       typeof record.baseContentHash === "string" ? record.baseContentHash : undefined,
+    origin: record.origin
+  };
+};
+
+export const parseCreateWorkspaceDirectoryRequest = (
+  value: unknown
+): CreateWorkspaceDirectoryRequest => {
+  if (typeof value !== "object" || value === null) {
+    throw new Error("request body must be a JSON object");
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (
+    record.origin !== "local-client" &&
+    record.origin !== "creatio" &&
+    record.origin !== "server-tool" &&
+    record.origin !== "unknown"
+  ) {
+    throw new Error("origin must be one of local-client, creatio, server-tool, unknown");
+  }
+
+  if (typeof record.operationId !== "undefined" && typeof record.operationId !== "string") {
+    throw new Error("operationId must be omitted or a string");
+  }
+
+  return {
+    operationId: typeof record.operationId === "string" ? record.operationId : undefined,
     origin: record.origin
   };
 };
@@ -237,5 +267,45 @@ export const deleteWorkspacePath = (
     path,
     workspaceRevision: event.revision,
     deleted: true
+  };
+};
+
+export const createWorkspaceDirectory = (
+  workspace: WorkspaceRecord,
+  rawPath: string,
+  input: CreateWorkspaceDirectoryRequest,
+  filesystem: FileSystemAdapter,
+  journal: ChangeJournal
+): CreateWorkspaceDirectoryResponse => {
+  const path = ensureRelativeWorkspacePath(rawPath);
+  const absolutePath = join(workspace.rootPath, path);
+
+  if (filesystem.exists(absolutePath)) {
+    const stats = filesystem.stat(absolutePath);
+
+    if (stats.kind === "directory") {
+      throw new Error("target directory already exists");
+    }
+
+    throw new Error("target path already exists as a file");
+  }
+
+  filesystem.ensureDirectory(absolutePath);
+
+  const event = journal.append({
+    workspaceId: workspace.workspaceId,
+    operation: "directory_created",
+    path,
+    origin: input.origin,
+    contentHash: null,
+    size: null,
+    operationId: input.operationId
+  });
+
+  return {
+    workspaceId: workspace.workspaceId,
+    path,
+    workspaceRevision: event.revision,
+    created: true
   };
 };

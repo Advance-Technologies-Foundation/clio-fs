@@ -27,6 +27,7 @@ export interface FileSystemAdapter {
   stat: (path: string) => FileSystemStat;
   readFileText: (path: string) => string;
   writeFileText: (path: string, content: string) => void;
+  ensureDirectory: (path: string) => void;
   exists: (path: string) => boolean;
   removePath: (path: string) => void;
 }
@@ -55,6 +56,9 @@ export const nodeFileSystem: FileSystemAdapter = {
   writeFileText(path, content) {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, content, "utf8");
+  },
+  ensureDirectory(path) {
+    mkdirSync(path, { recursive: true });
   },
   exists(path) {
     return existsSync(path);
