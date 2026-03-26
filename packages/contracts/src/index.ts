@@ -22,6 +22,16 @@ export interface WorkspaceRecord extends WorkspaceDescriptor {
   policies: WorkspacePolicies;
 }
 
+export interface ServerHealthResponse {
+  status: "ok";
+  service: string;
+  summary: string;
+}
+
+export interface WorkspaceListResponse {
+  items: WorkspaceDescriptor[];
+}
+
 export interface RegisterWorkspaceInput {
   workspaceId: WorkspaceId;
   displayName: string;

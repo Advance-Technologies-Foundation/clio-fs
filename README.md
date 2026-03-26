@@ -80,7 +80,7 @@ App-level examples:
 
 ## Current Implementation Status
 
-Phase 1 has started in `apps/server`.
+Phase 1 has started in `apps/server` and `apps/server-ui`.
 
 Implemented today:
 
@@ -95,6 +95,24 @@ Implemented today:
 - validation for `workspaceId`, `platform`, and absolute `rootPath`
 - integration tests covering health, auth, registration, validation, and duplicate detection
 - a compiled dev flow for `@clio-fs/server` so `corepack pnpm --filter @clio-fs/server dev` runs against emitted `dist`
+- an operator-facing server UI in `apps/server-ui`
+- server-rendered dashboard and workspace detail pages backed by control-plane API calls
+- integration tests covering dashboard rendering, workspace detail rendering, and not-found handling
+- a compiled dev flow for `@clio-fs/server-ui`
+
+## Run The UI Locally
+
+1. Start the control plane:
+
+   `corepack pnpm --filter @clio-fs/server dev`
+
+2. Start the operator UI in a second terminal:
+
+   `corepack pnpm --filter @clio-fs/server-ui dev`
+
+3. Open [http://127.0.0.1:4020](http://127.0.0.1:4020)
+
+By default the UI talks to the local control plane at `http://127.0.0.1:4010` using the development bearer token from [packages/config/src/index.ts](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/packages/config/src/index.ts).
 
 ## Recommended Reading Order
 

@@ -1,3 +1,9 @@
-import { workspaceListRoute } from "@clio-fs/ui-kit";
+import { appConfig } from "@clio-fs/config";
+import { startServerUi } from "./server.js";
 
-console.log(`[server-ui] operator UI scaffold ready: ${workspaceListRoute}`);
+await startServerUi({
+  host: appConfig.serverUi.host,
+  port: appConfig.serverUi.port,
+  controlPlaneBaseUrl: appConfig.serverUi.controlPlaneBaseUrl,
+  controlPlaneAuthToken: appConfig.serverUi.controlPlaneAuthToken
+});

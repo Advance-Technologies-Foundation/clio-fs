@@ -44,6 +44,9 @@ importers:
 
   apps/server-ui:
     dependencies:
+      '@clio-fs/config':
+        specifier: workspace:*
+        version: link:../../packages/config
       '@clio-fs/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -73,7 +76,11 @@ importers:
         specifier: workspace:*
         version: link:../contracts
 
-  packages/ui-kit: {}
+  packages/ui-kit:
+    dependencies:
+      '@clio-fs/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
 packages:
 
