@@ -2,9 +2,9 @@ import type { WorkspaceRecord, WorkspaceStatus } from "@clio-fs/contracts";
 
 export const workspaceListRoute = "/workspaces";
 
-const paletteByStatus: Record<WorkspaceStatus, string> = {
-  active: "#1d8348",
-  disabled: "#8e6b00"
+const badgeStyles: Record<WorkspaceStatus, { bg: string; color: string }> = {
+  active: { bg: "rgba(27,139,75,0.10)", color: "#166534" },
+  disabled: { bg: "rgba(180,83,9,0.10)", color: "#92400E" }
 };
 
 export const escapeHtml = (value: string) =>
@@ -15,10 +15,10 @@ export const escapeHtml = (value: string) =>
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 
-export const renderStatusBadge = (status: WorkspaceStatus) =>
-  `<span style="display:inline-flex;align-items:center;gap:8px;padding:4px 10px;border-radius:999px;background:${paletteByStatus[status]}1a;color:${paletteByStatus[status]};font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;">${escapeHtml(
-    status
-  )}</span>`;
+export const renderStatusBadge = (status: WorkspaceStatus) => {
+  const s = badgeStyles[status] ?? { bg: "rgba(107,114,128,0.10)", color: "#374151" };
+  return `<span style="display:inline-flex;align-items:center;padding:2px 10px;border-radius:9999px;background:${s.bg};color:${s.color};font-family:'Montserrat',sans-serif;font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">${escapeHtml(status)}</span>`;
+};
 
 export const formatWorkspaceLabel = (workspace: Pick<WorkspaceRecord, "workspaceId" | "displayName">) => {
   const displayName = workspace.displayName?.trim();
@@ -36,189 +36,403 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(title)}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style>
       :root {
-        color-scheme: light;
-        --bg: #f3efe6;
-        --panel: #fffaf1;
-        --panel-border: #d8c8ac;
-        --text: #1f1a14;
-        --muted: #756754;
-        --accent: #9e5f2f;
-        --accent-strong: #733f1d;
-        --danger: #a63d40;
+        --color-brand-orange:    #F04E23;
+        --color-primary:         #1463C8;
+        --color-primary-hover:   #1151A6;
+        --color-primary-soft:    rgba(20,99,200,0.10);
+        --color-surface-dark:    #14111F;
+        --color-surface-page:    #F5F6FA;
+        --color-surface-card:    #FFFFFF;
+        --color-surface-elevated:#FFFFFF;
+        --color-border:          #E3E3E8;
+        --color-border-strong:   #C8C8D0;
+        --color-text-primary:    #232325;
+        --color-text-secondary:  #6B7280;
+        --color-text-inverse:    #FFFFFF;
+        --color-text-link:       #1463C8;
+        --color-success-soft:    rgba(27,139,75,0.10);
+        --color-success-text:    #166534;
+        --color-warning-soft:    rgba(180,83,9,0.10);
+        --color-warning-text:    #92400E;
+        --color-danger:          #C41C1C;
+        --color-danger-soft:     rgba(196,28,28,0.10);
+        --color-danger-text:     #991B1B;
+        --shadow-card:   0 1px 3px rgba(20,17,31,0.08), 0 1px 2px rgba(20,17,31,0.06);
+        --shadow-modal:  0 20px 60px rgba(20,17,31,0.20), 0 4px 16px rgba(20,17,31,0.12);
+        --shadow-topbar: 0 1px 0 rgba(0,0,0,0.24);
+        --radius-sm: 4px;
+        --radius-md: 8px;
+        --radius-lg: 12px;
+        --radius-xl: 16px;
       }
-      * { box-sizing: border-box; }
+      *, *::before, *::after { box-sizing: border-box; }
       body {
         margin: 0;
-        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
-        background:
-          radial-gradient(circle at top left, rgba(158, 95, 47, 0.18), transparent 28%),
-          linear-gradient(180deg, #f8f2e9 0%, var(--bg) 100%);
-        color: var(--text);
+        font-family: 'Montserrat', sans-serif;
+        font-size: 0.9375rem;
+        line-height: 1.6;
+        color: var(--color-text-primary);
+        background: var(--color-surface-page);
       }
-      a { color: var(--accent-strong); text-decoration: none; }
+      a { color: var(--color-text-link); text-decoration: none; }
       a:hover { text-decoration: underline; }
-      .shell {
-        max-width: 1180px;
-        margin: 0 auto;
-        padding: 36px 24px 72px;
+      code {
+        font-family: 'Consolas', 'Courier New', monospace;
+        font-size: 0.85em;
+        background: var(--color-primary-soft);
+        color: var(--color-primary);
+        padding: 1px 5px;
+        border-radius: var(--radius-sm);
       }
+      /* --- TopBar --- */
+      .topbar {
+        position: fixed;
+        top: 0; left: 0; right: 0;
+        height: 56px;
+        background: var(--color-surface-dark);
+        box-shadow: var(--shadow-topbar);
+        display: flex;
+        align-items: center;
+        padding: 0 1.5rem;
+        z-index: 100;
+      }
+      .topbar-brand { display: flex; align-items: center; gap: 0.75rem; }
+      .topbar-dot {
+        width: 8px; height: 8px;
+        border-radius: 9999px;
+        background: var(--color-brand-orange);
+        flex-shrink: 0;
+      }
+      .topbar-title {
+        color: var(--color-text-inverse);
+        font-size: 0.9375rem;
+        font-weight: 600;
+      }
+      .topbar-subtitle {
+        color: rgba(255,255,255,0.40);
+        font-size: 0.75rem;
+        font-weight: 500;
+        padding-left: 0.75rem;
+        margin-left: 0.75rem;
+        border-left: 1px solid rgba(255,255,255,0.15);
+      }
+      /* --- Shell --- */
+      .shell {
+        max-width: 1380px;
+        margin: 0 auto;
+        padding: calc(56px + 2rem) 1.5rem 3rem;
+      }
+      /* --- Hero --- */
       .hero {
         display: grid;
-        gap: 18px;
-        margin-bottom: 28px;
+        gap: 0.625rem;
+        margin-bottom: 2rem;
       }
       .eyebrow {
-        font: 700 12px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
-        letter-spacing: .16em;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
         text-transform: uppercase;
-        color: var(--accent);
+        color: var(--color-text-secondary);
+        margin: 0;
       }
       h1 {
         margin: 0;
-        font-size: clamp(36px, 5vw, 64px);
-        line-height: .94;
-        letter-spacing: -.03em;
+        font-size: clamp(1.5rem, 3vw, 2rem);
+        font-weight: 700;
+        line-height: 1.25;
+        letter-spacing: -0.02em;
+        color: var(--color-text-primary);
+      }
+      h2 {
+        margin: 0;
+        font-size: 1.0625rem;
+        font-weight: 600;
+        color: var(--color-text-primary);
       }
       .lede {
-        max-width: 760px;
         margin: 0;
-        color: var(--muted);
-        font-size: 18px;
-        line-height: 1.5;
+        font-size: 0.9375rem;
+        color: var(--color-text-secondary);
+        line-height: 1.6;
+        max-width: 680px;
       }
+      /* --- Stat grid --- */
       .grid {
         display: grid;
-        gap: 18px;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        margin-bottom: 24px;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        margin-bottom: 1.5rem;
       }
+      /* --- Panel / Card --- */
       .panel {
-        background: color-mix(in srgb, var(--panel) 88%, white 12%);
-        border: 1px solid var(--panel-border);
-        border-radius: 20px;
-        padding: 20px;
-        box-shadow: 0 12px 32px rgba(61, 43, 18, 0.08);
+        background: var(--color-surface-card);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        padding: 1.25rem 1.5rem;
+        box-shadow: var(--shadow-card);
+        margin-bottom: 1.5rem;
       }
+      .panel.error {
+        background: var(--color-danger-soft);
+        border-color: rgba(196,28,28,0.22);
+      }
+      .stack { display: grid; gap: 1rem; }
+      /* --- Metric --- */
       .metric {
-        font-size: 13px;
+        font-size: 0.75rem;
+        font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: .12em;
-        color: var(--muted);
+        letter-spacing: 0.10em;
+        color: var(--color-text-secondary);
+        margin-bottom: 0.5rem;
       }
       .metric-value {
-        margin-top: 10px;
-        font-size: 28px;
+        font-size: 1.625rem;
         font-weight: 700;
+        color: var(--color-text-primary);
+        line-height: 1.25;
+      }
+      /* --- Breadcrumb nav --- */
+      .nav {
+        margin-bottom: 1.5rem;
+        font-size: 0.8125rem;
+        font-weight: 500;
+      }
+      /* --- Data table card --- */
+      .table-card {
+        background: var(--color-surface-card);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-card);
+        overflow: hidden;
+        margin-bottom: 1.5rem;
+      }
+      .table-card-header {
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--color-border);
+      }
+      .table-card-label {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.10em;
+        color: var(--color-text-secondary);
+        margin: 0;
       }
       table {
         width: 100%;
         border-collapse: collapse;
-        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-      th, td {
-        padding: 14px 12px;
-        border-bottom: 1px solid rgba(117, 103, 84, 0.18);
-        text-align: left;
-        vertical-align: top;
       }
       th {
-        font-size: 12px;
+        padding: 0.75rem 1rem;
+        font-size: 0.75rem;
+        font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: .1em;
-        color: var(--muted);
+        letter-spacing: 0.10em;
+        color: var(--color-text-secondary);
+        border-bottom: 1px solid var(--color-border-strong);
+        text-align: left;
+        white-space: nowrap;
       }
+      td {
+        padding: 0.875rem 1rem;
+        font-size: 0.8125rem;
+        color: var(--color-text-primary);
+        vertical-align: middle;
+        border-bottom: 1px solid var(--color-border);
+      }
+      tbody tr:last-child td { border-bottom: none; }
+      tbody tr:hover { background: rgba(20,99,200,0.025); }
+      /* --- Empty / notice states --- */
       .empty {
-        padding: 28px;
-        border-radius: 18px;
-        border: 1px dashed var(--panel-border);
-        color: var(--muted);
-        background: rgba(255,255,255,0.4);
+        padding: 2.5rem 1.5rem;
+        text-align: center;
+        color: var(--color-text-secondary);
+        font-size: 0.9375rem;
       }
-      .stack { display: grid; gap: 18px; }
+      /* --- Meta list --- */
       .meta-list {
         display: grid;
-        grid-template-columns: minmax(160px, 220px) 1fr;
-        gap: 12px 18px;
+        grid-template-columns: minmax(130px, 170px) 1fr;
+        gap: 0.75rem 1.25rem;
         margin: 0;
       }
       .meta-list dt {
-        color: var(--muted);
-        font: 600 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-        text-transform: uppercase;
-        letter-spacing: .08em;
-      }
-      .meta-list dd { margin: 0; word-break: break-word; }
-      .nav {
-        margin-bottom: 16px;
-        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        color: var(--muted);
-      }
-      .error {
-        border-color: rgba(166, 61, 64, 0.28);
-        background: rgba(166, 61, 64, 0.06);
-      }
-      .field-row {
-        display: flex;
-        gap: 10px;
-        align-items: stretch;
-      }
-      .field-row input {
-        flex: 1;
-        min-width: 0;
-      }
-      .secondary-button {
-        border: 1px solid rgba(117,103,84,.28);
-        border-radius: 12px;
-        background: white;
-        color: var(--accent-strong);
-        padding: 12px 14px;
+        font-size: 0.75rem;
         font-weight: 700;
-        cursor: pointer;
-        white-space: nowrap;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--color-text-secondary);
+        padding-top: 2px;
+      }
+      .meta-list dd {
+        margin: 0;
+        font-size: 0.8125rem;
+        color: var(--color-text-primary);
+        word-break: break-word;
+      }
+      /* --- Form --- */
+      .form-grid { display: grid; gap: 1.25rem; margin-top: 1.25rem; }
+      .form-field { display: grid; gap: 0.375rem; }
+      label {
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: var(--color-text-secondary);
+        display: block;
+      }
+      input[type="text"],
+      input[type="email"],
+      input[type="password"],
+      input[type="search"],
+      input[type="url"],
+      input:not([type]) {
+        width: 100%;
+        padding: 9px 12px;
+        font-family: 'Montserrat', sans-serif;
+        font-size: 0.9375rem;
+        color: var(--color-text-primary);
+        background: var(--color-surface-card);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s;
+      }
+      input:focus {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px var(--color-primary-soft);
+      }
+      input[readonly] {
+        background: var(--color-surface-page);
+        color: var(--color-text-secondary);
+        cursor: default;
       }
       .helper-text {
-        margin-top: 8px;
-        color: var(--muted);
-        font: 13px/1.5 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 0.75rem;
+        color: var(--color-text-secondary);
+        line-height: 1.6;
+        margin: 0;
       }
+      .field-row { display: flex; gap: 0.75rem; align-items: stretch; }
+      .field-row input { flex: 1; min-width: 0; }
+      /* --- Buttons --- */
+      button { font-family: 'Montserrat', sans-serif; cursor: pointer; }
+      .primary-button {
+        display: inline-flex; align-items: center; justify-content: center;
+        height: 40px; padding: 0 1.25rem;
+        background: var(--color-primary); color: #FFFFFF;
+        font-family: 'Montserrat', sans-serif; font-size: 0.9375rem; font-weight: 600;
+        border: none; border-radius: var(--radius-md); cursor: pointer;
+        transition: background 0.15s; white-space: nowrap; line-height: 1;
+      }
+      .primary-button:hover:not(:disabled) { background: var(--color-primary-hover); }
+      .primary-button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .secondary-button {
+        display: inline-flex; align-items: center; justify-content: center;
+        height: 36px; padding: 0 1rem;
+        background: var(--color-surface-card); color: var(--color-text-primary);
+        font-family: 'Montserrat', sans-serif; font-size: 0.8125rem; font-weight: 600;
+        border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); cursor: pointer;
+        transition: background 0.15s; white-space: nowrap; line-height: 1;
+      }
+      .secondary-button:hover:not(:disabled) { background: var(--color-surface-page); }
+      .secondary-button:disabled { opacity: 0.5; cursor: not-allowed; }
       .danger-button {
-        border: 1px solid rgba(166,61,64,.28);
-        border-radius: 12px;
-        background: rgba(166,61,64,.08);
-        color: var(--danger);
-        padding: 12px 14px;
-        font-weight: 700;
-        cursor: pointer;
-        white-space: nowrap;
+        display: inline-flex; align-items: center; justify-content: center;
+        height: 36px; padding: 0 1rem;
+        background: var(--color-danger); color: #FFFFFF;
+        font-family: 'Montserrat', sans-serif; font-size: 0.8125rem; font-weight: 600;
+        border: none; border-radius: var(--radius-md); cursor: pointer;
+        transition: background 0.15s; white-space: nowrap; line-height: 1;
       }
+      .danger-button:hover:not(:disabled) { background: #A61616; }
+      /* --- Notice banner --- */
+      .notice-banner {
+        display: flex; align-items: flex-start; gap: 0.75rem;
+        border-radius: var(--radius-md);
+        padding: 0.875rem 1.125rem;
+        font-size: 0.9375rem; font-weight: 500;
+        margin-bottom: 1.5rem;
+      }
+      .notice-error {
+        background: var(--color-danger-soft);
+        color: var(--color-danger-text);
+        border: 1px solid rgba(196,28,28,0.20);
+      }
+      .notice-success {
+        background: var(--color-success-soft);
+        color: var(--color-success-text);
+        border: 1px solid rgba(27,139,75,0.20);
+      }
+      .notice-label {
+        font-size: 0.75rem; font-weight: 700;
+        text-transform: uppercase; letter-spacing: 0.08em;
+        flex-shrink: 0; margin-top: 2px; opacity: 0.8;
+      }
+      /* --- Modal dialog --- */
       dialog {
-        border: 1px solid var(--panel-border);
-        border-radius: 24px;
+        border: none;
+        border-radius: var(--radius-xl);
         padding: 0;
         width: min(520px, calc(100vw - 32px));
-        background: color-mix(in srgb, var(--panel) 92%, white 8%);
-        box-shadow: 0 24px 64px rgba(31, 26, 20, 0.24);
+        background: var(--color-surface-elevated);
+        box-shadow: var(--shadow-modal);
+        overflow: hidden;
       }
       dialog::backdrop {
-        background: rgba(31, 26, 20, 0.42);
+        background: rgba(20,17,31,0.50);
         backdrop-filter: blur(4px);
       }
-      .modal-card {
-        padding: 24px;
-        display: grid;
-        gap: 16px;
-        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      .modal-card { display: grid; }
+      .modal-header {
+        padding: 1.25rem 1.5rem;
+        border-bottom: 1px solid var(--color-border);
+      }
+      .modal-title {
+        margin: 0;
+        font-size: 1.0625rem;
+        font-weight: 600;
+        color: var(--color-text-primary);
+      }
+      .modal-body {
+        padding: 1.25rem 1.5rem;
+        font-size: 0.9375rem;
+        color: var(--color-text-secondary);
+        line-height: 1.6;
       }
       .modal-actions {
+        padding: 1rem 1.5rem;
+        border-top: 1px solid var(--color-border);
         display: flex;
         justify-content: flex-end;
-        gap: 12px;
+        align-items: center;
+        gap: 0.75rem;
+        background: var(--color-surface-page);
+      }
+      .modal-actions form { display: contents; }
+      /* --- Responsive --- */
+      @media (max-width: 720px) {
+        .shell { padding-left: 1rem; padding-right: 1rem; }
+        .grid { grid-template-columns: 1fr 1fr; }
+        .meta-list { grid-template-columns: 1fr; }
+        .field-row { flex-direction: column; }
+        h1 { font-size: 1.5rem; }
       }
     </style>
   </head>
   <body>
+    <header class="topbar">
+      <div class="topbar-brand">
+        <span class="topbar-dot"></span>
+        <span class="topbar-title">Clio FS</span>
+        <span class="topbar-subtitle">Control Plane</span>
+      </div>
+    </header>
     <main class="shell">${body}</main>
     <script>
       (() => {
@@ -270,7 +484,7 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
           }
 
           statusNode.textContent = text;
-          statusNode.style.color = isError ? "var(--danger)" : "var(--muted)";
+          statusNode.style.color = isError ? "var(--color-danger-text)" : "var(--color-text-secondary)";
         };
 
         if (pickerButton instanceof HTMLButtonElement) {
@@ -361,7 +575,7 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
 </html>`;
 
 export const renderMetricCard = (label: string, value: string) => `
-  <section class="panel">
+  <section class="panel" style="margin-bottom:0;">
     <div class="metric">${escapeHtml(label)}</div>
     <div class="metric-value">${escapeHtml(value)}</div>
   </section>
@@ -370,11 +584,12 @@ export const renderMetricCard = (label: string, value: string) => `
 export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
   if (items.length === 0) {
     return `
-      <section class="panel" style="display:grid;gap:12px;">
-        <div class="metric">No Workspaces Yet</div>
-        <div class="metric-value" style="font-size:32px;">Start from a folder.</div>
-        <p class="lede" style="max-width:none;margin:0;">Choose a project root, confirm the generated workspace ID, and create the first workspace. Once created, it will appear here with status and revision information.</p>
-      </section>
+      <div class="table-card">
+        <div class="table-card-header">
+          <p class="table-card-label">Workspaces</p>
+        </div>
+        <div class="empty">no workspaces registered yet.</div>
+      </div>
     `;
   }
 
@@ -402,24 +617,32 @@ export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
     .join("");
 
   return `
-    <div class="panel">
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Status</th>
-            <th>Revision</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
+    <div class="table-card">
+      <div class="table-card-header">
+        <p class="table-card-label">Workspaces</p>
+      </div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Status</th>
+              <th>Revision</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
     </div>
     <dialog data-delete-dialog>
       <div class="modal-card">
-        <div class="metric">Delete Workspace</div>
-        <div class="metric-value" style="font-size:32px;">Remove <span data-delete-workspace-name>this workspace</span>?</div>
-        <p class="lede" style="max-width:none;margin:0;">This removes the workspace registration from the control plane. The underlying project folder is not deleted.</p>
+        <div class="modal-header">
+          <h2 class="modal-title">Delete Workspace</h2>
+        </div>
+        <div class="modal-body">
+          Remove <strong data-delete-workspace-name>this workspace</strong>? This removes the workspace registration from the control plane. The underlying project folder is not deleted.
+        </div>
         <div class="modal-actions">
           <button type="button" class="secondary-button" data-delete-cancel>Cancel</button>
           <form method="post" action="/" data-delete-dialog-form>
@@ -439,45 +662,43 @@ export const renderWorkspaceRegistrationForm = (
   },
   serverPlatform: "windows" | "macos" | "linux" = "linux"
 ) => `
-  <section class="panel" style="margin-bottom:18px;">
+  <section class="panel">
     <div class="metric">Register Workspace</div>
-    <form method="post" action="/workspaces/register" style="display:grid;gap:16px;margin-top:18px;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-      <div style="display:grid;gap:6px;">
-        <label for="workspaceId">Workspace ID</label>
-        <input id="workspaceId" name="workspaceId" required value="${escapeHtml(values?.workspaceId ?? "")}" style="padding:12px 14px;border:1px solid rgba(117,103,84,.28);border-radius:12px;background:white;" />
+    <form method="post" action="/workspaces/register" class="form-grid">
+      <div class="form-field">
+        <label for="workspaceId">Workspace ID<span style="color:var(--color-danger);margin-left:2px;">*</span></label>
+        <input id="workspaceId" name="workspaceId" required value="${escapeHtml(values?.workspaceId ?? "")}" />
       </div>
-      <div style="display:grid;gap:6px;">
+      <div class="form-field">
         <label for="displayName">Display Name</label>
-        <input id="displayName" name="displayName" value="${escapeHtml(values?.displayName ?? "")}" style="padding:12px 14px;border:1px solid rgba(117,103,84,.28);border-radius:12px;background:white;" />
-        <div class="helper-text">Optional. If omitted, the UI will show only the workspace ID. Folder selection no longer fills this field automatically.</div>
+        <input id="displayName" name="displayName" value="${escapeHtml(values?.displayName ?? "")}" />
+        <p class="helper-text">Optional. If omitted, the UI will show only the workspace ID.</p>
       </div>
-      <div style="display:grid;gap:6px;">
-        <label for="rootPath">Root Path</label>
+      <div class="form-field">
+        <label for="rootPath">Root Path<span style="color:var(--color-danger);margin-left:2px;">*</span></label>
         <div class="field-row">
-          <input id="rootPath" name="rootPath" required value="${escapeHtml(values?.rootPath ?? "")}" style="padding:12px 14px;border:1px solid rgba(117,103,84,.28);border-radius:12px;background:white;" />
+          <input id="rootPath" name="rootPath" required value="${escapeHtml(values?.rootPath ?? "")}" />
           <button type="button" class="secondary-button" data-root-path-picker data-target-input="rootPath">Choose Folder</button>
         </div>
-        <div class="helper-text" data-root-picker-status>Use the button to select a folder with the native file explorer.</div>
+        <p class="helper-text" data-root-picker-status>Use the button to select a folder with the native file explorer.</p>
       </div>
-      <div style="display:grid;gap:6px;">
+      <div class="form-field">
         <label for="platformDisplay">Platform</label>
         <input id="platformDisplay" value="${escapeHtml(
           serverPlatform
-        )}" readonly aria-readonly="true" style="padding:12px 14px;border:1px solid rgba(117,103,84,.18);border-radius:12px;background:rgba(255,255,255,.65);color:#756754;" />
-        <div class="helper-text">Platform is determined by the server and cannot be changed from the UI.</div>
+        )}" readonly aria-readonly="true" />
+        <p class="helper-text">Platform is determined by the server and cannot be changed from the UI.</p>
       </div>
       <div>
-        <button type="submit" style="border:0;border-radius:999px;background:#733f1d;color:white;padding:12px 18px;font-weight:700;cursor:pointer;">Create Workspace</button>
+        <button type="submit" class="primary-button">Create Workspace</button>
       </div>
     </form>
   </section>
 `;
 
 export const renderNotice = (tone: "error" | "success", message: string) => `
-  <section class="panel ${tone === "error" ? "error" : ""}" style="margin-bottom:18px;">
-    <div class="metric">${tone === "error" ? "Error" : "Success"}</div>
-    <div style="margin-top:10px;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#3f3428;">${escapeHtml(
-      message
-    )}</div>
-  </section>
+  <div class="notice-banner ${tone === "error" ? "notice-error" : "notice-success"}">
+    <span class="notice-label">${tone === "error" ? "Error" : "Success"}</span>
+    <span>${escapeHtml(message)}</span>
+  </div>
 `;

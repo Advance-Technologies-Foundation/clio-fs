@@ -246,11 +246,9 @@ const renderDashboard = async (
       ${
         state?.notice ? renderNotice(state.notice.tone, state.notice.message) : ""
       }
-      <section class="panel" style="margin-bottom:18px;">
+      <section class="panel">
         <div class="metric">Runtime Summary</div>
-        <div style="margin-top:10px;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#3f3428;">${escapeHtml(
-          health.summary
-        )}</div>
+        <p style="margin:0.5rem 0 0;font-size:0.875rem;color:var(--color-text-secondary);line-height:1.6;">${escapeHtml(health.summary)}</p>
       </section>
       ${renderWorkspaceRegistrationForm(state?.formValues, health.platform)}
       ${renderWorkspaceTable(workspaces)}
@@ -263,7 +261,7 @@ const renderWorkspaceDetail = (workspace: WorkspaceRecord) =>
     `${formatWorkspaceLabel(workspace)} | Clio FS`,
     `
       <div class="nav"><a href="/">← Back to dashboard</a></div>
-      <section class="hero" style="margin-bottom:20px;">
+      <section class="hero">
         <div class="eyebrow">Workspace Detail</div>
         <h1>${escapeHtml(formatWorkspaceLabel(workspace))}</h1>
         <p class="lede">Operator view for workspace <code>${escapeHtml(
