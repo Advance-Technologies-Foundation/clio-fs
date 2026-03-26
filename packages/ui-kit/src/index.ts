@@ -183,6 +183,39 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
         color: var(--muted);
         font: 13px/1.5 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
+      .danger-button {
+        border: 1px solid rgba(166,61,64,.28);
+        border-radius: 12px;
+        background: rgba(166,61,64,.08);
+        color: var(--danger);
+        padding: 12px 14px;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      dialog {
+        border: 1px solid var(--panel-border);
+        border-radius: 24px;
+        padding: 0;
+        width: min(520px, calc(100vw - 32px));
+        background: color-mix(in srgb, var(--panel) 92%, white 8%);
+        box-shadow: 0 24px 64px rgba(31, 26, 20, 0.24);
+      }
+      dialog::backdrop {
+        background: rgba(31, 26, 20, 0.42);
+        backdrop-filter: blur(4px);
+      }
+      .modal-card {
+        padding: 24px;
+        display: grid;
+        gap: 16px;
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+      }
     </style>
   </head>
   <body>
@@ -190,14 +223,17 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
     <script>
       (() => {
         const pickerButton = document.querySelector("[data-root-path-picker]");
-        if (!(pickerButton instanceof HTMLButtonElement)) {
-          return;
-        }
-
-        const targetId = pickerButton.getAttribute("data-target-input");
+        const targetId = pickerButton instanceof HTMLButtonElement
+          ? pickerButton.getAttribute("data-target-input")
+          : null;
         const targetInput = targetId ? document.getElementById(targetId) : null;
         const workspaceIdInput = document.getElementById("workspaceId");
         const statusNode = document.querySelector("[data-root-picker-status]");
+        const deleteDialog = document.querySelector("[data-delete-dialog]");
+        const deleteNameNode = document.querySelector("[data-delete-workspace-name]");
+        const deleteForm = document.querySelector("[data-delete-dialog-form]");
+        const deleteCancelButton = document.querySelector("[data-delete-cancel]");
+        const deleteTriggerButtons = document.querySelectorAll("[data-delete-workspace-button]");
 
         const inferFolderName = (selectedPath) => {
           const normalized = selectedPath.replace(/[\\\\/]+$/, "");
@@ -237,44 +273,88 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
           statusNode.style.color = isError ? "var(--danger)" : "var(--muted)";
         };
 
-        pickerButton.addEventListener("click", async () => {
-          if (!(targetInput instanceof HTMLInputElement)) {
-            return;
-          }
-
-          pickerButton.disabled = true;
-          setStatus("Opening folder picker...");
-
-          try {
-            const response = await fetch("/native/select-directory", { method: "POST" });
-
-            if (response.status === 204) {
-              setStatus("Folder selection was canceled.");
+        if (pickerButton instanceof HTMLButtonElement) {
+          pickerButton.addEventListener("click", async () => {
+            if (!(targetInput instanceof HTMLInputElement)) {
               return;
             }
 
-            if (!response.ok) {
-              const error = await response.json().catch(() => ({ error: { message: "Folder picker failed" } }));
-              setStatus(error?.error?.message ?? "Folder picker failed", true);
+            pickerButton.disabled = true;
+            setStatus("Opening folder picker...");
+
+            try {
+              const response = await fetch("/native/select-directory", { method: "POST" });
+
+              if (response.status === 204) {
+                setStatus("Folder selection was canceled.");
+                return;
+              }
+
+              if (!response.ok) {
+                const error = await response.json().catch(() => ({ error: { message: "Folder picker failed" } }));
+                setStatus(error?.error?.message ?? "Folder picker failed", true);
+                return;
+              }
+
+              const payload = await response.json();
+              if (typeof payload.path === "string" && payload.path.length > 0) {
+                targetInput.value = payload.path;
+                applyFolderDefaults(payload.path);
+                setStatus("Selected folder: " + payload.path);
+                targetInput.dispatchEvent(new Event("input", { bubbles: true }));
+                return;
+              }
+
+              setStatus("Folder picker returned no path.", true);
+            } catch (error) {
+              setStatus(error instanceof Error ? error.message : "Folder picker failed", true);
+            } finally {
+              pickerButton.disabled = false;
+            }
+          });
+        }
+
+        if (
+          deleteDialog instanceof HTMLDialogElement &&
+          deleteForm instanceof HTMLFormElement &&
+          deleteNameNode instanceof HTMLElement
+        ) {
+          deleteTriggerButtons.forEach((button) => {
+            if (!(button instanceof HTMLButtonElement)) {
               return;
             }
 
-            const payload = await response.json();
-            if (typeof payload.path === "string" && payload.path.length > 0) {
-              targetInput.value = payload.path;
-              applyFolderDefaults(payload.path);
-              setStatus("Selected folder: " + payload.path);
-              targetInput.dispatchEvent(new Event("input", { bubbles: true }));
-              return;
-            }
+            button.addEventListener("click", () => {
+              const action = button.getAttribute("data-delete-action");
+              const workspaceLabel = button.getAttribute("data-workspace-label") ?? "this workspace";
 
-            setStatus("Folder picker returned no path.", true);
-          } catch (error) {
-            setStatus(error instanceof Error ? error.message : "Folder picker failed", true);
-          } finally {
-            pickerButton.disabled = false;
-          }
-        });
+              if (!action) {
+                return;
+              }
+
+              deleteForm.action = action;
+              deleteNameNode.textContent = workspaceLabel;
+              deleteDialog.showModal();
+            });
+          });
+
+          deleteCancelButton?.addEventListener("click", () => {
+            deleteDialog.close();
+          });
+
+          deleteDialog.addEventListener("click", (event) => {
+            const rect = deleteDialog.getBoundingClientRect();
+            const withinDialog =
+              event.clientX >= rect.left &&
+              event.clientX <= rect.right &&
+              event.clientY >= rect.top &&
+              event.clientY <= rect.bottom;
+
+            if (!withinDialog) {
+              deleteDialog.close();
+            }
+          });
+        }
       })();
     </script>
   </body>
@@ -308,13 +388,13 @@ export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
           <td>${renderStatusBadge(workspace.status)}</td>
           <td>${String(workspace.currentRevision)}</td>
           <td>
-            <form method="post" action="/workspaces/${encodeURIComponent(
-              workspace.workspaceId
-            )}/delete" onsubmit="return confirm('Delete workspace ${escapeHtml(
-              workspace.workspaceId
-            )}?');">
-              <button type="submit" class="secondary-button">Delete</button>
-            </form>
+            <button
+              type="button"
+              class="danger-button"
+              data-delete-workspace-button
+              data-delete-action="/workspaces/${encodeURIComponent(workspace.workspaceId)}/delete"
+              data-workspace-label="${escapeHtml(formatWorkspaceLabel(workspace))}"
+            >Delete</button>
           </td>
         </tr>
       `
@@ -335,6 +415,19 @@ export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
         <tbody>${rows}</tbody>
       </table>
     </div>
+    <dialog data-delete-dialog>
+      <div class="modal-card">
+        <div class="metric">Delete Workspace</div>
+        <div class="metric-value" style="font-size:32px;">Remove <span data-delete-workspace-name>this workspace</span>?</div>
+        <p class="lede" style="max-width:none;margin:0;">This removes the workspace registration from the control plane. The underlying project folder is not deleted.</p>
+        <div class="modal-actions">
+          <button type="button" class="secondary-button" data-delete-cancel>Cancel</button>
+          <form method="post" action="/" data-delete-dialog-form>
+            <button type="submit" class="danger-button">Delete Workspace</button>
+          </form>
+        </div>
+      </div>
+    </dialog>
   `;
 };
 

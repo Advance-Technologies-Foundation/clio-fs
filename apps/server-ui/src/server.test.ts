@@ -140,6 +140,9 @@ test("renders dashboard with workspace content", async () => {
     assert.match(html, /Platform is determined by the server/i);
     assert.match(html, /Demo Main \(demo-main\)/);
     assert.match(html, /Delete/);
+    assert.match(html, /Delete Workspace/);
+    assert.match(html, /The underlying project folder is not deleted/i);
+    assert.doesNotMatch(html, /onsubmit="return confirm/);
   } finally {
     await server.close();
   }
