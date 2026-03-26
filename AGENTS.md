@@ -201,6 +201,15 @@ Prefer tests that verify:
 - workspace isolation
 - reconnect and retry semantics
 
+For UI changes, do not stop at unit or integration tests alone.
+
+Agents are expected to verify visible UI behavior with a browser automation tool:
+
+- `chromedevtools`, or
+- `Playwright`
+
+This applies to layout changes, form flows, navigation changes, stateful UI behavior, and any operator-facing workflow.
+
 ## Consistency Rules
 
 Agents are responsible for keeping the repository internally consistent.
@@ -240,6 +249,7 @@ Before finishing, verify:
 - are subtree moves and path rebasing still correct?
 - did the docs stay aligned with the code?
 - did tests get added or updated for the changed behavior?
+- if UI changed, was it exercised through `chromedevtools` or `Playwright`?
 - would a new agent understand how to run or extend this change without extra tribal knowledge?
 - would a new developer know how to install, verify, and start it from the docs alone?
 

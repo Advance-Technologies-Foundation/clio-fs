@@ -47,6 +47,10 @@ At minimum:
 - new feature -> add success-path and failure-path tests
 - sync semantics update -> add tests for revision, retry, and conflict behavior
 
+For UI changes, contributors should also verify the result in a browser automation tool such as `chromedevtools` or `Playwright`.
+
+Do not rely only on static inspection or server-side HTML output when the change affects visible UI behavior.
+
 If tests are not added, the PR should explain why.
 
 ## Pull Requests
