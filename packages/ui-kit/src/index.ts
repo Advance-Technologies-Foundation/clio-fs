@@ -289,7 +289,13 @@ export const renderMetricCard = (label: string, value: string) => `
 
 export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
   if (items.length === 0) {
-    return `<div class="empty">No workspaces are registered yet.</div>`;
+    return `
+      <section class="panel" style="display:grid;gap:12px;">
+        <div class="metric">No Workspaces Yet</div>
+        <div class="metric-value" style="font-size:32px;">Start from a folder.</div>
+        <p class="lede" style="max-width:none;margin:0;">Choose a project root, confirm the generated workspace ID, and create the first workspace. Once created, it will appear here with status and revision information.</p>
+      </section>
+    `;
   }
 
   const rows = items

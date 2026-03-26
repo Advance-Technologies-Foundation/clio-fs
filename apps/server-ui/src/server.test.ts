@@ -2,20 +2,36 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createServerUi } from "./server.js";
 
-const createFetchStub = () => {
-  const workspace = {
-    workspaceId: "demo-main",
-    displayName: "Demo Main",
-    rootPath: "/srv/clio/demo-main",
-    platform: "linux" as const,
-    status: "active" as const,
-    currentRevision: 0,
+const createFetchStub = (
+  workspaces: Array<{
+    workspaceId: string;
+    displayName?: string;
+    rootPath: string;
+    platform: "linux" | "macos" | "windows";
+    status: "active" | "disabled";
+    currentRevision: number;
     policies: {
-      allowGit: true,
-      allowBinaryWrites: true,
-      maxFileBytes: 10 * 1024 * 1024
+      allowGit: boolean;
+      allowBinaryWrites: boolean;
+      maxFileBytes: number;
+    };
+  }> = [
+    {
+      workspaceId: "demo-main",
+      displayName: "Demo Main",
+      rootPath: "/srv/clio/demo-main",
+      platform: "linux",
+      status: "active",
+      currentRevision: 0,
+      policies: {
+        allowGit: true,
+        allowBinaryWrites: true,
+        maxFileBytes: 10 * 1024 * 1024
+      }
     }
-  };
+  ]
+) => {
+  const [workspace] = workspaces;
 
   return async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
@@ -25,7 +41,7 @@ const createFetchStub = () => {
         JSON.stringify({
           status: "ok",
           service: "clio-fs-server",
-          summary: "sync-core ready; workspaces=1"
+          summary: `sync-core ready; workspaces=${workspaces.length}`
         }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
@@ -34,13 +50,11 @@ const createFetchStub = () => {
     if (url.pathname === "/workspaces") {
       return new Response(
         JSON.stringify({
-          items: [
-            {
-              workspaceId: workspace.workspaceId,
-              displayName: workspace.displayName,
-              currentRevision: workspace.currentRevision
-            }
-          ]
+          items: workspaces.map((item) => ({
+            workspaceId: item.workspaceId,
+            displayName: item.displayName,
+            currentRevision: item.currentRevision
+          }))
         }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
@@ -57,12 +71,16 @@ const createFetchStub = () => {
       );
     }
 
-    if (url.pathname === `/workspaces/${workspace.workspaceId}` && (init?.method ?? "GET") === "DELETE") {
+    if (workspace && url.pathname === `/workspaces/${workspace.workspaceId}` && (init?.method ?? "GET") === "DELETE") {
       return new Response(null, { status: 204 });
     }
 
-    if (url.pathname === `/workspaces/${workspace.workspaceId}`) {
-      return new Response(JSON.stringify(workspace), {
+    const matchedWorkspace = workspaces.find(
+      (item) => url.pathname === `/workspaces/${item.workspaceId}`
+    );
+
+    if (matchedWorkspace) {
+      return new Response(JSON.stringify(matchedWorkspace), {
         status: 200,
         headers: { "content-type": "application/json" }
       });
@@ -77,13 +95,15 @@ const createFetchStub = () => {
   };
 };
 
-const startTestServer = async () => {
+const startTestServer = async (
+  workspaces?: Parameters<typeof createFetchStub>[0]
+) => {
   const server = createServerUi({
     host: "127.0.0.1",
     port: 0,
     controlPlaneBaseUrl: "http://127.0.0.1:4010",
     controlPlaneAuthToken: "test-token",
-    fetchImpl: createFetchStub() as typeof fetch,
+    fetchImpl: createFetchStub(workspaces) as typeof fetch,
     selectDirectory: async () => "/srv/clio/picked-from-dialog"
   });
 
@@ -195,6 +215,22 @@ test("allows omitting display name in workspace registration form", async () => 
     assert.match(html, /<th>Name<\/th>/);
     assert.doesNotMatch(html, /<th>Display Name<\/th>/);
     assert.doesNotMatch(html, /<th>Workspace ID<\/th>/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("renders a blank slate when there are no workspaces", async () => {
+  const server = await startTestServer([]);
+
+  try {
+    const response = await fetch(`${server.baseUrl}/`);
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /No Workspaces Yet/);
+    assert.match(html, /Start from a folder\./);
+    assert.doesNotMatch(html, /<table>/);
   } finally {
     await server.close();
   }
