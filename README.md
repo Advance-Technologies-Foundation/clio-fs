@@ -62,6 +62,7 @@ Current design documents:
 - installation, verification, and startup must be simple and documented
 - the repository is structured as a `pnpm` TypeScript monorepo
 - server and client implementations should expose filesystem and storage test seams so default tests can run on mocks instead of real disk
+- the opt-in client-server integration scenario should default to mocked filesystem and persistence adapters, with real filesystem mode kept explicit and secondary
 
 ## Standard Commands
 
@@ -196,6 +197,8 @@ corepack pnpm run scenario:local-sync
 This command is intentionally opt-in and separate from the default test suite.
 Right now it prints the frozen scenario contract and its execution requirements.
 It must not be reported as a real sync pass until the mirror client implementation exists.
+When implemented, this scenario must default to mocked filesystem and persistence adapters.
+Any real-filesystem variant must stay opt-in and separate from the default integration path.
 
 ## Recommended Reading Order
 

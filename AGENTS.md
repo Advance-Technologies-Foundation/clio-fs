@@ -213,6 +213,8 @@ Testing seam rule:
 - both server and client code should be structured so core behavior can be tested against mocked filesystem and storage adapters
 - do not couple sync semantics tests to real disk IO by default when a clean abstraction can avoid it
 - real disk or heavier end-to-end scenarios should be opt-in, not the primary validation path
+- the client-server integration scenario must default to mocked filesystem and persistence adapters
+- any real-filesystem integration mode must remain explicitly opt-in and must not replace the mocked default path
 
 For UI changes, do not stop at unit or integration tests alone.
 

@@ -53,6 +53,8 @@ For server and client sync logic, prefer:
 - mocked filesystem adapters for default API and sync tests
 - mocked storage adapters for default state and persistence tests
 - opt-in real-disk scenarios only for heavier integration coverage
+- mocked client-server integration scenarios as the default integration gate
+- explicit real-filesystem integration runs only as additional validation, never as the default repo expectation
 
 For UI changes, contributors should also verify the result in a browser automation tool such as `chromedevtools` or `Playwright`.
 

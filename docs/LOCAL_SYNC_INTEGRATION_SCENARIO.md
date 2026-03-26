@@ -2,10 +2,11 @@
 
 ## Purpose
 
-This document defines the **explicit opt-in** integration scenario for validating end-to-end synchronization when the server and client run on the same machine but operate on different folders.
+This document defines the **explicit opt-in** integration scenario for validating end-to-end synchronization when the server and client run on the same machine but operate on different folders or equivalent mocked roots.
 
 The scenario is not part of the default `pnpm test` flow.
 It must run only when a developer or user explicitly asks for it.
+By default, the scenario should run against mocked filesystem adapters rather than real disk.
 
 ## Current Status
 
@@ -33,7 +34,19 @@ This command is intentionally separate from:
 - `corepack pnpm build`
 - `corepack pnpm check`
 
-The scenario must remain opt-in because it is heavier than unit and integration tests and because it creates temporary workspaces and starts runnable processes.
+The scenario must remain opt-in because it is heavier than unit and integration tests and because it creates temporary workspaces or equivalent mocked roots and starts runnable processes.
+
+Default execution mode:
+
+- mocked filesystem and mocked persistence adapters
+- no dependency on host filesystem permissions or timing
+- deterministic runner-owned temporary namespace
+
+Optional heavier execution mode:
+
+- real filesystem roots created under the OS temp directory
+- explicit opt-in only
+- used for additional platform validation, not as the default integration gate
 
 ## Test Goal
 
@@ -46,7 +59,7 @@ Validate that:
 - client-originated mutations propagate to the server workspace
 - ordered mixed changes from both sides converge correctly
 - conflict handling is explicit and non-destructive
-- temporary test folders are cleaned up after the scenario
+- temporary test folders or equivalent mocked roots are cleaned up after the scenario
 
 ## Runtime Topology
 
@@ -55,12 +68,13 @@ One machine hosts both processes:
 - `server control plane`
 - `client mirror daemon`
 
-The scenario uses two different folders:
+The scenario uses two different roots:
 
 - `serverWorkspaceRoot`
 - `clientMirrorRoot`
 
-These folders must be created inside the OS temporary directory.
+In the default mode these roots may be mocked and do not have to exist on real disk.
+In the real-filesystem mode they must be created inside the OS temporary directory.
 
 Examples:
 
@@ -69,9 +83,37 @@ Examples:
 
 The scenario must never use repository directories as sync roots.
 
+## Execution Modes
+
+### Default Mode
+
+The default scenario mode must use:
+
+- mocked filesystem adapters for both server and client
+- mocked persistence where possible
+- deterministic temporary identifiers owned by the runner
+
+This is the required default because it is:
+
+- faster
+- less flaky
+- independent from machine-specific filesystem behavior
+- easier to run on both macOS and Windows
+
+### Real Filesystem Mode
+
+The scenario may additionally support a real-filesystem mode.
+
+Rules:
+
+- it is opt-in only
+- it must be clearly labeled as heavier than the default mode
+- it must not replace the mocked default integration scenario
+- it must still create roots only under `os.tmpdir()`
+
 ## Temporary Directory Rules
 
-The runner must:
+For real-filesystem mode, the runner must:
 
 1. create one temporary scenario root
 2. create child folders for server and client workspaces
@@ -88,6 +130,8 @@ If cleanup fails:
 
 ## Suggested Temporary Layout
 
+This layout is required for real-filesystem mode and may be mirrored logically in mocked mode.
+
 ```text
 <temp>/clio-fs-local-sync-scenario-<timestamp>-<random>/
   server-workspace/
@@ -100,6 +144,7 @@ If cleanup fails:
 ## Initial Seed Data
 
 The scenario should seed the server workspace before either process starts.
+In mocked mode, the same seed must be materialized through the mock adapter state.
 
 Minimum seed set:
 
@@ -123,7 +168,7 @@ Suggested initial contents:
 
 Steps:
 
-1. create temporary directories
+1. create temporary directories or mocked roots
 2. seed server workspace files
 3. start the server
 4. register one workspace pointing at `serverWorkspaceRoot`
@@ -249,6 +294,7 @@ Rules:
 - avoid shell-specific commands in the runner
 - use `node` scripts as the primary entrypoint
 - do not require Bash-only tooling for core validation
+- keep mocked mode as the default cross-platform validation path
 
 ## Simple Developer Contract
 
@@ -257,6 +303,9 @@ When full implementation exists, a developer should be able to run exactly:
 ```bash
 corepack pnpm run scenario:local-sync
 ```
+
+This command must default to the mocked mode.
+If a real-filesystem mode is added later, it should require an explicit flag or environment variable.
 
 and get:
 
