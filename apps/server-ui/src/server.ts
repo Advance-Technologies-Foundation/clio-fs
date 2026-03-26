@@ -2,13 +2,16 @@ import { createServer, type ServerResponse } from "node:http";
 import { URL } from "node:url";
 import type {
   ApiErrorShape,
+  RegisterWorkspaceInput,
   ServerHealthResponse,
   WorkspaceListResponse,
   WorkspaceRecord
 } from "@clio-fs/contracts";
 import {
   renderMetricCard,
+  renderNotice,
   renderPage,
+  renderWorkspaceRegistrationForm,
   renderStatusBadge,
   renderWorkspaceTable,
   escapeHtml
@@ -32,11 +35,27 @@ interface ControlPlaneClient {
   getHealth: () => Promise<ServerHealthResponse>;
   listWorkspaces: () => Promise<WorkspaceRecord[]>;
   getWorkspace: (workspaceId: string) => Promise<WorkspaceRecord | null>;
+  registerWorkspace: (input: RegisterWorkspaceInput) => Promise<{ workspaceId: string }>;
 }
 
 const writeHtml = (response: ServerResponse, statusCode: number, html: string) => {
   response.writeHead(statusCode, { "content-type": "text/html; charset=utf-8" });
   response.end(html);
+};
+
+const redirect = (response: ServerResponse, location: string) => {
+  response.writeHead(303, { location });
+  response.end();
+};
+
+const readFormBody = async (request: AsyncIterable<Buffer | string>) => {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
 };
 
 const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient => {
@@ -97,11 +116,26 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
       }
 
       return (await response.json()) as WorkspaceRecord;
+    },
+    async registerWorkspace(input: RegisterWorkspaceInput) {
+      return request<{ workspaceId: string }>("/workspaces/register", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(input)
+      });
     }
   };
 };
 
-const renderDashboard = async (client: ControlPlaneClient) => {
+const renderDashboard = async (
+  client: ControlPlaneClient,
+  state?: {
+    notice?: { tone: "error" | "success"; message: string };
+    formValues?: Partial<RegisterWorkspaceInput>;
+  }
+) => {
   const [health, workspaces] = await Promise.all([client.getHealth(), client.listWorkspaces()]);
 
   return renderPage(
@@ -117,12 +151,16 @@ const renderDashboard = async (client: ControlPlaneClient) => {
         ${renderMetricCard("Health", health.status)}
         ${renderMetricCard("Workspaces", String(workspaces.length))}
       </section>
+      ${
+        state?.notice ? renderNotice(state.notice.tone, state.notice.message) : ""
+      }
       <section class="panel" style="margin-bottom:18px;">
         <div class="metric">Runtime Summary</div>
         <div style="margin-top:10px;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#3f3428;">${escapeHtml(
           health.summary
         )}</div>
       </section>
+      ${renderWorkspaceRegistrationForm(state?.formValues)}
       ${renderWorkspaceTable(workspaces)}
     `
   );
@@ -196,18 +234,39 @@ export const createServerUi = (options: ServerUiOptions) => {
       const method = request.method ?? "GET";
       const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
-      if (method !== "GET") {
-        response.writeHead(405);
-        response.end();
-        return;
-      }
-
-      if (url.pathname === "/") {
+      if (method === "GET" && url.pathname === "/") {
         writeHtml(response, 200, await renderDashboard(client));
         return;
       }
 
-      if (url.pathname.startsWith("/workspaces/")) {
+      if (method === "POST" && url.pathname === "/workspaces/register") {
+        const form = await readFormBody(request);
+        const input: RegisterWorkspaceInput = {
+          workspaceId: form.get("workspaceId")?.toString() ?? "",
+          displayName: form.get("displayName")?.toString() ?? "",
+          rootPath: form.get("rootPath")?.toString() ?? "",
+          platform: (form.get("platform")?.toString() ?? "linux") as RegisterWorkspaceInput["platform"]
+        };
+
+        try {
+          const result = await client.registerWorkspace(input);
+          redirect(response, `/workspaces/${encodeURIComponent(result.workspaceId)}`);
+          return;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to register workspace";
+          writeHtml(
+            response,
+            400,
+            await renderDashboard(client, {
+              notice: { tone: "error", message },
+              formValues: input
+            })
+          );
+          return;
+        }
+      }
+
+      if (method === "GET" && url.pathname.startsWith("/workspaces/")) {
         const [, , workspaceId] = url.pathname.split("/");
 
         if (!workspaceId) {
@@ -223,6 +282,12 @@ export const createServerUi = (options: ServerUiOptions) => {
         }
 
         writeHtml(response, 200, renderWorkspaceDetail(workspace));
+        return;
+      }
+
+      if (method !== "GET" && method !== "POST") {
+        response.writeHead(405);
+        response.end();
         return;
       }
 

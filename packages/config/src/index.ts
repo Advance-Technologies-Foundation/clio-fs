@@ -3,7 +3,8 @@ export const appConfig = {
     name: "clio-fs-server",
     host: "127.0.0.1",
     port: 4010,
-    authToken: "dev-token"
+    authToken: "dev-token",
+    workspaceRegistryFilePath: ".clio-fs/server/workspaces.json"
   },
   serverUi: {
     host: "127.0.0.1",

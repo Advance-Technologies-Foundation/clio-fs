@@ -94,11 +94,13 @@ Implemented today:
   - `POST /workspaces/register`
   - `GET /workspaces/:workspaceId`
 - validation for `workspaceId`, `platform`, and absolute `rootPath`
+- file-backed workspace registry stored in `.clio-fs/server/workspaces.json`
 - integration tests covering health, auth, registration, validation, and duplicate detection
 - a compiled dev flow for `@clio-fs/server` so `corepack pnpm --filter @clio-fs/server dev` runs against emitted `dist`
 - an operator-facing server UI in `apps/server-ui`
 - server-rendered dashboard and workspace detail pages backed by control-plane API calls
-- integration tests covering dashboard rendering, workspace detail rendering, and not-found handling
+- registration form in the UI for creating workspaces without `curl`
+- integration tests covering dashboard rendering, workspace detail rendering, form submission, and not-found handling
 - a compiled dev flow for `@clio-fs/server-ui`
 
 ## Run The UI Locally
@@ -125,6 +127,7 @@ If you prefer separate terminals:
 3. Open [http://127.0.0.1:4020](http://127.0.0.1:4020)
 
 By default the UI talks to the local control plane at `http://127.0.0.1:4010` using the development bearer token from [packages/config/src/index.ts](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/packages/config/src/index.ts).
+Registered workspaces are persisted to [`.clio-fs/server/workspaces.json`](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/.clio-fs/server/workspaces.json) at the repository root once you create them through the UI or API.
 
 ## Recommended Reading Order
 

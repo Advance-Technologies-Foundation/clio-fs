@@ -17,7 +17,7 @@ const createFetchStub = () => {
     }
   };
 
-  return async (input: string | URL | Request) => {
+  return async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
 
     if (url.pathname === "/health") {
@@ -43,6 +43,17 @@ const createFetchStub = () => {
           ]
         }),
         { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    if (url.pathname === "/workspaces/register" && (init?.method ?? "GET") === "POST") {
+      return new Response(
+        JSON.stringify({
+          workspaceId: "created-from-form",
+          status: "active",
+          currentRevision: 0
+        }),
+        { status: 201, headers: { "content-type": "application/json" } }
       );
     }
 
@@ -101,6 +112,31 @@ test("renders dashboard with workspace content", async () => {
     assert.match(html, /Control plane visibility/i);
     assert.match(html, /Demo Main/);
     assert.match(html, /sync-core ready; workspaces=1/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("submits workspace registration form and redirects to detail page", async () => {
+  const server = await startTestServer();
+
+  try {
+    const response = await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
+        workspaceId: "created-from-form",
+        displayName: "Created From Form",
+        rootPath: "/srv/clio/created-from-form",
+        platform: "linux"
+      }),
+      redirect: "manual"
+    });
+
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.get("location"), "/workspaces/created-from-form");
   } finally {
     await server.close();
   }

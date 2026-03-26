@@ -7,7 +7,7 @@ import {
   type WorkspaceRecord
 } from "@clio-fs/contracts";
 import {
-  InMemoryWorkspaceRegistry,
+  type WorkspaceRegistry,
   WorkspaceRegistryError
 } from "@clio-fs/database";
 import { parseRegisterWorkspaceInput } from "./workspace.js";
@@ -16,7 +16,7 @@ export interface WorkspaceServerOptions {
   host: string;
   port: number;
   authToken: string;
-  registry: InMemoryWorkspaceRegistry;
+  registry: WorkspaceRegistry;
 }
 
 export interface StartedWorkspaceServer {

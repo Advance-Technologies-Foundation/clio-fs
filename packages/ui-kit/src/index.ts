@@ -199,3 +199,53 @@ export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
     </div>
   `;
 };
+
+export const renderWorkspaceRegistrationForm = (values?: {
+  workspaceId?: string;
+  displayName?: string;
+  rootPath?: string;
+  platform?: string;
+}) => `
+  <section class="panel" style="margin-bottom:18px;">
+    <div class="metric">Register Workspace</div>
+    <form method="post" action="/workspaces/register" style="display:grid;gap:16px;margin-top:18px;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+      <div style="display:grid;gap:6px;">
+        <label for="workspaceId">Workspace ID</label>
+        <input id="workspaceId" name="workspaceId" required value="${escapeHtml(values?.workspaceId ?? "")}" style="padding:12px 14px;border:1px solid rgba(117,103,84,.28);border-radius:12px;background:white;" />
+      </div>
+      <div style="display:grid;gap:6px;">
+        <label for="displayName">Display Name</label>
+        <input id="displayName" name="displayName" required value="${escapeHtml(values?.displayName ?? "")}" style="padding:12px 14px;border:1px solid rgba(117,103,84,.28);border-radius:12px;background:white;" />
+      </div>
+      <div style="display:grid;gap:6px;">
+        <label for="rootPath">Root Path</label>
+        <input id="rootPath" name="rootPath" required value="${escapeHtml(values?.rootPath ?? "")}" style="padding:12px 14px;border:1px solid rgba(117,103,84,.28);border-radius:12px;background:white;" />
+      </div>
+      <div style="display:grid;gap:6px;">
+        <label for="platform">Platform</label>
+        <select id="platform" name="platform" style="padding:12px 14px;border:1px solid rgba(117,103,84,.28);border-radius:12px;background:white;">
+          ${["linux", "macos", "windows"]
+            .map(
+              (platform) =>
+                `<option value="${platform}"${
+                  (values?.platform ?? "linux") === platform ? " selected" : ""
+                }>${platform}</option>`
+            )
+            .join("")}
+        </select>
+      </div>
+      <div>
+        <button type="submit" style="border:0;border-radius:999px;background:#733f1d;color:white;padding:12px 18px;font-weight:700;cursor:pointer;">Create Workspace</button>
+      </div>
+    </form>
+  </section>
+`;
+
+export const renderNotice = (tone: "error" | "success", message: string) => `
+  <section class="panel ${tone === "error" ? "error" : ""}" style="margin-bottom:18px;">
+    <div class="metric">${tone === "error" ? "Error" : "Success"}</div>
+    <div style="margin-top:10px;font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#3f3428;">${escapeHtml(
+      message
+    )}</div>
+  </section>
+`;
