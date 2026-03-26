@@ -123,6 +123,7 @@ Implemented today:
 - an explicit opt-in local sync integration scenario specification in [docs/LOCAL_SYNC_INTEGRATION_SCENARIO.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/docs/LOCAL_SYNC_INTEGRATION_SCENARIO.md)
 - initial client mirror slice with bind state, snapshot hydrate, and polling-based change application
 - client-side push API for conditional text file writes
+- file-backed client bind state store at `.clio-fs/client/state.json`
 - client tests covering hydrate and server-originated change application on mocked adapters
 
 ## Run The UI Locally
@@ -174,7 +175,6 @@ Current client behavior:
 Current client limitations:
 
 - no local watcher-driven write-back loop yet
-- no persistent client state store yet
 - `path_moved` currently falls back to a full rehydrate
 
 ## Opt-In Local Sync Scenario

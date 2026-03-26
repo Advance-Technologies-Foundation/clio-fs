@@ -1,0 +1,36 @@
+import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import test from "node:test";
+import { createFileClientStateStore } from "./state.js";
+
+test("file client state store persists bind state to disk", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "clio-fs-client-state-"));
+  const filePath = join(tempDir, "state.json");
+  const store = createFileClientStateStore(filePath);
+
+  store.save({
+    workspaceId: "persisted-client-main",
+    mirrorRoot: "/tmp/persisted-client-main",
+    lastAppliedRevision: 7,
+    hydrated: true
+  });
+
+  const saved = JSON.parse(readFileSync(filePath, "utf8")) as {
+    states: Array<{ workspaceId: string; lastAppliedRevision: number }>;
+  };
+
+  assert.equal(saved.states.length, 1);
+  assert.equal(saved.states[0]?.workspaceId, "persisted-client-main");
+  assert.equal(saved.states[0]?.lastAppliedRevision, 7);
+
+  const reloaded = createFileClientStateStore(filePath);
+
+  assert.deepEqual(reloaded.load("persisted-client-main"), {
+    workspaceId: "persisted-client-main",
+    mirrorRoot: "/tmp/persisted-client-main",
+    lastAppliedRevision: 7,
+    hydrated: true
+  });
+});

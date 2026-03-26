@@ -9,7 +9,7 @@ import {
   type ClientFileSystemAdapter
 } from "./filesystem.js";
 import {
-  createInMemoryClientStateStore,
+  createFileClientStateStore,
   type ClientBindState,
   type ClientStateStore
 } from "./state.js";
@@ -137,7 +137,8 @@ const applyChanges = async (
 
 export const createMirrorClient = (options: MirrorClientOptions): MirrorClient => {
   const filesystem = options.filesystem ?? nodeClientFileSystem;
-  const stateStore = options.stateStore ?? createInMemoryClientStateStore();
+  const stateStore =
+    options.stateStore ?? createFileClientStateStore(appConfig.client.stateFilePath);
   const controlPlane =
     options.controlPlane ??
     new ClientControlPlane(

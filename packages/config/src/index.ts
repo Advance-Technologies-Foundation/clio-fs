@@ -16,6 +16,7 @@ export const appConfig = {
     controlPlaneBaseUrl: "http://127.0.0.1:4010",
     controlPlaneAuthToken: "dev-token",
     defaultWorkspaceRoot: "./workspaces",
+    stateFilePath: ".clio-fs/client/state.json",
     pollIntervalMs: 1000
   }
 };
