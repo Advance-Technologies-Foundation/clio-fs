@@ -102,6 +102,7 @@ Implemented today:
 - optional `displayName`; most workspaces can rely on `workspaceId` alone
 - file-backed workspace registry stored in `.clio-fs/server/workspaces.json`
 - integration tests covering health, auth, registration, validation, and duplicate detection
+- API tests use in-memory registry state and mocked filesystem inputs instead of real disk writes
 - a compiled dev flow for `@clio-fs/server` so `corepack pnpm --filter @clio-fs/server dev` runs against emitted `dist`
 - an operator-facing server UI in `apps/server-ui`
 - server-rendered dashboard and workspace detail pages backed by control-plane API calls

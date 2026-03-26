@@ -1,20 +1,23 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import test from "node:test";
 import { createInMemoryWorkspaceRegistry } from "@clio-fs/database";
+import { createMockFileSystem } from "./filesystem.testkit.js";
 import { createWorkspaceServer } from "./server.js";
 
 const AUTH_TOKEN = "test-token";
 
-const startTestServer = async () => {
+const startTestServer = async (
+  options: {
+    filesystem?: Parameters<typeof createWorkspaceServer>[0]["filesystem"];
+  } = {}
+) => {
   const server = createWorkspaceServer({
     host: "127.0.0.1",
     port: 0,
     authToken: AUTH_TOKEN,
     registry: createInMemoryWorkspaceRegistry(),
-    serverPlatform: "linux"
+    serverPlatform: "linux",
+    filesystem: options.filesystem
   });
 
   await new Promise<void>((resolve) => {
@@ -239,14 +242,16 @@ test("deletes a workspace", async () => {
 });
 
 test("returns a recursive snapshot manifest for a workspace", async () => {
-  const tempRoot = mkdtempSync(join(tmpdir(), "clio-fs-snapshot-"));
-  mkdirSync(join(tempRoot, "packages", "Alpha"), { recursive: true });
-  mkdirSync(join(tempRoot, ".git"), { recursive: true });
-  writeFileSync(join(tempRoot, "root.txt"), "root-seed-v1\n", "utf8");
-  writeFileSync(join(tempRoot, "packages", "Alpha", "readme.txt"), "alpha-seed-v1\n", "utf8");
-  writeFileSync(join(tempRoot, ".git", "config"), "[core]\n", "utf8");
+  const mockFileSystem = createMockFileSystem();
+  mockFileSystem.addDirectory("/mock/workspace");
+  mockFileSystem.addDirectory("/mock/workspace/packages");
+  mockFileSystem.addDirectory("/mock/workspace/packages/Alpha");
+  mockFileSystem.addDirectory("/mock/workspace/.git");
+  mockFileSystem.addFile("/mock/workspace/root.txt", { size: 13 });
+  mockFileSystem.addFile("/mock/workspace/packages/Alpha/readme.txt", { size: 14 });
+  mockFileSystem.addFile("/mock/workspace/.git/config", { size: 7 });
 
-  const server = await startTestServer();
+  const server = await startTestServer({ filesystem: mockFileSystem });
 
   try {
     const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
@@ -257,7 +262,7 @@ test("returns a recursive snapshot manifest for a workspace", async () => {
       },
       body: JSON.stringify({
         workspaceId: "snapshot-main",
-        rootPath: tempRoot
+        rootPath: "/mock/workspace"
       })
     });
 

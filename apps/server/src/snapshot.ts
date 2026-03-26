@@ -1,19 +1,20 @@
-import { Dirent, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { SnapshotEntry, WorkspaceRecord, WorkspaceSnapshotResponse } from "@clio-fs/contracts";
+import { type FileSystemAdapter, type FileSystemDirectoryEntry, nodeFileSystem } from "./filesystem.js";
 
 const normalizeWorkspacePath = (rootPath: string, absolutePath: string) =>
   relative(rootPath, absolutePath).replaceAll("\\", "/");
 
-const isIgnoredEntry = (entry: Dirent, relativePath: string) =>
+const isIgnoredEntry = (entry: FileSystemDirectoryEntry, relativePath: string) =>
   entry.name === ".git" || relativePath === ".git" || relativePath.startsWith(".git/");
 
 const createSnapshotEntry = (
   workspace: WorkspaceRecord,
   absolutePath: string,
-  kind: SnapshotEntry["kind"]
+  kind: SnapshotEntry["kind"],
+  filesystem: FileSystemAdapter
 ): SnapshotEntry => {
-  const stats = statSync(absolutePath);
+  const stats = filesystem.stat(absolutePath);
   const entry: SnapshotEntry = {
     path: normalizeWorkspacePath(workspace.rootPath, absolutePath),
     kind,
@@ -32,9 +33,10 @@ const createSnapshotEntry = (
 const walkDirectory = (
   workspace: WorkspaceRecord,
   directoryPath: string,
-  entries: SnapshotEntry[]
+  entries: SnapshotEntry[],
+  filesystem: FileSystemAdapter
 ) => {
-  const children = readdirSync(directoryPath, { withFileTypes: true }).sort((left, right) =>
+  const children = filesystem.readdir(directoryPath).sort((left, right) =>
     left.name.localeCompare(right.name)
   );
 
@@ -46,24 +48,25 @@ const walkDirectory = (
       continue;
     }
 
-    if (child.isDirectory()) {
-      entries.push(createSnapshotEntry(workspace, absoluteChildPath, "directory"));
-      walkDirectory(workspace, absoluteChildPath, entries);
+    if (child.kind === "directory") {
+      entries.push(createSnapshotEntry(workspace, absoluteChildPath, "directory", filesystem));
+      walkDirectory(workspace, absoluteChildPath, entries, filesystem);
       continue;
     }
 
-    if (child.isFile()) {
-      entries.push(createSnapshotEntry(workspace, absoluteChildPath, "file"));
+    if (child.kind === "file") {
+      entries.push(createSnapshotEntry(workspace, absoluteChildPath, "file", filesystem));
     }
   }
 };
 
 export const createWorkspaceSnapshot = (
-  workspace: WorkspaceRecord
+  workspace: WorkspaceRecord,
+  filesystem: FileSystemAdapter = nodeFileSystem
 ): WorkspaceSnapshotResponse => {
   const entries: SnapshotEntry[] = [];
 
-  walkDirectory(workspace, workspace.rootPath, entries);
+  walkDirectory(workspace, workspace.rootPath, entries, filesystem);
 
   entries.sort((left, right) => left.path.localeCompare(right.path));
 

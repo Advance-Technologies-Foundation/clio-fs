@@ -11,6 +11,7 @@ import {
   type WorkspaceRegistry,
   WorkspaceRegistryError
 } from "@clio-fs/database";
+import { type FileSystemAdapter, nodeFileSystem } from "./filesystem.js";
 import { createWorkspaceSnapshot } from "./snapshot.js";
 import { detectServerPlatform, parseRegisterWorkspaceInput } from "./workspace.js";
 
@@ -20,6 +21,7 @@ export interface WorkspaceServerOptions {
   authToken: string;
   registry: WorkspaceRegistry;
   serverPlatform?: WorkspacePlatform;
+  filesystem?: FileSystemAdapter;
 }
 
 export interface StartedWorkspaceServer {
@@ -170,7 +172,7 @@ const routeRequest = async (
     }
 
     if (resource === "snapshot") {
-      json(response, 200, createWorkspaceSnapshot(workspace));
+      json(response, 200, createWorkspaceSnapshot(workspace, options.filesystem ?? nodeFileSystem));
       return;
     }
 
