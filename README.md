@@ -94,9 +94,11 @@ Implemented today:
   - `GET /workspaces`
   - `POST /workspaces/register`
   - `GET /workspaces/:workspaceId`
+  - `GET /workspaces/:workspaceId/snapshot`
   - `DELETE /workspaces/:workspaceId`
 - validation for `workspaceId` and absolute `rootPath`
 - server-level `platform` reported via `GET /health`
+- recursive snapshot manifest endpoint for initial hydrate preparation
 - optional `displayName`; most workspaces can rely on `workspaceId` alone
 - file-backed workspace registry stored in `.clio-fs/server/workspaces.json`
 - integration tests covering health, auth, registration, validation, and duplicate detection

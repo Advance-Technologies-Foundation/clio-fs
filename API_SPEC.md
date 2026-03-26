@@ -258,6 +258,46 @@ Response `200`:
 }
 ```
 
+### GET /workspaces/{workspaceId}/snapshot
+
+Returns a recursive snapshot manifest for the current server workspace contents.
+
+Rules:
+
+- paths are always workspace-relative
+- `.git` is excluded from the manifest in MVP
+- entries are returned in stable path order
+- file content is not returned by this endpoint
+
+Response `200`:
+
+```json
+{
+  "workspaceId": "crm-prod-main",
+  "currentRevision": 18442,
+  "items": [
+    {
+      "path": "packages/MyPkg",
+      "kind": "directory",
+      "mtime": "2026-03-26T21:40:10.000Z",
+      "workspaceRevision": 18442
+    },
+    {
+      "path": "packages/MyPkg/descriptor.json",
+      "kind": "file",
+      "mtime": "2026-03-26T21:40:15.000Z",
+      "size": 812,
+      "workspaceRevision": 18442,
+      "fileRevision": 18442
+    }
+  ]
+}
+```
+
+Possible errors:
+
+- `404` if the workspace does not exist
+
 ### DELETE /workspaces/{workspaceId}
 
 Deletes a workspace registration from the control plane.

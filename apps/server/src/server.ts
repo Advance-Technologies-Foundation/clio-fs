@@ -11,6 +11,7 @@ import {
   type WorkspaceRegistry,
   WorkspaceRegistryError
 } from "@clio-fs/database";
+import { createWorkspaceSnapshot } from "./snapshot.js";
 import { detectServerPlatform, parseRegisterWorkspaceInput } from "./workspace.js";
 
 export interface WorkspaceServerOptions {
@@ -154,7 +155,7 @@ const routeRequest = async (
   }
 
   if (method === "GET" && url.pathname.startsWith("/workspaces/")) {
-    const [, , workspaceId] = url.pathname.split("/");
+    const [, , workspaceId, resource] = url.pathname.split("/");
 
     if (!workspaceId) {
       writeError(response, 404, "not_found", "Workspace not found");
@@ -165,6 +166,16 @@ const routeRequest = async (
 
     if (!workspace) {
       writeError(response, 404, "not_found", "Workspace not found", { workspaceId });
+      return;
+    }
+
+    if (resource === "snapshot") {
+      json(response, 200, createWorkspaceSnapshot(workspace));
+      return;
+    }
+
+    if (typeof resource !== "undefined" && resource.length > 0) {
+      writeError(response, 404, "not_found", "Resource not found", { workspaceId, resource });
       return;
     }
 

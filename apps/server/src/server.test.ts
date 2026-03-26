@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { createInMemoryWorkspaceRegistry } from "@clio-fs/database";
 import { createWorkspaceServer } from "./server.js";
@@ -230,6 +233,65 @@ test("deletes a workspace", async () => {
     assert.equal(deleteResponse.status, 204);
     assert.equal(detailResponse.status, 404);
     assert.equal(detailBody.error.code, "not_found");
+  } finally {
+    await server.close();
+  }
+});
+
+test("returns a recursive snapshot manifest for a workspace", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "clio-fs-snapshot-"));
+  mkdirSync(join(tempRoot, "packages", "Alpha"), { recursive: true });
+  mkdirSync(join(tempRoot, ".git"), { recursive: true });
+  writeFileSync(join(tempRoot, "root.txt"), "root-seed-v1\n", "utf8");
+  writeFileSync(join(tempRoot, "packages", "Alpha", "readme.txt"), "alpha-seed-v1\n", "utf8");
+  writeFileSync(join(tempRoot, ".git", "config"), "[core]\n", "utf8");
+
+  const server = await startTestServer();
+
+  try {
+    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "snapshot-main",
+        rootPath: tempRoot
+      })
+    });
+
+    assert.equal(createResponse.status, 201);
+
+    const snapshotResponse = await fetch(`${server.baseUrl}/workspaces/snapshot-main/snapshot`, {
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`
+      }
+    });
+    const snapshotBody = await snapshotResponse.json();
+
+    assert.equal(snapshotResponse.status, 200);
+    assert.equal(snapshotBody.workspaceId, "snapshot-main");
+    assert.equal(snapshotBody.currentRevision, 0);
+    assert.deepEqual(
+      snapshotBody.items.map((item: { path: string; kind: string }) => ({
+        path: item.path,
+        kind: item.kind
+      })),
+      [
+        { path: "packages", kind: "directory" },
+        { path: "packages/Alpha", kind: "directory" },
+        { path: "packages/Alpha/readme.txt", kind: "file" },
+        { path: "root.txt", kind: "file" }
+      ]
+    );
+    assert.ok(
+      snapshotBody.items.every((item: { path: string }) => !item.path.startsWith(".git"))
+    );
+    assert.equal(
+      snapshotBody.items.find((item: { path: string }) => item.path === "root.txt")?.fileRevision,
+      0
+    );
   } finally {
     await server.close();
   }

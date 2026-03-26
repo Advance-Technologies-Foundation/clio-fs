@@ -2,6 +2,7 @@ export type WorkspaceId = string;
 export type Revision = number;
 export type WorkspacePlatform = "windows" | "macos" | "linux";
 export type WorkspaceStatus = "active" | "disabled";
+export type SnapshotEntryKind = "file" | "directory";
 
 export interface WorkspacePolicies {
   allowGit: boolean;
@@ -37,6 +38,21 @@ export interface ServerHealthResponse {
 
 export interface WorkspaceListResponse {
   items: WorkspaceDescriptor[];
+}
+
+export interface SnapshotEntry {
+  path: string;
+  kind: SnapshotEntryKind;
+  mtime: string;
+  size?: number;
+  workspaceRevision: Revision;
+  fileRevision?: Revision;
+}
+
+export interface WorkspaceSnapshotResponse {
+  workspaceId: WorkspaceId;
+  currentRevision: Revision;
+  items: SnapshotEntry[];
 }
 
 export interface RegisterWorkspaceInput extends RegisterWorkspaceRequest {}
