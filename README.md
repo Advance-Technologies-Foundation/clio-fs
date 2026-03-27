@@ -85,26 +85,37 @@ App-level examples:
 
 ## Release Flow
 
-GitHub releases now publish downloadable runnable archives on the Release page.
+GitHub releases now publish OS-specific downloadable runnable archives on the Release page.
 
 - `.github/workflows/release.yml` runs when a GitHub release is published
 - the workflow installs dependencies, runs `check`, `test`, and `build`, then builds release bundles under `.release-artifacts/`
 - the artifact version is derived from the GitHub release tag, for example `v1.2.3` -> `1.2.3`
 - release targets are the runnable `clio-fs-server` and `clio-fs-client` bundles
-- each release archive contains cross-platform launchers (`.cmd`, `.ps1`, and Unix shell) plus the built `dist/` output and vendored internal workspaces
+- each release archive contains the built `dist/` output, vendored internal workspaces, and the launchers needed for the target platform
 - internal workspaces under `packages/*`, plus `@clio-fs/server-ui`, are bundled into those release archives instead of being published separately
 - published releases attach these assets directly to the GitHub Release page:
-  - `clio-fs-server-X.Y.Z.tar.gz`
-  - `clio-fs-client-X.Y.Z.tar.gz`
+  - `clio-fs-server-X.Y.Z-windows.zip`
+  - `clio-fs-client-X.Y.Z-windows.zip`
+  - `clio-fs-server-X.Y.Z-macos.tar.gz`
+  - `clio-fs-client-X.Y.Z-macos.tar.gz`
+  - `clio-fs-server-X.Y.Z-linux.tar.gz`
+  - `clio-fs-client-X.Y.Z-linux.tar.gz`
 - the workflow also keeps matching Actions artifacts for run-level inspection
 - create GitHub releases with semver tags such as `v1.2.3` or `v1.2.3-beta.1`
 
 ## Use Release Artifacts
 
-Download the release assets from the GitHub Release page:
+Download the release asset for your operating system from the GitHub Release page:
 
-- `clio-fs-server-X.Y.Z.tar.gz`
-- `clio-fs-client-X.Y.Z.tar.gz`
+- Windows:
+  - `clio-fs-server-X.Y.Z-windows.zip`
+  - `clio-fs-client-X.Y.Z-windows.zip`
+- macOS:
+  - `clio-fs-server-X.Y.Z-macos.tar.gz`
+  - `clio-fs-client-X.Y.Z-macos.tar.gz`
+- Linux:
+  - `clio-fs-server-X.Y.Z-linux.tar.gz`
+  - `clio-fs-client-X.Y.Z-linux.tar.gz`
 
 Extract the archive, then run the launcher from the extracted folder.
 
