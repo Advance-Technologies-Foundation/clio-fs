@@ -154,12 +154,25 @@ const normalizeAuthTokens = (options: Pick<WorkspaceServerOptions, "authToken" |
   return ["dev-token"];
 };
 
-const isAuthorized = (request: IncomingMessage, authTokens: string[], url?: URL, tokenStore?: AuthTokenStore) => {
+const isLocalhost = (request: IncomingMessage): boolean => {
+  const addr = request.socket?.remoteAddress ?? "";
+  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+};
+
+const isAuthorized = (
+  request: IncomingMessage,
+  authTokens: string[],
+  url?: URL,
+  tokenStore?: AuthTokenStore,
+  watchSettingsStore?: { get(): ServerWatchSettings }
+): boolean => {
+  if (watchSettingsStore?.get().localBypass && isLocalhost(request)) return true;
   const header = request.headers.authorization;
   const bearerToken = typeof header === "string" ? header.replace(/^Bearer\s+/u, "") : undefined;
   const queryToken = url?.searchParams.get("token");
   const candidate = bearerToken ?? queryToken ?? "";
-  return authTokens.includes(candidate) || (tokenStore?.has(candidate) ?? false);
+  if (authTokens.includes(candidate) && !(tokenStore?.isConfigTokenDisabled(candidate) ?? false)) return true;
+  return tokenStore?.has(candidate) ?? false;
 };
 
 const writeHtml = (response: ServerResponse, statusCode: number, body: string) => {
@@ -424,7 +437,8 @@ const parseUpdateServerWatchSettingsRequest = (payload: unknown): UpdateServerWa
   }
 
   return {
-    settleDelayMs: Number(input.settleDelayMs)
+    settleDelayMs: Number(input.settleDelayMs),
+    localBypass: typeof input.localBypass === "boolean" ? input.localBypass : undefined
   };
 };
 
@@ -470,7 +484,7 @@ button{background:#1f6feb;border:none;color:#fff;padding:8px;border-radius:6px;c
     return;
   }
 
-  if (!isAuthorized(request, authTokens, url, options.tokenStore)) {
+  if (!isAuthorized(request, authTokens, url, options.tokenStore, options.watchSettingsStore)) {
     writeError(response, 401, "unauthorized", "Missing or invalid bearer token");
     return;
   }
@@ -722,13 +736,15 @@ button{background:#1f6feb;border:none;color:#fff;padding:8px;border-radius:6px;c
       label: "Built-in (config)",
       maskedToken: maskToken(t),
       createdAt: "",
-      readonly: true
+      readonly: true,
+      enabled: !(store?.isConfigTokenDisabled(t) ?? false)
     }));
     const storeItems: AuthTokenListItem[] = (store?.list() ?? []).map((r) => ({
       id: r.id,
       label: r.label,
       maskedToken: maskToken(r.token),
-      createdAt: r.createdAt
+      createdAt: r.createdAt,
+      enabled: r.enabled !== false
     }));
     const body: ListAuthTokensResponse = { items: [...configItems, ...storeItems] };
     json(response, 200, body);
@@ -787,6 +803,38 @@ button{background:#1f6feb;border:none;color:#fff;padding:8px;border-radius:6px;c
       return;
     }
     (options.logger ?? noopLogger).audit("token_deleted", { id: tokenId });
+    json(response, 200, { ok: true });
+    return;
+  }
+
+  if (method === "PATCH" && pathname.startsWith("/admin/tokens/") && pathname.endsWith("/enabled")) {
+    const tokenId = pathname.slice("/admin/tokens/".length, -"/enabled".length);
+    const store = options.tokenStore;
+    if (!store || !tokenId) {
+      writeError(response, 404, "not_found", "Token not found");
+      return;
+    }
+    const input = (await readJsonBody(request)) as { enabled: boolean };
+    const enabled = Boolean(input.enabled);
+    // Handle built-in config tokens
+    if (tokenId.startsWith("config:")) {
+      const configTokenValue = tokenId.slice("config:".length);
+      const isKnownConfigToken = (options.authTokens ?? []).includes(configTokenValue);
+      if (!isKnownConfigToken) {
+        writeError(response, 404, "not_found", "Config token not found", { id: tokenId });
+        return;
+      }
+      store.setConfigTokenDisabled(configTokenValue, !enabled);
+      (options.logger ?? noopLogger).audit("token_set_enabled", { id: tokenId, enabled });
+      json(response, 200, { ok: true });
+      return;
+    }
+    const updated = store.setEnabled(tokenId, enabled);
+    if (!updated) {
+      writeError(response, 404, "not_found", "Token not found", { id: tokenId });
+      return;
+    }
+    (options.logger ?? noopLogger).audit("token_set_enabled", { id: tokenId, enabled });
     json(response, 200, { ok: true });
     return;
   }

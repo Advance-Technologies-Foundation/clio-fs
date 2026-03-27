@@ -1381,6 +1381,13 @@ export const renderServerSettingsModal = (
             <input id="settleDelayMs" name="settleDelayMs" required value="${escapeHtml(String(settings.settleDelayMs))}" />
             <p class="helper-text">The client waits for this server-defined quiet period before it syncs rapid local file edits.</p>
           </div>
+          <div class="form-field">
+            <label style="display:flex;align-items:center;gap:0.625rem;cursor:pointer;">
+              <input type="checkbox" name="localBypass" value="true"${settings.localBypass ? " checked" : ""} style="width:1rem;height:1rem;accent-color:var(--color-primary);" />
+              <span>Local machine bypass</span>
+            </label>
+            <p class="helper-text">Allow unauthenticated access from the local machine (127.0.0.1). Useful for scripting and local tooling. Disable in shared environments.</p>
+          </div>
           <div class="modal-actions" style="padding:0;border-top:none;background:transparent;">
             <button type="button" class="secondary-button" data-close-server-settings>Cancel</button>
             <button type="submit" class="primary-button">Save Settings</button>

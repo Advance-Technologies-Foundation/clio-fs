@@ -218,7 +218,10 @@ const isServerWatchSettings = (value: unknown): value is ServerWatchSettings => 
 
   const record = value as Record<string, unknown>;
 
-  return Number.isInteger(record.settleDelayMs) && Number(record.settleDelayMs) >= 100;
+  if (!Number.isInteger(record.settleDelayMs) || Number(record.settleDelayMs) < 100) return false;
+  if (record.localBypass !== undefined && typeof record.localBypass !== "boolean") return false;
+
+  return true;
 };
 
 const loadServerWatchSettingsFile = (filePath: string): ServerWatchSettings => {
@@ -571,18 +574,25 @@ export interface AuthTokenRecord {
   label: string;
   token: string;
   createdAt: string;
+  enabled?: boolean;
 }
 
 export interface AuthTokenStore {
   list(): AuthTokenRecord[];
   add(label: string, token?: string): AuthTokenRecord;
   updateLabel(id: string, label: string): boolean;
+  setEnabled(id: string, enabled: boolean): boolean;
   remove(id: string): boolean;
   has(token: string): boolean;
+  /** Track disabled built-in (config) tokens by token value. */
+  setConfigTokenDisabled(token: string, disabled: boolean): void;
+  isConfigTokenDisabled(token: string): boolean;
+  listDisabledConfigTokens(): string[];
 }
 
 export class InMemoryAuthTokenStore implements AuthTokenStore {
   readonly #records: AuthTokenRecord[] = [];
+  readonly #disabledConfigTokens = new Set<string>();
 
   list() {
     return [...this.#records];
@@ -593,7 +603,8 @@ export class InMemoryAuthTokenStore implements AuthTokenStore {
       id: randomUUID(),
       label: label.trim() || "Unnamed token",
       token: token ?? randomUUID().replace(/-/g, ""),
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      enabled: true
     };
     this.#records.push(record);
     return record;
@@ -606,6 +617,13 @@ export class InMemoryAuthTokenStore implements AuthTokenStore {
     return true;
   }
 
+  setEnabled(id: string, enabled: boolean): boolean {
+    const record = this.#records.find((r) => r.id === id);
+    if (!record) return false;
+    record.enabled = enabled;
+    return true;
+  }
+
   remove(id: string): boolean {
     const index = this.#records.findIndex((r) => r.id === id);
     if (index === -1) return false;
@@ -614,7 +632,23 @@ export class InMemoryAuthTokenStore implements AuthTokenStore {
   }
 
   has(token: string): boolean {
-    return this.#records.some((r) => r.token === token);
+    return this.#records.some((r) => r.token === token && r.enabled !== false);
+  }
+
+  setConfigTokenDisabled(token: string, disabled: boolean): void {
+    if (disabled) {
+      this.#disabledConfigTokens.add(token);
+    } else {
+      this.#disabledConfigTokens.delete(token);
+    }
+  }
+
+  isConfigTokenDisabled(token: string): boolean {
+    return this.#disabledConfigTokens.has(token);
+  }
+
+  listDisabledConfigTokens(): string[] {
+    return [...this.#disabledConfigTokens];
   }
 }
 
@@ -622,15 +656,19 @@ export const createInMemoryAuthTokenStore = () => new InMemoryAuthTokenStore();
 
 interface AuthTokenFileShape {
   tokens: AuthTokenRecord[];
+  disabledConfigTokens?: string[];
 }
 
-const loadAuthTokenFile = (filePath: string): AuthTokenRecord[] => {
-  if (!existsSync(filePath)) return [];
+const loadAuthTokenFile = (filePath: string): AuthTokenFileShape => {
+  if (!existsSync(filePath)) return { tokens: [] };
   try {
     const raw = JSON.parse(readFileSync(filePath, "utf8")) as AuthTokenFileShape;
-    return Array.isArray(raw.tokens) ? raw.tokens : [];
+    return {
+      tokens: Array.isArray(raw.tokens) ? raw.tokens : [],
+      disabledConfigTokens: Array.isArray(raw.disabledConfigTokens) ? raw.disabledConfigTokens : []
+    };
   } catch {
-    return [];
+    return { tokens: [] };
   }
 };
 
@@ -640,11 +678,15 @@ export class FileAuthTokenStore extends InMemoryAuthTokenStore {
   constructor(filePath: string) {
     super();
     this.#filePath = resolve(filePath);
-    for (const record of loadAuthTokenFile(this.#filePath)) {
+    const { tokens, disabledConfigTokens } = loadAuthTokenFile(this.#filePath);
+    for (const record of tokens) {
       super.add(record.label, record.token);
-      // Fix the id and createdAt that add() would have randomized
+      // Fix the id, createdAt, and enabled that add() would have overwritten
       const last = this.list().at(-1)!;
-      Object.assign(last, { id: record.id, createdAt: record.createdAt });
+      Object.assign(last, { id: record.id, createdAt: record.createdAt, enabled: record.enabled ?? true });
+    }
+    for (const token of disabledConfigTokens ?? []) {
+      super.setConfigTokenDisabled(token, true);
     }
   }
 
@@ -660,16 +702,30 @@ export class FileAuthTokenStore extends InMemoryAuthTokenStore {
     return result;
   }
 
+  override setEnabled(id: string, enabled: boolean): boolean {
+    const result = super.setEnabled(id, enabled);
+    if (result) this.#flush();
+    return result;
+  }
+
   override remove(id: string): boolean {
     const result = super.remove(id);
     if (result) this.#flush();
     return result;
   }
 
+  override setConfigTokenDisabled(token: string, disabled: boolean): void {
+    super.setConfigTokenDisabled(token, disabled);
+    this.#flush();
+  }
+
   #flush() {
     mkdirSync(dirname(this.#filePath), { recursive: true });
     const temp = `${this.#filePath}.tmp`;
-    const payload: AuthTokenFileShape = { tokens: this.list() };
+    const payload: AuthTokenFileShape = {
+      tokens: this.list(),
+      disabledConfigTokens: this.listDisabledConfigTokens()
+    };
     writeFileSync(temp, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
     renameSync(temp, this.#filePath);
   }

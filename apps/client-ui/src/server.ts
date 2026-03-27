@@ -1595,7 +1595,7 @@ const renderLogViewerPage = () =>
         const auditOnly = document.getElementById('log-audit-only');
         const autoscroll = document.getElementById('log-autoscroll');
 
-        const LEVEL_COLORS = { debug: '#64748b', info: '#38bdf8', warn: '#fbbf24', error: '#f87171' };
+        const LEVEL_COLORS = { debug: '#94a3b8', info: '#38bdf8', warn: '#fbbf24', error: '#f87171' };
         const AUDIT_BG = 'rgba(56,189,248,0.08)';
 
         function appendEntry(data) {
@@ -1607,8 +1607,8 @@ const renderLogViewerPage = () =>
           const ts = data.timestamp ? data.timestamp.replace('T', ' ').replace('Z', '') : '';
           const badge = isAudit ? '<span style="color:#38bdf8;font-weight:700;">[AUDIT]</span> ' : '';
           const rest = Object.entries(data).filter(([k]) => !['timestamp','level','event','audit'].includes(k));
-          const fields = rest.length ? ' ' + rest.map(([k,v]) => '<span style="color:#64748b;">' + k + '=</span><span style="color:#e2e8f0;">' + JSON.stringify(v) + '</span>').join(' ') : '';
-          row.innerHTML = '<span style="color:#475569;">' + ts + '</span> <span style="color:' + color + ';font-weight:600;">' + data.level.toUpperCase() + '</span> ' + badge + '<span style="color:#f1f5f9;">' + (data.event || '') + '</span>' + fields;
+          const fields = rest.length ? ' ' + rest.map(([k,v]) => '<span style="color:#94a3b8;">' + k + '=</span><span style="color:#e2e8f0;">' + JSON.stringify(v) + '</span>').join(' ') : '';
+          row.innerHTML = '<span style="color:#7c8fa1;">' + ts + '</span> <span style="color:' + color + ';font-weight:600;">' + data.level.toUpperCase() + '</span> ' + badge + '<span style="color:#f1f5f9;">' + (data.event || '') + '</span>' + fields;
           entries.appendChild(row);
           if (autoscroll.checked) entries.scrollTop = entries.scrollHeight;
         }

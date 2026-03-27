@@ -63,6 +63,7 @@ interface ControlPlaneClient {
   createToken: (authToken: string, input: CreateAuthTokenRequest) => Promise<CreateAuthTokenResponse>;
   updateToken: (authToken: string, id: string, input: UpdateAuthTokenRequest) => Promise<{ ok: boolean }>;
   deleteToken: (authToken: string, id: string) => Promise<{ ok: boolean }>;
+  setTokenEnabled: (authToken: string, id: string, enabled: boolean) => Promise<{ ok: boolean }>;
 }
 
 const UI_SESSION_COOKIE_NAME = "clio_fs_server_ui_session";
@@ -373,6 +374,13 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
       return request<{ ok: boolean }>(authToken, `/admin/tokens/${encodeURIComponent(id)}`, {
         method: "DELETE"
       });
+    },
+    async setTokenEnabled(authToken: string, id: string, enabled: boolean) {
+      return request<{ ok: boolean }>(authToken, `/admin/tokens/${encodeURIComponent(id)}/enabled`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled })
+      });
     }
   };
 };
@@ -488,7 +496,8 @@ const renderDegradedBadge = () =>
 
 const renderWorkspaceDetail = (
   workspace: WorkspaceRecord,
-  diagnostics: WorkspaceDiagnosticsResponse | null
+  diagnostics: WorkspaceDiagnosticsResponse | null,
+  watchSettings: ServerWatchSettings
 ) => {
   const lastEvent = diagnostics?.latestRevisionEvent;
   const lastEventAge = lastEvent ? Date.now() - Date.parse(lastEvent.timestamp) : null;
@@ -500,6 +509,7 @@ const renderWorkspaceDetail = (
   return renderPage(
     `${formatWorkspaceLabel(workspace)} | Clio FS Server`,
     `
+      ${renderServerSettingsModal(watchSettings)}
       <div class="nav"><a href="/">← Back to dashboard</a></div>
       <section class="hero">
         <div class="eyebrow">Workspace Detail</div>
@@ -535,6 +545,7 @@ const renderWorkspaceDetail = (
       </section>
     `,
     {
+      topbarActions: `${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
       topbarSubtitle: "Server Control Plane"
     }
   );
@@ -546,10 +557,11 @@ const renderLogsLink = () =>
 const renderAdminLink = () =>
   `<a href="/admin/tokens" style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.375rem 0.875rem;border-radius:8px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.80);font-size:0.8125rem;font-weight:500;text-decoration:none;" onmouseover="this.style.background='rgba(255,255,255,0.14)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'">Admin</a>`;
 
-const renderLogViewerPage = () =>
+const renderLogViewerPage = (watchSettings: ServerWatchSettings) =>
   renderPage(
     "Live Logs | Clio FS Server",
     `
+      ${renderServerSettingsModal(watchSettings)}
       <style>main.shell{max-width:none;padding:calc(56px + 2rem) 2rem 2rem;}</style>
       <section style="display:flex;flex-direction:column;height:calc(100vh - 56px - 4rem);border-radius:10px;overflow:hidden;border:1px solid rgba(0,0,0,0.10);background:#0f172a;">
         <div id="log-toolbar" style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 1rem;border-bottom:1px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.04);flex-shrink:0;">
@@ -604,10 +616,11 @@ const renderLogViewerPage = () =>
     { topbarSubtitle: "Server Control Plane", topbarActions: `${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}` }
   );
 
-const renderTokensPage = (tokens: AuthTokenListItem[], notice?: { tone: "error" | "success"; message: string }) =>
+const renderTokensPage = (tokens: AuthTokenListItem[], watchSettings: ServerWatchSettings, notice?: { tone: "error" | "success"; message: string }) =>
   renderPage(
     "Token Management | Clio FS Server",
     `
+      ${renderServerSettingsModal(watchSettings)}
       <section class="hero">
         <div class="eyebrow">Administration</div>
         <h1>Access Tokens</h1>
@@ -629,6 +642,49 @@ const renderTokensPage = (tokens: AuthTokenListItem[], notice?: { tone: "error" 
           </div>
         </form>
       </section>
+      <!-- Deactivate confirmation modal -->
+      <dialog id="token-deactivate-dialog">
+        <div class="modal-card">
+          <div class="modal-header">
+            <div>
+              <p class="table-card-label" style="margin-bottom:0.35rem;">Token Access</p>
+              <h2 class="modal-title" id="token-deactivate-title">Deactivate Token</h2>
+            </div>
+            <button class="modal-close" type="button" id="token-deactivate-close" aria-label="Close">×</button>
+          </div>
+          <div class="modal-body">
+            <p class="lede" style="margin-top:0;" id="token-deactivate-desc">Deactivate this token?</p>
+          </div>
+          <div class="modal-actions">
+            <form id="token-deactivate-form" action="" method="post">
+              <input type="hidden" name="enabled" id="token-deactivate-enabled-value" value="false" />
+              <button class="secondary-button" type="button" id="token-deactivate-cancel">Cancel</button>
+              <button class="danger-button" type="submit" id="token-deactivate-submit">Deactivate</button>
+            </form>
+          </div>
+        </div>
+      </dialog>
+      <!-- Delete confirmation modal -->
+      <dialog id="token-delete-dialog">
+        <div class="modal-card">
+          <div class="modal-header">
+            <div>
+              <p class="table-card-label" style="margin-bottom:0.35rem;">Remove Token</p>
+              <h2 class="modal-title">Delete Token</h2>
+            </div>
+            <button class="modal-close" type="button" id="token-delete-close" aria-label="Close">×</button>
+          </div>
+          <div class="modal-body">
+            <p class="lede" style="margin-top:0;">Delete <strong id="token-delete-label">this token</strong>? This cannot be undone.</p>
+          </div>
+          <div class="modal-actions">
+            <form id="token-delete-form" action="" method="post">
+              <button class="secondary-button" type="button" id="token-delete-cancel">Cancel</button>
+              <button class="danger-button" type="submit">Delete</button>
+            </form>
+          </div>
+        </div>
+      </dialog>
       <section class="panel" style="max-width:900px;margin:0 auto 2rem;padding:0;overflow:hidden;">
         <table style="width:100%;border-collapse:collapse;">
           <thead>
@@ -636,12 +692,15 @@ const renderTokensPage = (tokens: AuthTokenListItem[], notice?: { tone: "error" 
               <th style="text-align:left;padding:0.75rem 1.5rem;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--color-muted);">Label</th>
               <th style="text-align:left;padding:0.75rem 1rem;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--color-muted);">Token</th>
               <th style="text-align:left;padding:0.75rem 1rem;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--color-muted);">Created</th>
+              <th style="text-align:left;padding:0.75rem 1rem;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--color-muted);">Status</th>
               <th style="padding:0.75rem 1.5rem;"></th>
             </tr>
           </thead>
           <tbody>
-            ${tokens.length === 0 ? `<tr><td colspan="4" style="padding:2rem 1.5rem;color:var(--color-muted);text-align:center;">No tokens configured.</td></tr>` : tokens.map((t) => `
-            <tr style="border-bottom:1px solid var(--color-border);" data-token-id="${t.id}">
+            ${tokens.length === 0 ? `<tr><td colspan="5" style="padding:2rem 1.5rem;color:var(--color-muted);text-align:center;">No tokens configured.</td></tr>` : tokens.map((t) => {
+              const isEnabled = t.enabled !== false;
+              return `
+            <tr style="border-bottom:1px solid var(--color-border);opacity:${isEnabled ? "1" : "0.6"};" data-token-id="${escapeHtml(t.id)}">
               <td style="padding:0.75rem 1.5rem;">
                 ${t.readonly
                   ? `<span style="font-weight:500;">${escapeHtml(t.label)}</span> <span style="display:inline-block;padding:1px 6px;border-radius:4px;background:var(--color-border);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">built-in</span>`
@@ -655,19 +714,33 @@ const renderTokensPage = (tokens: AuthTokenListItem[], notice?: { tone: "error" 
               </td>
               <td style="padding:0.75rem 1rem;font-family:monospace;font-size:0.875rem;color:var(--color-muted);">${escapeHtml(t.maskedToken)}</td>
               <td style="padding:0.75rem 1rem;font-size:0.8rem;color:var(--color-muted);">${t.createdAt ? new Date(t.createdAt).toLocaleDateString() : "—"}</td>
-              <td style="padding:0.75rem 1.5rem;text-align:right;white-space:nowrap;">
-                ${t.readonly ? "" : `
-                  <button type="button" class="secondary-button token-edit-btn" data-id="${t.id}" style="padding:0.25rem 0.75rem;font-size:0.8rem;margin-right:0.5rem;">Rename</button>
-                  <form action="/admin/tokens/${encodeURIComponent(t.id)}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete token \\'${escapeHtml(t.label).replace(/'/g, "\\'")}\\'? This cannot be undone.');">
-                    <button type="submit" style="padding:0.25rem 0.75rem;font-size:0.8rem;border-radius:6px;border:1px solid #e53e3e;background:transparent;color:#e53e3e;cursor:pointer;">Delete</button>
-                  </form>
-                `}
+              <td style="padding:0.75rem 1rem;">
+                <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;background:${isEnabled ? "rgba(22,163,74,0.12)" : "rgba(100,116,139,0.12)"};color:${isEnabled ? "#16a34a" : "#94a3b8"};">${isEnabled ? "Active" : "Inactive"}</span>
               </td>
-            </tr>`).join("")}
+              <td style="padding:0.75rem 1.5rem;text-align:right;white-space:nowrap;">
+                ${!t.readonly ? `<button type="button" class="secondary-button token-edit-btn" data-id="${escapeHtml(t.id)}" style="padding:0.25rem 0.75rem;font-size:0.8rem;margin-right:0.5rem;">Rename</button>` : ""}
+                <button type="button" class="secondary-button token-toggle-btn"
+                  data-id="${escapeHtml(t.id)}"
+                  data-label="${escapeHtml(t.label)}"
+                  data-enabled="${isEnabled}"
+                  style="padding:0.25rem 0.75rem;font-size:0.8rem;margin-right:0.5rem;">
+                  ${isEnabled ? "Deactivate" : "Activate"}
+                </button>
+                ${!t.readonly ? `
+                <button type="button" class="token-delete-btn"
+                  data-id="${escapeHtml(t.id)}"
+                  data-label="${escapeHtml(t.label)}"
+                  style="padding:0.25rem 0.75rem;font-size:0.8rem;border-radius:6px;border:1px solid #e53e3e;background:transparent;color:#e53e3e;cursor:pointer;">
+                  Delete
+                </button>` : ""}
+              </td>
+            </tr>`;
+            }).join("")}
           </tbody>
         </table>
       </section>
       <script>
+      // Rename inline edit
       document.querySelectorAll('.token-edit-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           const row = btn.closest('tr');
@@ -676,7 +749,6 @@ const renderTokensPage = (tokens: AuthTokenListItem[], notice?: { tone: "error" 
           form.style.display = 'flex';
           form.querySelector('.token-label-input').focus();
           btn.style.display = 'none';
-          row.querySelector('form[action*="delete"]').style.display = 'none';
         });
       });
       document.querySelectorAll('.token-cancel-rename').forEach(btn => {
@@ -685,9 +757,56 @@ const renderTokensPage = (tokens: AuthTokenListItem[], notice?: { tone: "error" 
           row.querySelector('.token-label-display').style.display = '';
           row.querySelector('.token-rename-form').style.display = 'none';
           row.querySelector('.token-edit-btn').style.display = '';
-          row.querySelector('form[action*="delete"]').style.display = 'inline';
         });
       });
+
+      // Deactivate/Activate modal
+      const deactivateDialog = document.getElementById('token-deactivate-dialog');
+      const deactivateForm = document.getElementById('token-deactivate-form');
+      const deactivateTitle = document.getElementById('token-deactivate-title');
+      const deactivateDesc = document.getElementById('token-deactivate-desc');
+      const deactivateEnabledValue = document.getElementById('token-deactivate-enabled-value');
+      const deactivateSubmitBtn = document.getElementById('token-deactivate-submit');
+
+      document.querySelectorAll('.token-toggle-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.dataset.id;
+          const label = btn.dataset.label;
+          const isEnabled = btn.dataset.enabled === 'true';
+          deactivateForm.action = '/admin/tokens/' + encodeURIComponent(id) + '/set-enabled';
+          deactivateEnabledValue.value = isEnabled ? 'false' : 'true';
+          if (isEnabled) {
+            deactivateTitle.textContent = 'Deactivate Token';
+            deactivateDesc.textContent = 'Deactivate "' + label + '"? The token will no longer be accepted for authentication.';
+            deactivateSubmitBtn.textContent = 'Deactivate';
+          } else {
+            deactivateTitle.textContent = 'Activate Token';
+            deactivateDesc.textContent = 'Activate "' + label + '"? The token will be accepted for authentication again.';
+            deactivateSubmitBtn.textContent = 'Activate';
+            deactivateSubmitBtn.className = 'primary-button';
+          }
+          deactivateDialog.showModal();
+        });
+      });
+      document.getElementById('token-deactivate-close').addEventListener('click', () => deactivateDialog.close());
+      document.getElementById('token-deactivate-cancel').addEventListener('click', () => deactivateDialog.close());
+
+      // Delete modal
+      const deleteDialog = document.getElementById('token-delete-dialog');
+      const deleteForm = document.getElementById('token-delete-form');
+      const deleteLabelEl = document.getElementById('token-delete-label');
+
+      document.querySelectorAll('.token-delete-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.dataset.id;
+          const label = btn.dataset.label;
+          deleteForm.action = '/admin/tokens/' + encodeURIComponent(id) + '/delete';
+          deleteLabelEl.textContent = label;
+          deleteDialog.showModal();
+        });
+      });
+      document.getElementById('token-delete-close').addEventListener('click', () => deleteDialog.close());
+      document.getElementById('token-delete-cancel').addEventListener('click', () => deleteDialog.close());
       </script>
     `,
     {
@@ -950,8 +1069,10 @@ export const createServerUi = (options: ServerUiOptions) => {
       if (method === "POST" && url.pathname === "/settings/watch") {
         const form = await readFormBody(request);
         const settleDelayMs = Number(form.get("settleDelayMs"));
+        const localBypass = form.get("localBypass") === "true";
         const input: ServerWatchSettings = {
-          settleDelayMs
+          settleDelayMs,
+          localBypass
         };
 
         try {
@@ -1016,7 +1137,8 @@ export const createServerUi = (options: ServerUiOptions) => {
       }
 
       if (method === "GET" && url.pathname === "/logs") {
-        writeHtml(response, 200, renderLogViewerPage());
+        const watchSettings = await client.getWatchSettings(authenticatedToken);
+        writeHtml(response, 200, renderLogViewerPage(watchSettings));
         return;
       }
 
@@ -1060,8 +1182,11 @@ export const createServerUi = (options: ServerUiOptions) => {
       }
 
       if (method === "GET" && url.pathname === "/admin/tokens") {
-        const tokens = await client.listTokens(authenticatedToken);
-        writeHtml(response, 200, renderTokensPage(tokens.items));
+        const [tokens, watchSettings] = await Promise.all([
+          client.listTokens(authenticatedToken),
+          client.getWatchSettings(authenticatedToken)
+        ]);
+        writeHtml(response, 200, renderTokensPage(tokens.items, watchSettings));
         return;
       }
 
@@ -1074,15 +1199,21 @@ export const createServerUi = (options: ServerUiOptions) => {
             label,
             token: tokenValue.length > 0 ? tokenValue : undefined
           });
-          const tokens = await client.listTokens(authenticatedToken);
-          writeHtml(response, 201, renderTokensPage(tokens.items, {
+          const [tokens, watchSettings] = await Promise.all([
+            client.listTokens(authenticatedToken),
+            client.getWatchSettings(authenticatedToken)
+          ]);
+          writeHtml(response, 201, renderTokensPage(tokens.items, watchSettings, {
             tone: "success",
             message: `Token "${created.label}" created. Value: ${created.token}`
           }));
         } catch (error) {
           const message = error instanceof Error ? error.message : "Failed to create token";
-          const tokens = await client.listTokens(authenticatedToken);
-          writeHtml(response, 400, renderTokensPage(tokens.items, { tone: "error", message }));
+          const [tokens, watchSettings] = await Promise.all([
+            client.listTokens(authenticatedToken),
+            client.getWatchSettings(authenticatedToken)
+          ]);
+          writeHtml(response, 400, renderTokensPage(tokens.items, watchSettings, { tone: "error", message }));
         }
         return;
       }
@@ -1096,8 +1227,11 @@ export const createServerUi = (options: ServerUiOptions) => {
           redirect(response, "/admin/tokens");
         } catch (error) {
           const message = error instanceof Error ? error.message : "Failed to rename token";
-          const tokens = await client.listTokens(authenticatedToken);
-          writeHtml(response, 400, renderTokensPage(tokens.items, { tone: "error", message }));
+          const [tokens, watchSettings] = await Promise.all([
+            client.listTokens(authenticatedToken),
+            client.getWatchSettings(authenticatedToken)
+          ]);
+          writeHtml(response, 400, renderTokensPage(tokens.items, watchSettings, { tone: "error", message }));
         }
         return;
       }
@@ -1109,8 +1243,29 @@ export const createServerUi = (options: ServerUiOptions) => {
           redirect(response, "/admin/tokens");
         } catch (error) {
           const message = error instanceof Error ? error.message : "Failed to delete token";
-          const tokens = await client.listTokens(authenticatedToken);
-          writeHtml(response, 400, renderTokensPage(tokens.items, { tone: "error", message }));
+          const [tokens, watchSettings] = await Promise.all([
+            client.listTokens(authenticatedToken),
+            client.getWatchSettings(authenticatedToken)
+          ]);
+          writeHtml(response, 400, renderTokensPage(tokens.items, watchSettings, { tone: "error", message }));
+        }
+        return;
+      }
+
+      if (method === "POST" && url.pathname.startsWith("/admin/tokens/") && url.pathname.endsWith("/set-enabled")) {
+        const id = decodeURIComponent(url.pathname.slice("/admin/tokens/".length, -"/set-enabled".length));
+        const form = await readFormBody(request);
+        const enabled = form.get("enabled") === "true";
+        try {
+          await client.setTokenEnabled(authenticatedToken, id, enabled);
+          redirect(response, "/admin/tokens");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to update token";
+          const [tokens, watchSettings] = await Promise.all([
+            client.listTokens(authenticatedToken),
+            client.getWatchSettings(authenticatedToken)
+          ]);
+          writeHtml(response, 400, renderTokensPage(tokens.items, watchSettings, { tone: "error", message }));
         }
         return;
       }
@@ -1123,9 +1278,10 @@ export const createServerUi = (options: ServerUiOptions) => {
           return;
         }
 
-        const [workspace, diagnostics] = await Promise.all([
+        const [workspace, diagnostics, watchSettings] = await Promise.all([
           client.getWorkspace(authenticatedToken, workspaceId),
-          client.getWorkspaceDiagnostics(authenticatedToken, workspaceId)
+          client.getWorkspaceDiagnostics(authenticatedToken, workspaceId),
+          client.getWatchSettings(authenticatedToken)
         ]);
 
         if (!workspace) {
@@ -1133,7 +1289,7 @@ export const createServerUi = (options: ServerUiOptions) => {
           return;
         }
 
-        writeHtml(response, 200, renderWorkspaceDetail(workspace, diagnostics));
+        writeHtml(response, 200, renderWorkspaceDetail(workspace, diagnostics, watchSettings));
         return;
       }
 

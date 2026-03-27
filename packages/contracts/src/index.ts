@@ -47,6 +47,8 @@ export interface ServerHealthResponse {
 
 export interface ServerWatchSettings {
   settleDelayMs: number;
+  /** Allow unauthenticated access from localhost (127.0.0.1 / ::1). */
+  localBypass?: boolean;
 }
 
 export interface ServerWatchSettingsResponse extends ServerWatchSettings {}
@@ -326,6 +328,7 @@ export interface AuthTokenListItem {
   maskedToken: string;
   createdAt: string;
   readonly?: boolean;
+  enabled?: boolean;
 }
 
 export interface ListAuthTokensResponse {
