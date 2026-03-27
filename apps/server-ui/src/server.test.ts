@@ -185,6 +185,26 @@ test("deletes workspace from the UI and redirects to dashboard", async () => {
   }
 });
 
+test("returns a dashboard fragment for client-side refresh", async () => {
+  const server = await startTestServer();
+
+  try {
+    const response = await fetch(`${server.baseUrl}/dashboard-fragment`, {
+      headers: {
+        "x-clio-ui-request": "1"
+      }
+    });
+    const body = (await response.json()) as { html: string };
+
+    assert.equal(response.status, 200);
+    assert.match(body.html, /Demo Main/);
+    assert.match(body.html, /data-add-workspace-dialog/);
+    assert.doesNotMatch(body.html, /<!doctype html>/i);
+  } finally {
+    await server.close();
+  }
+});
+
 test("submits workspace registration form and redirects to dashboard", async () => {
   const server = await startTestServer();
 
@@ -204,6 +224,51 @@ test("submits workspace registration form and redirects to dashboard", async () 
 
     assert.equal(response.status, 303);
     assert.equal(response.headers.get("location"), "/");
+  } finally {
+    await server.close();
+  }
+});
+
+test("submits workspace registration form in JSON mode", async () => {
+  const server = await startTestServer();
+
+  try {
+    const response = await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-clio-ui-request": "1"
+      },
+      body: new URLSearchParams({
+        workspaceId: "created-from-form",
+        displayName: "Created From Form",
+        rootPath: "/srv/clio/created-from-form"
+      })
+    });
+    const body = (await response.json()) as { ok: boolean; workspaceId: string };
+
+    assert.equal(response.status, 201);
+    assert.equal(body.ok, true);
+    assert.equal(body.workspaceId, "created-from-form");
+  } finally {
+    await server.close();
+  }
+});
+
+test("deletes workspace in JSON mode", async () => {
+  const server = await startTestServer();
+
+  try {
+    const response = await fetch(`${server.baseUrl}/workspaces/demo-main/delete`, {
+      method: "POST",
+      headers: {
+        "x-clio-ui-request": "1"
+      }
+    });
+    const body = (await response.json()) as { ok: boolean };
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
   } finally {
     await server.close();
   }

@@ -532,6 +532,19 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
         color: var(--color-text-secondary);
         line-height: 1.6;
       }
+      .modal-inline-error {
+        margin-top: 1rem;
+        padding: 0.75rem 0.875rem;
+        border-radius: var(--radius-md);
+        border: 1px solid rgba(196,28,28,0.20);
+        background: var(--color-danger-soft);
+        color: var(--color-danger-text);
+        font-size: 0.8125rem;
+        line-height: 1.6;
+      }
+      .modal-inline-error[hidden] {
+        display: none;
+      }
       .modal-actions {
         padding: 1rem 1.5rem;
         border-top: 1px solid var(--color-border);
@@ -563,22 +576,6 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
     <main class="shell">${body}</main>
     <script>
       (() => {
-        const addWorkspaceDialog = document.querySelector("[data-add-workspace-dialog]");
-        const addWorkspaceOpenButtons = document.querySelectorAll("[data-open-add-workspace]");
-        const addWorkspaceCloseButtons = document.querySelectorAll("[data-close-add-workspace]");
-        const pickerButton = document.querySelector("[data-root-path-picker]");
-        const targetId = pickerButton instanceof HTMLButtonElement
-          ? pickerButton.getAttribute("data-target-input")
-          : null;
-        const targetInput = targetId ? document.getElementById(targetId) : null;
-        const workspaceIdInput = document.getElementById("workspaceId");
-        const statusNode = document.querySelector("[data-root-picker-status]");
-        const deleteDialog = document.querySelector("[data-delete-dialog]");
-        const deleteNameNode = document.querySelector("[data-delete-workspace-name]");
-        const deleteForm = document.querySelector("[data-delete-dialog-form]");
-        const deleteCancelButton = document.querySelector("[data-delete-cancel]");
-        const deleteTriggerButtons = document.querySelectorAll("[data-delete-workspace-button]");
-
         const inferFolderName = (selectedPath) => {
           const normalized = selectedPath.replace(/[\\\\/]+$/, "");
           const parts = normalized.split(/[\\\\/]/).filter(Boolean);
@@ -595,7 +592,14 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
             .replace(/-+/g, "-")
             .replace(/^-|-$/g, "");
 
+        const getAddDialog = () => document.querySelector("[data-add-workspace-dialog]");
+        const getDeleteDialog = () => document.querySelector("[data-delete-dialog]");
+        const getWorkspaceIdInput = () => document.getElementById("workspaceId");
+        const getStatusNode = () => document.querySelector("[data-root-picker-status]");
+        const getShell = () => document.querySelector("main.shell");
+
         const applyFolderDefaults = (selectedPath) => {
+          const workspaceIdInput = getWorkspaceIdInput();
           const folderName = inferFolderName(selectedPath);
 
           if (workspaceIdInput instanceof HTMLInputElement && workspaceIdInput.value.trim() === "") {
@@ -605,10 +609,11 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
               workspaceIdInput.dispatchEvent(new Event("input", { bubbles: true }));
             }
           }
-
         };
 
         const setStatus = (text, isError = false) => {
+          const statusNode = getStatusNode();
+
           if (!(statusNode instanceof HTMLElement)) {
             return;
           }
@@ -617,21 +622,72 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
           statusNode.style.color = isError ? "var(--color-danger-text)" : "var(--color-text-secondary)";
         };
 
-        if (addWorkspaceDialog instanceof HTMLDialogElement) {
-          addWorkspaceOpenButtons.forEach((button) => {
-            button.addEventListener("click", () => {
-              addWorkspaceDialog.showModal();
-            });
+        const setInlineError = (selector, message) => {
+          const node = document.querySelector(selector);
+
+          if (!(node instanceof HTMLElement)) {
+            return;
+          }
+
+          if (!message) {
+            node.hidden = true;
+            node.textContent = "";
+            return;
+          }
+
+          node.hidden = false;
+          node.textContent = message;
+        };
+
+        const closeDialog = (dialog) => {
+          if (dialog instanceof HTMLDialogElement && dialog.open) {
+            dialog.close();
+          }
+        };
+
+        const showDialog = (dialog) => {
+          if (dialog instanceof HTMLDialogElement && !dialog.open) {
+            dialog.showModal();
+          }
+        };
+
+        const refreshDashboard = async () => {
+          const shell = getShell();
+
+          if (!(shell instanceof HTMLElement)) {
+            return;
+          }
+
+          const response = await fetch("/dashboard-fragment", {
+            headers: {
+              "x-clio-ui-request": "1"
+            }
           });
 
-          addWorkspaceCloseButtons.forEach((button) => {
-            button.addEventListener("click", () => {
-              addWorkspaceDialog.close();
-            });
-          });
+          if (!response.ok) {
+            throw new Error("Failed to refresh dashboard");
+          }
 
-          addWorkspaceDialog.addEventListener("click", (event) => {
-            const rect = addWorkspaceDialog.getBoundingClientRect();
+          const payload = await response.json();
+          if (typeof payload.html !== "string") {
+            throw new Error("Dashboard refresh returned invalid HTML");
+          }
+
+          shell.innerHTML = payload.html;
+          const nextAddDialog = getAddDialog();
+          if (nextAddDialog instanceof HTMLDialogElement && nextAddDialog.dataset.openOnLoad === "true") {
+            showDialog(nextAddDialog);
+          }
+        };
+
+        const bindDialogBackdropClose = (dialog) => {
+          if (!(dialog instanceof HTMLDialogElement) || dialog.dataset.backdropBound === "true") {
+            return;
+          }
+
+          dialog.dataset.backdropBound = "true";
+          dialog.addEventListener("click", (event) => {
+            const rect = dialog.getBoundingClientRect();
             const withinDialog =
               event.clientX >= rect.left &&
               event.clientX <= rect.right &&
@@ -639,22 +695,74 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
               event.clientY <= rect.bottom;
 
             if (!withinDialog) {
-              addWorkspaceDialog.close();
+              dialog.close();
             }
           });
+        };
 
-          if (addWorkspaceDialog.dataset.openOnLoad === "true") {
-            addWorkspaceDialog.showModal();
+        bindDialogBackdropClose(getAddDialog());
+        bindDialogBackdropClose(getDeleteDialog());
+
+        document.addEventListener("click", async (event) => {
+          const target = event.target instanceof Element
+            ? event.target.closest("[data-open-add-workspace], [data-close-add-workspace], [data-root-path-picker], [data-delete-workspace-button], [data-delete-cancel]")
+            : null;
+
+          if (!(target instanceof HTMLElement)) {
+            return;
           }
-        }
 
-        if (pickerButton instanceof HTMLButtonElement) {
-          pickerButton.addEventListener("click", async () => {
-            if (!(targetInput instanceof HTMLInputElement)) {
+          if (target.matches("[data-open-add-workspace]")) {
+            setInlineError("[data-add-workspace-error]", "");
+            showDialog(getAddDialog());
+            return;
+          }
+
+          if (target.matches("[data-close-add-workspace]")) {
+            closeDialog(getAddDialog());
+            return;
+          }
+
+          if (target.matches("[data-delete-cancel]")) {
+            closeDialog(getDeleteDialog());
+            return;
+          }
+
+          if (target.matches("[data-delete-workspace-button]")) {
+            const deleteDialog = getDeleteDialog();
+            const deleteNameNode = document.querySelector("[data-delete-workspace-name]");
+            const deleteForm = document.querySelector("[data-delete-dialog-form]");
+
+            if (
+              deleteDialog instanceof HTMLDialogElement &&
+              deleteNameNode instanceof HTMLElement &&
+              deleteForm instanceof HTMLFormElement
+            ) {
+              const action = target.getAttribute("data-delete-action");
+              const workspaceLabel = target.getAttribute("data-workspace-label") ?? "this workspace";
+
+              if (!action) {
+                return;
+              }
+
+              deleteForm.action = action;
+              deleteNameNode.textContent = workspaceLabel;
+              setInlineError("[data-delete-workspace-error]", "");
+              showDialog(deleteDialog);
+            }
+
+            return;
+          }
+
+          if (target.matches("[data-root-path-picker]")) {
+            const targetId = target.getAttribute("data-target-input");
+            const targetInput = targetId ? document.getElementById(targetId) : null;
+
+            if (!(target instanceof HTMLButtonElement) || !(targetInput instanceof HTMLInputElement)) {
               return;
             }
 
-            pickerButton.disabled = true;
+            target.disabled = true;
             setStatus("Opening folder picker...");
 
             try {
@@ -684,52 +792,90 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
             } catch (error) {
               setStatus(error instanceof Error ? error.message : "Folder picker failed", true);
             } finally {
-              pickerButton.disabled = false;
+              target.disabled = false;
             }
-          });
-        }
+          }
+        });
 
-        if (
-          deleteDialog instanceof HTMLDialogElement &&
-          deleteForm instanceof HTMLFormElement &&
-          deleteNameNode instanceof HTMLElement
-        ) {
-          deleteTriggerButtons.forEach((button) => {
-            if (!(button instanceof HTMLButtonElement)) {
-              return;
+        document.addEventListener("submit", async (event) => {
+          const form = event.target instanceof HTMLFormElement ? event.target : null;
+
+          if (!form) {
+            return;
+          }
+
+          if (form.matches("[data-add-workspace-form]")) {
+            event.preventDefault();
+            setInlineError("[data-add-workspace-error]", "");
+            const submitButton = form.querySelector('button[type="submit"]');
+
+            if (submitButton instanceof HTMLButtonElement) {
+              submitButton.disabled = true;
             }
 
-            button.addEventListener("click", () => {
-              const action = button.getAttribute("data-delete-action");
-              const workspaceLabel = button.getAttribute("data-workspace-label") ?? "this workspace";
+            try {
+              const response = await fetch(form.action, {
+                method: "POST",
+                headers: {
+                  "content-type": "application/x-www-form-urlencoded",
+                  "x-clio-ui-request": "1"
+                },
+                body: new URLSearchParams(new FormData(form)).toString()
+              });
 
-              if (!action) {
+              if (!response.ok) {
+                const payload = await response.json().catch(() => ({ error: { message: "Failed to create workspace" } }));
+                setInlineError("[data-add-workspace-error]", payload?.error?.message ?? "Failed to create workspace");
                 return;
               }
 
-              deleteForm.action = action;
-              deleteNameNode.textContent = workspaceLabel;
-              deleteDialog.showModal();
-            });
-          });
-
-          deleteCancelButton?.addEventListener("click", () => {
-            deleteDialog.close();
-          });
-
-          deleteDialog.addEventListener("click", (event) => {
-            const rect = deleteDialog.getBoundingClientRect();
-            const withinDialog =
-              event.clientX >= rect.left &&
-              event.clientX <= rect.right &&
-              event.clientY >= rect.top &&
-              event.clientY <= rect.bottom;
-
-            if (!withinDialog) {
-              deleteDialog.close();
+              closeDialog(getAddDialog());
+              await refreshDashboard();
+            } catch (error) {
+              setInlineError("[data-add-workspace-error]", error instanceof Error ? error.message : "Failed to create workspace");
+            } finally {
+              if (submitButton instanceof HTMLButtonElement) {
+                submitButton.disabled = false;
+              }
             }
-          });
-        }
+
+            return;
+          }
+
+          if (form.matches("[data-delete-dialog-form]")) {
+            event.preventDefault();
+            setInlineError("[data-delete-workspace-error]", "");
+            const submitButton = form.querySelector('button[type="submit"]');
+
+            if (submitButton instanceof HTMLButtonElement) {
+              submitButton.disabled = true;
+            }
+
+            try {
+              const response = await fetch(form.action, {
+                method: "POST",
+                headers: {
+                  "x-clio-ui-request": "1"
+                }
+              });
+
+              if (!response.ok) {
+                const payload = await response.json().catch(() => ({ error: { message: "Failed to delete workspace" } }));
+                setInlineError("[data-delete-workspace-error]", payload?.error?.message ?? "Failed to delete workspace");
+                return;
+              }
+
+              closeDialog(getDeleteDialog());
+              await refreshDashboard();
+            } catch (error) {
+              setInlineError("[data-delete-workspace-error]", error instanceof Error ? error.message : "Failed to delete workspace");
+            } finally {
+              if (submitButton instanceof HTMLButtonElement) {
+                submitButton.disabled = false;
+              }
+            }
+          }
+        });
       })();
     </script>
   </body>
@@ -807,6 +953,7 @@ export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
         </div>
         <div class="modal-body">
           Remove <strong data-delete-workspace-name>this workspace</strong>? This removes the workspace registration from the control plane. The underlying project folder is not deleted.
+          <div class="modal-inline-error" data-delete-workspace-error hidden></div>
         </div>
         <div class="modal-actions">
           <button type="button" class="secondary-button" data-delete-cancel>Cancel</button>
@@ -843,7 +990,8 @@ export const renderWorkspaceRegistrationModal = (
       </div>
       <div class="modal-body">
         Register a server workspace so it becomes available in the control plane and sync workflows.
-        <form method="post" action="/workspaces/register" class="form-grid" style="margin-top:1.25rem;">
+        <div class="modal-inline-error" data-add-workspace-error hidden></div>
+        <form method="post" action="/workspaces/register" data-add-workspace-form class="form-grid" style="margin-top:1.25rem;">
           <div class="form-field">
             <label for="workspaceId">Workspace ID<span style="color:var(--color-danger);margin-left:2px;">*</span></label>
             <input id="workspaceId" name="workspaceId" required value="${escapeHtml(values?.workspaceId ?? "")}" />

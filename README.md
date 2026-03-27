@@ -121,6 +121,7 @@ Implemented today:
 - workspace creation returns to the dashboard and refreshes the workspace list instead of opening detail immediately
 - empty-state dashboard collapses to a blank slate with a single `Add Workspace` action
 - dashboard actions include an explicit `Details` button per workspace and icon actions for add/delete
+- modal add/delete flows update the registry in place without a full page reload
 - auto-fill of `workspaceId` from the selected folder when that field is empty
 - delete actions for removing workspaces from the dashboard
 - simplified workspace list UI that shows either `Display Name (workspaceId)` or just `workspaceId`

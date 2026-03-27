@@ -229,49 +229,55 @@ const renderDashboard = async (
   }
 ) => {
   const [health, workspaces] = await Promise.all([client.getHealth(), client.listWorkspaces()]);
+  const body = renderDashboardBody(health, workspaces, state);
 
-  if (workspaces.length === 0) {
-    return renderPage(
-      "Clio FS Control Plane",
-      `
-        ${
-          state?.notice ? renderNotice(state.notice.tone, state.notice.message) : ""
-        }
-        ${renderEmptyWorkspaceState()}
-        ${renderWorkspaceRegistrationModal(state?.formValues, {
-          openOnLoad: Boolean(state?.notice || state?.formValues)
-        })}
-      `
-    );
+  return renderPage("Clio FS Control Plane", body);
+};
+
+const renderDashboardBody = (
+  health: ServerHealthResponse,
+  workspaces: WorkspaceRecord[],
+  state?: {
+    notice?: { tone: "error" | "success"; message: string };
+    formValues?: Partial<RegisterWorkspaceRequest>;
   }
-
-  return renderPage(
-    "Clio FS Control Plane",
-    `
-      <section class="hero">
-        <div class="eyebrow">Operations Console</div>
-        <h1>Manage workspace sync from a single control plane.</h1>
-        <p class="lede">Monitor service health, register workspaces, and inspect runtime state from one operator console built for day-to-day control of Clio FS.</p>
-      </section>
-      <section class="grid">
-        ${renderMetricCard("Service", health.service)}
-        ${renderMetricCard("Health", health.status)}
-        ${renderMetricCard("Platform", health.platform)}
-        ${renderMetricCard("Workspaces", String(workspaces.length))}
-      </section>
+) => {
+  if (workspaces.length === 0) {
+    return `
       ${
         state?.notice ? renderNotice(state.notice.tone, state.notice.message) : ""
       }
-      <section class="panel">
-        <div class="metric">Runtime Summary</div>
-        <p style="margin:0.5rem 0 0;font-size:0.875rem;color:var(--color-text-secondary);line-height:1.6;">${escapeHtml(health.summary)}</p>
-      </section>
-      ${renderWorkspaceTable(workspaces)}
+      ${renderEmptyWorkspaceState()}
       ${renderWorkspaceRegistrationModal(state?.formValues, {
         openOnLoad: Boolean(state?.notice || state?.formValues)
       })}
-    `
-  );
+    `;
+  }
+
+  return `
+    <section class="hero">
+      <div class="eyebrow">Operations Console</div>
+      <h1>Manage workspace sync from a single control plane.</h1>
+      <p class="lede">Monitor service health, register workspaces, and inspect runtime state from one operator console built for day-to-day control of Clio FS.</p>
+    </section>
+    <section class="grid">
+      ${renderMetricCard("Service", health.service)}
+      ${renderMetricCard("Health", health.status)}
+      ${renderMetricCard("Platform", health.platform)}
+      ${renderMetricCard("Workspaces", String(workspaces.length))}
+    </section>
+    ${
+      state?.notice ? renderNotice(state.notice.tone, state.notice.message) : ""
+    }
+    <section class="panel">
+      <div class="metric">Runtime Summary</div>
+      <p style="margin:0.5rem 0 0;font-size:0.875rem;color:var(--color-text-secondary);line-height:1.6;">${escapeHtml(health.summary)}</p>
+    </section>
+    ${renderWorkspaceTable(workspaces)}
+    ${renderWorkspaceRegistrationModal(state?.formValues, {
+      openOnLoad: Boolean(state?.notice || state?.formValues)
+    })}
+  `;
 };
 
 const renderWorkspaceDetail = (workspace: WorkspaceRecord) =>
@@ -348,6 +354,14 @@ export const createServerUi = (options: ServerUiOptions) => {
         return;
       }
 
+      if (method === "GET" && url.pathname === "/dashboard-fragment") {
+        const [health, workspaces] = await Promise.all([client.getHealth(), client.listWorkspaces()]);
+        writeJson(response, 200, {
+          html: renderDashboardBody(health, workspaces)
+        });
+        return;
+      }
+
       if (method === "POST" && url.pathname === "/workspaces/register") {
         const form = await readFormBody(request);
         const displayName = form.get("displayName")?.toString().trim() ?? "";
@@ -358,11 +372,28 @@ export const createServerUi = (options: ServerUiOptions) => {
         };
 
         try {
-          await client.registerWorkspace(input);
+          const result = await client.registerWorkspace(input);
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 201, {
+              ok: true,
+              workspaceId: result.workspaceId
+            });
+            return;
+          }
+
           redirect(response, `/`);
           return;
         } catch (error) {
           const message = error instanceof Error ? error.message : "Failed to register workspace";
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 400, {
+              error: {
+                code: "workspace_register_failed",
+                message
+              }
+            });
+            return;
+          }
           writeHtml(
             response,
             400,
@@ -385,10 +416,23 @@ export const createServerUi = (options: ServerUiOptions) => {
 
         try {
           await client.deleteWorkspace(workspaceId);
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 200, { ok: true });
+            return;
+          }
           redirect(response, "/");
           return;
         } catch (error) {
           const message = error instanceof Error ? error.message : "Failed to delete workspace";
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 400, {
+              error: {
+                code: "workspace_delete_failed",
+                message
+              }
+            });
+            return;
+          }
           writeHtml(
             response,
             400,
