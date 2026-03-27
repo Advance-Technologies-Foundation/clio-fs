@@ -252,19 +252,27 @@ export class PollingWorkspaceChangeWatcher implements WorkspaceChangeWatcher {
   }
 
   start() {
-    for (const workspace of this.#registry.list()) {
+    const workspaces = this.#registry.list();
+    for (const workspace of workspaces) {
       this.resyncWorkspace(workspace.workspaceId);
     }
 
     this.#interval = setInterval(() => {
       this.#tick();
     }, this.#pollIntervalMs);
+
+    this.#logger.info("watcher_started", {
+      workspaceCount: workspaces.length,
+      pollIntervalMs: this.#pollIntervalMs,
+      origin: this.#origin
+    });
   }
 
   stop() {
     if (this.#interval) {
       clearInterval(this.#interval);
       this.#interval = undefined;
+      this.#logger.info("watcher_stopped", { origin: this.#origin });
     }
   }
 

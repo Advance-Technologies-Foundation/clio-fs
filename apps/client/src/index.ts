@@ -124,7 +124,8 @@ const ensureHydratedMirror = async (
   filesystem: ClientFileSystemAdapter,
   stateStore: ClientStateStore,
   workspaceId: string,
-  mirrorRoot: string
+  mirrorRoot: string,
+  origin = "local-client"
 ) => {
   const snapshot = await controlPlane.getSnapshot(workspaceId);
 
@@ -139,7 +140,7 @@ const ensureHydratedMirror = async (
   let materializedFiles: SnapshotMaterializeFile[] = [];
 
   if (filePaths.length > 0) {
-    const materialized = await controlPlane.materialize(workspaceId, { paths: filePaths });
+    const materialized = await controlPlane.materialize(workspaceId, { paths: filePaths }, origin);
     materializedFiles = materialized.files;
 
     for (const file of materializedFiles) {
@@ -1192,7 +1193,8 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
           filesystem,
           stateStore,
           options.workspaceId,
-          options.mirrorRoot
+          options.mirrorRoot,
+          "resync-from-server"
         );
 
         refreshSuppressionFromMirror(nextState.mirrorRoot);
@@ -1288,7 +1290,8 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
           filesystem,
           stateStore,
           bound.workspaceId,
-          bound.mirrorRoot
+          bound.mirrorRoot,
+          "resync-from-local"
         );
 
         refreshSuppressionFromMirror(nextState.mirrorRoot);

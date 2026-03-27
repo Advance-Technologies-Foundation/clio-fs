@@ -137,10 +137,159 @@ const normalizeAuthTokens = (options: Pick<WorkspaceServerOptions, "authToken" |
   return ["dev-token"];
 };
 
-const isAuthorized = (request: IncomingMessage, authTokens: string[]) => {
+const isAuthorized = (request: IncomingMessage, authTokens: string[], url?: URL) => {
   const header = request.headers.authorization;
-  return typeof header === "string" && authTokens.includes(header.replace(/^Bearer\s+/u, ""));
+  if (typeof header === "string" && authTokens.includes(header.replace(/^Bearer\s+/u, ""))) {
+    return true;
+  }
+  const queryToken = url?.searchParams.get("token");
+  return typeof queryToken === "string" && authTokens.includes(queryToken);
 };
+
+const writeHtml = (response: ServerResponse, statusCode: number, body: string) => {
+  response.writeHead(statusCode, { "content-type": "text/html; charset=utf-8" });
+  response.end(body);
+};
+
+const renderLogViewerPage = (token: string) => `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>clio-fs · Logs</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d1117;color:#e6edf3;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;display:flex;flex-direction:column;height:100vh}
+header{background:#161b22;border-bottom:1px solid #30363d;padding:10px 16px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+header h1{font-size:14px;font-weight:600;color:#e6edf3}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}
+.badge-connected{background:#1a4a2e;color:#3fb950}
+.badge-disconnected{background:#3d1f1f;color:#f85149}
+.controls{display:flex;gap:8px;margin-left:auto;align-items:center}
+.controls label{color:#8b949e;font-size:12px}
+select,input[type=text]{background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:4px 8px;border-radius:6px;font-size:12px;font-family:inherit}
+input[type=checkbox]{accent-color:#58a6ff}
+#log-container{flex:1;overflow-y:auto;padding:8px 0}
+.log-line{padding:2px 16px;white-space:pre-wrap;word-break:break-all;line-height:1.5}
+.log-line:hover{background:rgba(255,255,255,0.04)}
+.ts{color:#484f58}
+.lvl-debug{color:#8b949e}
+.lvl-info{color:#58a6ff}
+.lvl-warn{color:#d29922}
+.lvl-error{color:#f85149}
+.lvl-audit{color:#3fb950;font-weight:600}
+.event{color:#e6edf3;font-weight:500}
+.fields{color:#8b949e}
+.no-logs{color:#484f58;padding:24px 16px}
+</style>
+</head>
+<body>
+<header>
+  <h1>clio-fs logs</h1>
+  <span id="status-badge" class="badge badge-disconnected">disconnected</span>
+  <div class="controls">
+    <label>Level:
+      <select id="filter-level">
+        <option value="">all</option>
+        <option value="debug">debug</option>
+        <option value="info">info</option>
+        <option value="warn">warn</option>
+        <option value="error">error</option>
+        <option value="audit">audit</option>
+      </select>
+    </label>
+    <label>Search: <input type="text" id="filter-text" placeholder="filter…" style="width:160px"></label>
+    <label><input type="checkbox" id="autoscroll" checked> Autoscroll</label>
+    <button onclick="clearLogs()" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:4px 10px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px">Clear</button>
+  </div>
+</header>
+<div id="log-container"><p class="no-logs">Connecting…</p></div>
+<script>
+const TOKEN = ${JSON.stringify(token)};
+const container = document.getElementById('log-container');
+const statusBadge = document.getElementById('status-badge');
+const filterLevel = document.getElementById('filter-level');
+const filterText = document.getElementById('filter-text');
+const autoscroll = document.getElementById('autoscroll');
+let entries = [];
+
+function clearLogs() { entries = []; render(); }
+
+function formatEntry(e) {
+  const ts = e.timestamp ? e.timestamp.replace('T',' ').replace('Z','') : '';
+  const isAudit = e.audit === true;
+  const levelClass = isAudit ? 'lvl-audit' : 'lvl-' + (e.level || 'info');
+  const levelLabel = isAudit ? 'AUDIT' : (e.level || 'info').toUpperCase().padEnd(5);
+  const fields = Object.entries(e)
+    .filter(([k]) => !['timestamp','level','event','audit'].includes(k))
+    .map(([k,v]) => k + '=' + JSON.stringify(v))
+    .join(' ');
+  return '<span class="ts">' + ts + '</span> '
+    + '<span class="' + levelClass + '">' + levelLabel + '</span> '
+    + '<span class="event">' + (e.event || '') + '</span>'
+    + (fields ? ' <span class="fields">' + fields + '</span>' : '');
+}
+
+function matchesFilter(e) {
+  const lvl = filterLevel.value;
+  if (lvl === 'audit' && !e.audit) return false;
+  if (lvl && lvl !== 'audit' && e.level !== lvl) return false;
+  const txt = filterText.value.trim().toLowerCase();
+  if (txt && !JSON.stringify(e).toLowerCase().includes(txt)) return false;
+  return true;
+}
+
+function render() {
+  const visible = entries.filter(matchesFilter);
+  if (visible.length === 0) {
+    container.innerHTML = '<p class="no-logs">No matching log entries.</p>';
+    return;
+  }
+  container.innerHTML = visible.map(e => '<div class="log-line">' + formatEntry(e) + '</div>').join('');
+  if (autoscroll.checked) container.scrollTop = container.scrollHeight;
+}
+
+filterLevel.addEventListener('change', render);
+filterText.addEventListener('input', render);
+
+fetch('/logs/recent?limit=500&token=' + TOKEN)
+  .then(r => r.json())
+  .then(data => { entries = data.items || []; render(); })
+  .catch(() => {});
+
+function connect() {
+  const es = new EventSource('/logs/stream?token=' + TOKEN);
+  es.onopen = () => {
+    statusBadge.textContent = 'connected';
+    statusBadge.className = 'badge badge-connected';
+  };
+  es.onmessage = (ev) => {
+    try {
+      const entry = JSON.parse(ev.data);
+      if (entry.event === 'log_stream_connected') return;
+      entries.push(entry);
+      if (entries.length > 2000) entries.splice(0, entries.length - 2000);
+      const matches = matchesFilter(entry);
+      if (!matches) return;
+      const div = document.createElement('div');
+      div.className = 'log-line';
+      div.innerHTML = formatEntry(entry);
+      if (container.querySelector('.no-logs')) container.innerHTML = '';
+      container.appendChild(div);
+      if (autoscroll.checked) container.scrollTop = container.scrollHeight;
+    } catch {}
+  };
+  es.onerror = () => {
+    statusBadge.textContent = 'disconnected';
+    statusBadge.className = 'badge badge-disconnected';
+    es.close();
+    setTimeout(connect, 3000);
+  };
+}
+connect();
+</script>
+</body>
+</html>`;
 
 const publicWorkspaceShape = (workspace: WorkspaceRecord) => ({
   workspaceId: workspace.workspaceId,
@@ -200,7 +349,23 @@ const routeRequest = async (
     return;
   }
 
-  if (!isAuthorized(request, authTokens)) {
+  if (method === "GET" && pathname === "/logs") {
+    const token = url.searchParams.get("token") ?? "";
+    if (!authTokens.includes(token)) {
+      writeHtml(response, 401, `<!DOCTYPE html><html><head><meta charset="utf-8"><title>clio-fs · Logs</title>
+<style>body{background:#0d1117;color:#e6edf3;font-family:ui-monospace,monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+form{display:flex;flex-direction:column;gap:12px;background:#161b22;padding:32px;border-radius:12px;border:1px solid #30363d;min-width:320px}
+h2{font-size:16px;font-weight:600}label{color:#8b949e;font-size:13px}
+input{background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:8px 12px;border-radius:6px;font-family:inherit;font-size:13px}
+button{background:#1f6feb;border:none;color:#fff;padding:8px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:13px}</style></head>
+<body><form method="get" action="/logs"><h2>clio-fs logs</h2><label>Auth token<input name="token" type="password" autofocus></label><button type="submit">Open logs</button></form></body></html>`);
+      return;
+    }
+    writeHtml(response, 200, renderLogViewerPage(token));
+    return;
+  }
+
+  if (!isAuthorized(request, authTokens, url)) {
     writeError(response, 401, "unauthorized", "Missing or invalid bearer token");
     return;
   }
@@ -236,7 +401,9 @@ const routeRequest = async (
   if (method === "PUT" && pathname === "/settings/watch") {
     try {
       const input = parseUpdateServerWatchSettingsRequest(await readJsonBody(request));
-      json(response, 200, options.watchSettingsStore.update(input));
+      const updated = options.watchSettingsStore.update(input);
+      (options.logger ?? noopLogger).audit("watch_settings_updated", { ...updated });
+      json(response, 200, updated);
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid watch settings request";
@@ -483,6 +650,7 @@ const routeRequest = async (
     }
 
     options.workspaceWatcher?.resyncWorkspace(workspaceId);
+    (options.logger ?? noopLogger).audit("workspace_resync_requested", { workspaceId });
     json(response, 200, {
       workspaceId,
       resynced: true
@@ -509,11 +677,13 @@ const routeRequest = async (
 
     try {
       input = (await readJsonBody(request)) as SnapshotMaterializeRequest;
-      json(
-        response,
-        200,
-        materializeWorkspaceFiles(workspace, input.paths, options.filesystem ?? nodeFileSystem)
-      );
+      const result = materializeWorkspaceFiles(workspace, input.paths, options.filesystem ?? nodeFileSystem);
+      (options.logger ?? noopLogger).audit("snapshot_materialized", {
+        workspaceId,
+        pathCount: input.paths?.length ?? result.files.length,
+        origin: url.searchParams.get("origin") ?? "unknown"
+      });
+      json(response, 200, result);
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid materialize request";

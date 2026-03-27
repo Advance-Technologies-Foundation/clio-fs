@@ -99,10 +99,11 @@ export class ClientControlPlane {
 
   async materialize(
     workspaceId: string,
-    input: SnapshotMaterializeRequest
+    input: SnapshotMaterializeRequest,
+    origin = "local-client"
   ): Promise<SnapshotMaterializeResponse> {
     return this.#request<SnapshotMaterializeResponse>(
-      `/workspaces/${encodeURIComponent(workspaceId)}/snapshot-materialize`,
+      `/workspaces/${encodeURIComponent(workspaceId)}/snapshot-materialize?origin=${encodeURIComponent(origin)}`,
       {
         method: "POST",
         headers: {
