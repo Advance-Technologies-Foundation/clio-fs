@@ -144,6 +144,7 @@ test("renders dashboard with workspace content", async () => {
     assert.match(html, /Delete Workspace/);
     assert.match(html, /The underlying project folder is not deleted/i);
     assert.match(html, /Add Workspace/);
+    assert.match(html, /Close add workspace dialog/);
     assert.doesNotMatch(html, /onsubmit="return confirm/);
     assert.doesNotMatch(html, /Platform is determined by the server/i);
     assert.doesNotMatch(html, /<label for="platformDisplay">Platform<\/label>/);
@@ -239,6 +240,7 @@ test("renders a blank slate when there are no workspaces", async () => {
     assert.match(html, /Start by registering your first workspace/i);
     assert.match(html, /Workspace Registry/i);
     assert.match(html, /Add Workspace/);
+    assert.match(html, /Close add workspace dialog/);
     assert.match(html, /data-add-workspace-dialog/);
     assert.doesNotMatch(html, /<table>/);
     assert.doesNotMatch(html, /sync-core ready; workspaces=0/);

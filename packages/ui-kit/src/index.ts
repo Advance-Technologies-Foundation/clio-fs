@@ -496,12 +496,35 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
       .modal-header {
         padding: 1.25rem 1.5rem;
         border-bottom: 1px solid var(--color-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
       }
       .modal-title {
         margin: 0;
         font-size: 1.0625rem;
         font-weight: 600;
         color: var(--color-text-primary);
+      }
+      .modal-close {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        border: 1px solid transparent;
+        border-radius: 9999px;
+        background: transparent;
+        color: var(--color-text-secondary);
+        font-size: 1.25rem;
+        line-height: 1;
+      }
+      .modal-close:hover:not(:disabled) {
+        background: var(--color-surface-page);
+        color: var(--color-text-primary);
+        border-color: var(--color-border);
       }
       .modal-body {
         padding: 1.25rem 1.5rem;
@@ -810,6 +833,13 @@ export const renderWorkspaceRegistrationModal = (
     <div class="modal-card">
       <div class="modal-header">
         <h2 class="modal-title">Add Workspace</h2>
+        <button
+          type="button"
+          class="modal-close"
+          aria-label="Close add workspace dialog"
+          title="Close"
+          data-close-add-workspace
+        >×</button>
       </div>
       <div class="modal-body">
         Register a server workspace so it becomes available in the control plane and sync workflows.
