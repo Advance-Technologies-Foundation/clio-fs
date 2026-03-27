@@ -8,6 +8,7 @@ import { URL } from "node:url";
 import { appConfig } from "@clio-fs/config";
 import type { ApiErrorShape, WorkspaceDescriptor, WorkspaceListResponse } from "@clio-fs/contracts";
 import { escapeHtml, renderNotice, renderPage } from "@clio-fs/ui-kit";
+import { noopLogger, type Logger } from "./logger.js";
 
 export interface ClientUiOptions {
   host: string;
@@ -16,6 +17,7 @@ export interface ClientUiOptions {
   selectDirectory?: () => Promise<string | null>;
   targetStore?: ClientSyncTargetStore;
   createMirrorClientImpl: (options: MirrorClientOptions) => MirrorClient;
+  logger?: Logger;
 }
 
 export interface ClientSyncTarget {
@@ -1481,7 +1483,7 @@ const renderClientPage = (
       })();
     </script>`,
     {
-      topbarSubtitle: "Sync Client Control Plane"
+      topbarSubtitle: "Sync Client Control Plane", topbarActions: clientTopbarActions()
     }
   );
 
@@ -1547,7 +1549,7 @@ const renderTargetDetail = (target: ClientSyncTarget, status: ClientSyncManagerS
       ${renderConflictResolutionPanel(target, status)}
     `,
     {
-      topbarSubtitle: "Sync Client Control Plane"
+      topbarSubtitle: "Sync Client Control Plane", topbarActions: clientTopbarActions()
     }
   );
 
@@ -1563,8 +1565,72 @@ const deriveStatusFromClientState = (
   unsyncedObjectCount: (snapshot?.pendingOperations?.length ?? 0) + (snapshot?.conflicts?.length ?? 0)
 });
 
+const topbarBtn = (href: string, label: string) =>
+  `<a href="${href}" style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.375rem 0.875rem;border-radius:8px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.80);font-size:0.8125rem;font-weight:500;text-decoration:none;" onmouseover="this.style.background='rgba(255,255,255,0.14)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'">${label}</a>`;
+
+const clientTopbarActions = () =>
+  `${topbarBtn("/", "Home")}${topbarBtn("/logs", "Logs")}`;
+
+const renderLogViewerPage = () =>
+  renderPage(
+    "Live Logs | Clio FS Client",
+    `
+      <section class="panel stack" style="padding:0;overflow:hidden;">
+        <div id="log-toolbar" style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;border-bottom:1px solid rgba(0,0,0,0.08);background:rgba(0,0,0,0.03);">
+          <span id="log-status" style="font-size:0.8rem;color:#6b7280;">Connecting…</span>
+          <label style="display:flex;align-items:center;gap:0.375rem;font-size:0.8rem;color:#374151;margin-left:auto;">
+            <input type="checkbox" id="log-audit-only" /> Audit only
+          </label>
+          <button onclick="document.getElementById('log-entries').innerHTML=''" style="font-size:0.8rem;padding:0.25rem 0.75rem;border-radius:6px;border:1px solid #d1d5db;background:#fff;cursor:pointer;color:#374151;">Clear</button>
+          <label style="display:flex;align-items:center;gap:0.375rem;font-size:0.8rem;color:#374151;">
+            <input type="checkbox" id="log-autoscroll" checked /> Autoscroll
+          </label>
+        </div>
+        <div id="log-entries" style="font-family:'Consolas','Courier New',monospace;font-size:0.78rem;line-height:1.6;padding:0.75rem 1rem;min-height:400px;max-height:70vh;overflow-y:auto;background:#0f172a;color:#94a3b8;"></div>
+      </section>
+      <script>
+        const entries = document.getElementById('log-entries');
+        const status = document.getElementById('log-status');
+        const auditOnly = document.getElementById('log-audit-only');
+        const autoscroll = document.getElementById('log-autoscroll');
+
+        const LEVEL_COLORS = { debug: '#64748b', info: '#38bdf8', warn: '#fbbf24', error: '#f87171' };
+        const AUDIT_BG = 'rgba(56,189,248,0.08)';
+
+        function appendEntry(data) {
+          if (auditOnly.checked && !data.audit) return;
+          const row = document.createElement('div');
+          const isAudit = !!data.audit;
+          row.style.cssText = 'padding:2px 4px;border-radius:3px;' + (isAudit ? 'background:' + AUDIT_BG + ';' : '');
+          const color = LEVEL_COLORS[data.level] || '#94a3b8';
+          const ts = data.timestamp ? data.timestamp.replace('T', ' ').replace('Z', '') : '';
+          const badge = isAudit ? '<span style="color:#38bdf8;font-weight:700;">[AUDIT]</span> ' : '';
+          const rest = Object.entries(data).filter(([k]) => !['timestamp','level','event','audit'].includes(k));
+          const fields = rest.length ? ' ' + rest.map(([k,v]) => '<span style="color:#64748b;">' + k + '=</span><span style="color:#e2e8f0;">' + JSON.stringify(v) + '</span>').join(' ') : '';
+          row.innerHTML = '<span style="color:#475569;">' + ts + '</span> <span style="color:' + color + ';font-weight:600;">' + data.level.toUpperCase() + '</span> ' + badge + '<span style="color:#f1f5f9;">' + (data.event || '') + '</span>' + fields;
+          entries.appendChild(row);
+          if (autoscroll.checked) entries.scrollTop = entries.scrollHeight;
+        }
+
+        fetch('/logs/recent')
+          .then(r => r.json())
+          .then(body => { (body.items || []).forEach(appendEntry); })
+          .catch(() => {});
+
+        const es = new EventSource('/logs/stream');
+        es.onopen = () => { status.textContent = 'Connected'; status.style.color = '#16a34a'; };
+        es.onerror = () => { status.textContent = 'Disconnected — retrying…'; status.style.color = '#dc2626'; };
+        es.onmessage = (e) => {
+          try { appendEntry(JSON.parse(e.data)); } catch {}
+        };
+      </script>
+    `,
+    { topbarSubtitle: "Sync Client Control Plane", topbarActions: clientTopbarActions() }
+  );
+
 const createClientSyncManager = (
-  createMirrorClientImpl: (options: MirrorClientOptions) => MirrorClient
+  createMirrorClientImpl: (options: MirrorClientOptions) => MirrorClient,
+  logger: Logger
 ): ClientSyncManager => {
   let activeClient: MirrorClient | undefined;
   let activePollInterval: NodeJS.Timeout | undefined;
@@ -1574,6 +1640,10 @@ const createClientSyncManager = (
     if (activePollInterval) {
       clearInterval(activePollInterval);
       activePollInterval = undefined;
+    }
+
+    if (activeClient) {
+      logger.info("sync_stopped", { workspaceId: status.workspaceId, targetId: status.targetId });
     }
 
     activeClient?.stopLocalWatchLoop();
@@ -1601,6 +1671,7 @@ const createClientSyncManager = (
     });
 
     await nextClient.bind();
+    logger.info("sync_started", { workspaceId: target.workspaceId, targetId: target.targetId, mirrorRoot: target.mirrorRoot, serverBaseUrl: target.serverBaseUrl });
     await nextClient.startLocalWatchLoop();
     activeClient = nextClient;
     status = deriveStatusFromClientState(
@@ -1632,10 +1703,12 @@ const createClientSyncManager = (
           );
         })
         .catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          logger.error("sync_poll_error", { workspaceId: status.workspaceId, targetId: status.targetId, error: message });
           status = {
             ...status,
             running: true,
-            lastError: error instanceof Error ? error.message : String(error)
+            lastError: message
           };
         });
     }, appConfig.client.pollIntervalMs);
@@ -1670,6 +1743,7 @@ const createClientSyncManager = (
         throw new Error("Start this sync target before resolving conflicts.");
       }
 
+      logger.info("conflict_resolved", { workspaceId: status.workspaceId, targetId, path, resolution: resolution ?? "accept_server" });
       const nextState = await activeClient.resolveConflict(path, resolution);
       status = deriveStatusFromClientState(
         {
@@ -1690,6 +1764,7 @@ const createClientSyncManager = (
         throw new Error("Start this sync target before running a full resync.");
       }
 
+      logger.info("resync_requested", { workspaceId: status.workspaceId, targetId, source });
       const nextState =
         source === "local"
           ? await activeClient.resyncFromLocal()
@@ -1717,6 +1792,8 @@ const createClientSyncManager = (
       try {
         await start(target);
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error("sync_restore_failed", { workspaceId: target.workspaceId, targetId: target.targetId, error: message });
         status = {
           running: false,
           targetId: target.targetId,
@@ -1726,7 +1803,7 @@ const createClientSyncManager = (
           pendingOperationCount: 0,
           conflictCount: 0,
           unsyncedObjectCount: 0,
-          lastError: error instanceof Error ? error.message : String(error)
+          lastError: message
         };
       }
     }
@@ -1738,7 +1815,8 @@ export const createClientUi = (options: ClientUiOptions) => {
   const selectDirectory = options.selectDirectory ?? selectDirectoryWithNativeDialog;
   const targetStore =
     options.targetStore ?? new FileClientSyncTargetStore(appConfig.client.syncConfigFilePath);
-  const syncManager = createClientSyncManager(options.createMirrorClientImpl);
+  const logger = options.logger ?? noopLogger;
+  const syncManager = createClientSyncManager(options.createMirrorClientImpl, logger);
 
   const enabledTarget = targetStore.list().find((target) => target.enabled);
   void syncManager.restore(enabledTarget);
@@ -2033,6 +2111,36 @@ export const createClientUi = (options: ClientUiOptions) => {
         }
 
         writeHtml(response, 200, renderTargetDetail(target, syncManager.getStatus()));
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/logs") {
+        writeHtml(response, 200, renderLogViewerPage());
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/logs/recent") {
+        writeJson(response, 200, { items: logger.getRecent() });
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/logs/stream") {
+        response.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive"
+        });
+        response.write(":\n\n");
+
+        const unsubscribe = logger.subscribe((entry) => {
+          if (!response.writableEnded) {
+            response.write(`data: ${JSON.stringify(entry)}\n\n`);
+          }
+        });
+
+        request.on("close", () => {
+          unsubscribe();
+        });
         return;
       }
 

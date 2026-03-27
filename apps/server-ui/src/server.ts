@@ -545,12 +545,6 @@ const renderLogViewerPage = () =>
   renderPage(
     "Live Logs | Clio FS Server",
     `
-      <div class="nav"><a href="/">← Back to dashboard</a></div>
-      <section class="hero">
-        <div class="eyebrow">Server Logs</div>
-        <h1>Live Log Stream</h1>
-        <p class="lede">Real-time structured log events from the control plane. Audit events are highlighted.</p>
-      </section>
       <section class="panel stack" style="padding:0;overflow:hidden;">
         <div id="log-toolbar" style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;border-bottom:1px solid rgba(0,0,0,0.08);background:rgba(0,0,0,0.03);">
           <span id="log-status" style="font-size:0.8rem;color:#6b7280;">Connecting…</span>
