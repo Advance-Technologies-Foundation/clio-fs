@@ -81,3 +81,46 @@ For GitHub Release installs:
 5. start the launcher from that same extracted directory
 
 Because the process reads `config/*.conf` from its working directory, this gives a simple zero-flag setup for both server and client deployments.
+
+## Installer-Based Layout
+
+The installer scripts under [install/server/install-server.sh](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/server/install-server.sh), [install/server/install-server.ps1](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/server/install-server.ps1), [install/client/install-client.sh](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/client/install-client.sh), and [install/client/install-client.ps1](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/client/install-client.ps1) create a shared config directory outside the versioned release folder and link it into `current`.
+
+Server install layout:
+
+- macOS or Linux:
+  - install root: `/opt/clio-fs/server`
+  - active release: `/opt/clio-fs/server/current`
+  - config directory: `/opt/clio-fs/server/config`
+  - state directory: `/opt/clio-fs/server/data/.clio-fs`
+- Windows:
+  - install root: `C:\Program Files\ClioFS\server`
+  - active release: `C:\Program Files\ClioFS\server\current`
+  - config directory: `C:\Program Files\ClioFS\server\config`
+  - state directory: `C:\Program Files\ClioFS\server\data\.clio-fs`
+
+Client install layout:
+
+- macOS or Linux:
+  - install root: `/opt/clio-fs/client`
+  - active release: `/opt/clio-fs/client/current`
+  - config directory: `/opt/clio-fs/client/config`
+  - state directory: `/opt/clio-fs/client/data/.clio-fs`
+- Windows:
+  - install root: `C:\Program Files\ClioFS\client`
+  - active release: `C:\Program Files\ClioFS\client\current`
+  - config directory: `C:\Program Files\ClioFS\client\config`
+  - state directory: `C:\Program Files\ClioFS\client\data\.clio-fs`
+
+Installer behavior:
+
+- the first install copies `.example` templates into the shared config directory if no real config file exists yet
+- later installs preserve the existing config directory and only switch `current` to a new versioned release
+- runtime commands such as `version` and `healthcheck` should be executed from the `current` launcher path
+
+Typical installer workflow:
+
+1. run the installer script for server or client
+2. edit the config file under the shared `config` directory
+3. verify with the launcher under `current`
+4. start the launcher or register the matching service unit

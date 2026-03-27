@@ -17,6 +17,88 @@ The implementation target is:
 
 The fastest way to try `clio-fs` is through the GitHub Release bundles.
 
+## One-Command Install
+
+Installer scripts download the latest GitHub Release by default, place it into a versioned install directory, and point `current` at the active release.
+
+### Server installer
+
+macOS or Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Advance-Technologies-Foundation/clio-fs/main/install/server/install-server.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/Advance-Technologies-Foundation/clio-fs/main/install/server/install-server.ps1 | iex
+```
+
+Installed layout:
+
+- macOS or Linux:
+  - install root: `/opt/clio-fs/server`
+  - active release: `/opt/clio-fs/server/current`
+  - config: `/opt/clio-fs/server/config`
+  - state: `/opt/clio-fs/server/data/.clio-fs`
+- Windows:
+  - install root: `C:\Program Files\ClioFS\server`
+  - active release: `C:\Program Files\ClioFS\server\current`
+  - config: `C:\Program Files\ClioFS\server\config`
+  - state: `C:\Program Files\ClioFS\server\data\.clio-fs`
+
+Verify and start:
+
+- macOS or Linux:
+  - `/opt/clio-fs/server/current/clio-fs-server version`
+  - `/opt/clio-fs/server/current/clio-fs-server healthcheck`
+  - `/opt/clio-fs/server/current/clio-fs-server`
+- Windows:
+  - `C:\Program Files\ClioFS\server\current\clio-fs-server.cmd version`
+  - `C:\Program Files\ClioFS\server\current\clio-fs-server.cmd healthcheck`
+  - `C:\Program Files\ClioFS\server\current\clio-fs-server.cmd`
+
+### Client installer
+
+macOS or Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Advance-Technologies-Foundation/clio-fs/main/install/client/install-client.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/Advance-Technologies-Foundation/clio-fs/main/install/client/install-client.ps1 | iex
+```
+
+Installed layout:
+
+- macOS or Linux:
+  - install root: `/opt/clio-fs/client`
+  - active release: `/opt/clio-fs/client/current`
+  - config: `/opt/clio-fs/client/config`
+  - state: `/opt/clio-fs/client/data/.clio-fs`
+- Windows:
+  - install root: `C:\Program Files\ClioFS\client`
+  - active release: `C:\Program Files\ClioFS\client\current`
+  - config: `C:\Program Files\ClioFS\client\config`
+  - state: `C:\Program Files\ClioFS\client\data\.clio-fs`
+
+Verify and start:
+
+- macOS or Linux:
+  - `/opt/clio-fs/client/current/clio-fs-client version`
+  - `/opt/clio-fs/client/current/clio-fs-client healthcheck`
+  - `/opt/clio-fs/client/current/clio-fs-client`
+- Windows:
+  - `C:\Program Files\ClioFS\client\current\clio-fs-client.cmd version`
+  - `C:\Program Files\ClioFS\client\current\clio-fs-client.cmd healthcheck`
+  - `C:\Program Files\ClioFS\client\current\clio-fs-client.cmd`
+
+Set `CLIO_FS_VERSION=1.2.3` before running the installer if you want a specific tagged release instead of the latest one.
+
 ### Server
 
 1. Download `clio-fs-server-X.Y.Z.tar.gz` from the GitHub Release page.
@@ -245,6 +327,8 @@ If you prefer explicit config file locations instead of conventional `config/*.c
 - `CLIO_FS_SERVER_CONFIG_FILE`
 - `CLIO_FS_CLIENT_CONFIG_FILE`
 - `CLIO_FS_CLIENT_UI_CONFIG_FILE`
+
+For installer-based deployments, the same runtime rules apply, but `config/` is created under the install root and then linked into the active release through `current`.
 
 ## Current Implementation Status
 

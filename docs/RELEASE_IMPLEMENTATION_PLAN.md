@@ -17,7 +17,7 @@ Goal: make release artifacts installable and operable without requiring source c
 - [x] Item 2. Add install scripts for server and client on macOS/Linux and Windows.
 - [x] Item 3. Add Linux service units for server and client runtime installation.
 - [x] Item 4. Add `version` and `healthcheck` runtime commands for server and client.
-- [ ] Item 5. Update root and operational docs to describe one-command installation from release bundles.
+- [x] Item 5. Update root and operational docs to describe one-command installation from release bundles.
 
 ## Phase 2
 
