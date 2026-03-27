@@ -13,6 +13,7 @@ import {
   normalizeReleaseVersion,
   resolveAssetsDir,
   resolvePublishedAt,
+  resolveReleaseTag,
   resolveReleaseVersion,
   sha256File
 } from "./generate-release-metadata.mjs";
@@ -26,6 +27,11 @@ test("normalizeReleaseVersion accepts semver tags with optional v prefix", () =>
 test("resolveReleaseVersion prefers CLI flag and falls back to RELEASE_TAG", () => {
   assert.equal(resolveReleaseVersion(["--version", "v2.3.4"]), "2.3.4");
   assert.equal(resolveReleaseVersion([], { RELEASE_TAG: "v3.4.5" }), "3.4.5");
+});
+
+test("resolveReleaseTag preserves the original tag text", () => {
+  assert.equal(resolveReleaseTag(["--version", "v2.3.4"]), "v2.3.4");
+  assert.equal(resolveReleaseTag([], { RELEASE_TAG: "1.0.5" }), "1.0.5");
 });
 
 test("resolveAssetsDir prefers CLI flag and falls back to RELEASE_ASSETS_DIR", () => {
@@ -59,6 +65,19 @@ test("collectReleaseAssets keeps only matching release bundles", () => {
   );
 });
 
+test("collectReleaseAssets also accepts non-v release asset prefixes", () => {
+  const assetsDir = mkdtempSync(join(tmpdir(), "clio-fs-release-assets-"));
+
+  writeFileSync(join(assetsDir, "clio-fs-1.2.3-linux.tar.gz"), "linux", "utf8");
+  writeFileSync(join(assetsDir, "clio-fs-1.2.3-macos.tar.gz"), "macos", "utf8");
+  writeFileSync(join(assetsDir, "clio-fs-1.2.3-windows.zip"), "windows", "utf8");
+
+  assert.deepEqual(
+    collectReleaseAssets(assetsDir, "1.2.3", "1.2.3").map((asset) => asset.fileName),
+    ["clio-fs-1.2.3-linux.tar.gz", "clio-fs-1.2.3-macos.tar.gz", "clio-fs-1.2.3-windows.zip"]
+  );
+});
+
 test("createSha256Sums formats checksum lines for each asset", () => {
   const assets = [
     { fileName: "a.tgz", sha256: "aaa" },
@@ -71,6 +90,7 @@ test("createSha256Sums formats checksum lines for each asset", () => {
 test("createReleaseManifest emits manual-update metadata for combined bundles", () => {
   const manifest = createReleaseManifest({
     releaseVersion: "1.2.3",
+    releaseTag: "v1.2.3",
     repository: "example/clio-fs",
     publishedAt: "2026-03-27T12:00:00.000Z",
     highlights: ["About modal now carries release details"],
@@ -116,7 +136,7 @@ test("main writes SHA256SUMS and manifest.json into the assets directory", () =>
 
   const result = main({
     rootDir,
-    argv: ["--version", "v1.2.3"],
+    argv: ["--version", "1.2.3"],
     env: {
       CLIO_FS_GITHUB_REPOSITORY: "example/clio-fs",
       RELEASE_PUBLISHED_AT: "2026-03-27T12:00:00Z"
@@ -131,4 +151,5 @@ test("main writes SHA256SUMS and manifest.json into the assets directory", () =>
   assert.equal(manifest.version, "1.2.3");
   assert.equal(Object.keys(manifest.assets).length, 3);
   assert.equal(manifest.assets["bundle-windows"].platform, "windows");
+  assert.equal(manifest.notesUrl, "https://github.com/example/clio-fs/releases/tag/1.2.3");
 });

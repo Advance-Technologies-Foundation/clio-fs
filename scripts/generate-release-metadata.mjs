@@ -56,6 +56,28 @@ export const resolveReleaseVersion = (argv = process.argv.slice(2), env = proces
   throw new Error("Release version is required. Pass --version or set RELEASE_TAG.");
 };
 
+export const resolveReleaseTag = (argv = process.argv.slice(2), env = process.env) => {
+  const versionFlagIndex = argv.findIndex((argument) => argument === "--version");
+
+  if (versionFlagIndex !== -1) {
+    const versionArg = argv[versionFlagIndex + 1];
+
+    if (!versionArg) {
+      throw new Error("Missing value for --version.");
+    }
+
+    normalizeReleaseVersion(versionArg);
+    return versionArg;
+  }
+
+  if (env.RELEASE_TAG) {
+    normalizeReleaseVersion(env.RELEASE_TAG);
+    return env.RELEASE_TAG;
+  }
+
+  throw new Error("Release tag is required. Pass --version or set RELEASE_TAG.");
+};
+
 export const resolvePublishedAt = (env = process.env) => {
   const value = env.RELEASE_PUBLISHED_AT || new Date().toISOString();
   const timestamp = Date.parse(value);
@@ -78,17 +100,20 @@ export const inferReleaseChannel = (version) => (version.includes("-") ? "beta" 
 export const sha256File = (filePath) =>
   createHash("sha256").update(readFileSync(filePath)).digest("hex");
 
-export const collectReleaseAssets = (assetsDir, releaseVersion) => {
+export const collectReleaseAssets = (assetsDir, releaseVersion, releaseTag = `v${releaseVersion}`) => {
   if (!existsSync(assetsDir)) {
     throw new Error(`Assets directory not found: ${assetsDir}`);
   }
 
-  const releaseTag = `v${releaseVersion}`;
-  const releasePrefix = `clio-fs-${releaseTag}-`;
+  const releasePrefixes = [...new Set([`clio-fs-${releaseTag}-`, `clio-fs-v${releaseVersion}-`, `clio-fs-${releaseVersion}-`])];
   const assets = [];
 
   for (const entry of readdirSync(assetsDir, { withFileTypes: true })) {
-    if (!entry.isFile() || METADATA_FILENAMES.has(entry.name) || !entry.name.startsWith(releasePrefix)) {
+    if (
+      !entry.isFile() ||
+      METADATA_FILENAMES.has(entry.name) ||
+      !releasePrefixes.some((prefix) => entry.name.startsWith(prefix))
+    ) {
       continue;
     }
 
@@ -126,6 +151,7 @@ export const createSha256Sums = (assets) =>
 
 export const createReleaseManifest = ({
   releaseVersion,
+  releaseTag,
   repository,
   publishedAt,
   assets,
@@ -134,7 +160,7 @@ export const createReleaseManifest = ({
   channel: inferReleaseChannel(releaseVersion),
   version: releaseVersion,
   publishedAt,
-  notesUrl: `https://github.com/${repository}/releases/tag/v${releaseVersion}`,
+  notesUrl: `https://github.com/${repository}/releases/tag/${releaseTag}`,
   ...(highlights.length > 0 ? { highlights } : {}),
   assets: Object.fromEntries(
     assets.map((asset) => [
@@ -143,7 +169,7 @@ export const createReleaseManifest = ({
         fileName: asset.fileName,
         platform: asset.platform,
         format: asset.format,
-        url: `https://github.com/${repository}/releases/download/v${releaseVersion}/${asset.fileName}`,
+        url: `https://github.com/${repository}/releases/download/${releaseTag}/${asset.fileName}`,
         sha256: asset.sha256
       }
     ])
@@ -155,24 +181,26 @@ export const createReleaseManifest = ({
 });
 
 export const main = ({ rootDir = process.cwd(), argv = process.argv.slice(2), env = process.env } = {}) => {
+  const releaseTag = resolveReleaseTag(argv, env);
   const releaseVersion = resolveReleaseVersion(argv, env);
   const assetsDir = resolveAssetsDir(rootDir, argv, env);
   const repository = env.CLIO_FS_GITHUB_REPOSITORY || "Advance-Technologies-Foundation/clio-fs";
   const publishedAt = resolvePublishedAt(env);
   const highlights = resolveReleaseHighlights(env);
-  const assets = collectReleaseAssets(assetsDir, releaseVersion).map((asset) => ({
+  const assets = collectReleaseAssets(assetsDir, releaseVersion, releaseTag).map((asset) => ({
     ...asset,
     sha256: sha256File(asset.filePath)
   }));
 
   if (assets.length === 0) {
-    throw new Error(`No release assets found in ${assetsDir} for v${releaseVersion}.`);
+    throw new Error(`No release assets found in ${assetsDir} for ${releaseTag}.`);
   }
 
   const sha256SumsPath = join(assetsDir, "SHA256SUMS");
   const manifestPath = join(assetsDir, "manifest.json");
   const manifest = createReleaseManifest({
     releaseVersion,
+    releaseTag,
     repository,
     publishedAt,
     assets,
