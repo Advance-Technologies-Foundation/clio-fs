@@ -665,6 +665,84 @@ test("local watch loop pushes deleted files through the control plane", async ()
   client.stopLocalWatchLoop();
 });
 
+test("local watch loop pushes empty directory creates through the control plane", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const watcher = createManualMirrorWatcher();
+  const fetchStub = createFetchStub();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    watcher,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchStub as unknown as typeof fetch
+    }
+  });
+
+  await client.bind();
+  await client.startLocalWatchLoop();
+
+  filesystem.ensureDirectory("/mirror/demo-workspace/packages/Empty");
+  watcher.emit({
+    type: "directory_created",
+    path: "packages/Empty"
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(fetchStub.getMkdirCalls(), [
+    {
+      path: "packages/Empty"
+    }
+  ]);
+
+  client.stopLocalWatchLoop();
+});
+
+test("local watch loop pushes empty directory deletes through the control plane", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const watcher = createManualMirrorWatcher();
+  const fetchStub = createFetchStub();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    watcher,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchStub as unknown as typeof fetch
+    }
+  });
+
+  await client.bind();
+  filesystem.ensureDirectory("/mirror/demo-workspace/packages/Empty");
+  await client.startLocalWatchLoop();
+
+  filesystem.removePath("/mirror/demo-workspace/packages/Empty");
+  watcher.emit({
+    type: "directory_deleted",
+    path: "packages/Empty"
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(fetchStub.getDeleteCalls(), [
+    {
+      path: "packages/Empty",
+      baseFileRevision: 2
+    }
+  ]);
+
+  client.stopLocalWatchLoop();
+});
+
 test("local watch loop pushes moved files through the control plane", async () => {
   const filesystem = createInMemoryClientFileSystem();
   const stateStore = createInMemoryClientStateStore();

@@ -196,6 +196,7 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       }
     );
   const suppressedHashes = new Map<string, string>();
+  const suppressedDirectories = new Set<string>();
   const suppressedDeletes = new Set<string>();
   const suppressedMoves = new Set<string>();
   let watcher = options.watcher;
@@ -249,7 +250,17 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       return;
     }
 
-    if (event.type === "file_deleted") {
+    if (event.type === "directory_created") {
+      if (suppressedDirectories.has(event.path)) {
+        suppressedDirectories.delete(event.path);
+        return;
+      }
+
+      await client.createDirectory(event.path);
+      return;
+    }
+
+    if (event.type === "file_deleted" || event.type === "directory_deleted") {
       if (suppressedDeletes.has(event.path)) {
         suppressedDeletes.delete(event.path);
         return;
@@ -349,6 +360,10 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
           suppressedDeletes.add(change.path);
         }
 
+        if (change.operation === "directory_created") {
+          suppressedDirectories.add(change.path);
+        }
+
         if (change.operation === "path_moved" && change.oldPath) {
           suppressedMoves.add(getMoveSignature(change.oldPath, change.path));
         }
@@ -386,6 +401,7 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
         throw new Error(`Workspace is not bound: ${options.workspaceId}`);
       }
 
+      suppressedDirectories.add(path);
       filesystem.ensureDirectory(join(bound.mirrorRoot, path));
 
       const result = await controlPlane.createDirectory(bound.workspaceId, path, {

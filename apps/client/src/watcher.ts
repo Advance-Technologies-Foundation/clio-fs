@@ -14,6 +14,14 @@ export type MirrorWatcherEvent =
       path: string;
     }
   | {
+      type: "directory_created";
+      path: string;
+    }
+  | {
+      type: "directory_deleted";
+      path: string;
+    }
+  | {
       type: "path_moved";
       path: string;
       oldPath: string;
@@ -182,6 +190,30 @@ const scanFiles = (
   return results;
 };
 
+const scanDirectories = (
+  filesystem: ClientFileSystemAdapter,
+  rootPath: string,
+  directoryPath = rootPath,
+  results = new Set<string>()
+) => {
+  if (!filesystem.exists(directoryPath)) {
+    return results;
+  }
+
+  for (const entry of filesystem.readdir(directoryPath)) {
+    if (shouldIgnoreName(entry.name) || entry.kind !== "directory") {
+      continue;
+    }
+
+    const absolutePath = join(directoryPath, entry.name);
+    const relativePath = relative(rootPath, absolutePath).replaceAll("\\", "/");
+    results.add(relativePath);
+    scanDirectories(filesystem, rootPath, absolutePath, results);
+  }
+
+  return results;
+};
+
 export interface PollingMirrorWatcherOptions {
   filesystem: ClientFileSystemAdapter;
   rootPath: string;
@@ -202,6 +234,7 @@ export class PollingMirrorWatcher implements MirrorWatcher {
   #listener?: (event: MirrorWatcherEvent) => void;
   #interval?: NodeJS.Timeout;
   #knownFiles = new Map<string, { content: string; contentHash: string }>();
+  #knownDirectories = new Set<string>();
   #pendingEvents = new Map<string, PendingWatcherEvent>();
 
   constructor(options: PollingMirrorWatcherOptions) {
@@ -214,14 +247,18 @@ export class PollingMirrorWatcher implements MirrorWatcher {
   start(listener: (event: MirrorWatcherEvent) => void) {
     this.#listener = listener;
     this.#knownFiles = scanFiles(this.#filesystem, this.#rootPath);
+    this.#knownDirectories = scanDirectories(this.#filesystem, this.#rootPath);
     this.#pendingEvents.clear();
 
     this.#interval = setInterval(() => {
       const now = Date.now();
       const nextFiles = scanFiles(this.#filesystem, this.#rootPath);
+      const nextDirectories = scanDirectories(this.#filesystem, this.#rootPath);
       const createdFiles = new Map<string, FileSnapshot>();
       const changedFiles = new Map<string, FileSnapshot>();
       const deletedFiles = new Map<string, FileSnapshot>();
+      const createdDirectories = new Set<string>();
+      const deletedDirectories = new Set<string>();
 
       for (const [path, next] of nextFiles.entries()) {
         const previous = this.#knownFiles.get(path);
@@ -239,6 +276,18 @@ export class PollingMirrorWatcher implements MirrorWatcher {
       for (const [path, previous] of this.#knownFiles.entries()) {
         if (!nextFiles.has(path)) {
           deletedFiles.set(path, previous);
+        }
+      }
+
+      for (const path of nextDirectories) {
+        if (!this.#knownDirectories.has(path)) {
+          createdDirectories.add(path);
+        }
+      }
+
+      for (const path of this.#knownDirectories) {
+        if (!nextDirectories.has(path)) {
+          deletedDirectories.add(path);
         }
       }
 
@@ -289,6 +338,18 @@ export class PollingMirrorWatcher implements MirrorWatcher {
           consumedOldPaths.add(pair.oldPath);
           deletedFiles.delete(pair.oldPath);
           createdFiles.delete(pair.newPath);
+        }
+
+        for (const directoryPath of [...deletedDirectories]) {
+          if (isWithinRoot(directoryPath, group.oldRoot)) {
+            deletedDirectories.delete(directoryPath);
+          }
+        }
+
+        for (const directoryPath of [...createdDirectories]) {
+          if (isWithinRoot(directoryPath, group.newRoot)) {
+            createdDirectories.delete(directoryPath);
+          }
         }
 
         this.#queuePendingEvent(
@@ -345,7 +406,22 @@ export class PollingMirrorWatcher implements MirrorWatcher {
         }, now);
       }
 
+      for (const path of [...createdDirectories].sort((left, right) => left.localeCompare(right))) {
+        this.#queuePendingEvent(`path:${path}`, {
+          type: "directory_created",
+          path
+        }, now);
+      }
+
+      for (const path of [...deletedDirectories].sort((left, right) => right.localeCompare(left))) {
+        this.#queuePendingEvent(`path:${path}`, {
+          type: "directory_deleted",
+          path
+        }, now);
+      }
+
       this.#knownFiles = nextFiles;
+      this.#knownDirectories = nextDirectories;
       this.#flushReadyEvents(now);
     }, this.#pollIntervalMs);
   }

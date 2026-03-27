@@ -105,3 +105,42 @@ test("polling watcher detects a directory subtree rename as path_moved", async (
     }
   ]);
 });
+
+test("polling watcher detects empty directory create and delete events", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const rootPath = "/mirror/demo-workspace";
+  const events: Array<{ type: string; path: string }> = [];
+  const watcher = createPollingMirrorWatcher({
+    filesystem,
+    rootPath,
+    pollIntervalMs: 5,
+    settleDelayMs: 10
+  });
+
+  watcher.start((event) => {
+    if (event.type === "directory_created" || event.type === "directory_deleted") {
+      events.push(event);
+    }
+  });
+
+  filesystem.ensureDirectory(`${rootPath}/packages/Empty`);
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  filesystem.removePath(`${rootPath}/packages/Empty`);
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  watcher.stop();
+
+  assert.deepEqual(events, [
+    {
+      type: "directory_created",
+      path: "packages"
+    },
+    {
+      type: "directory_created",
+      path: "packages/Empty"
+    },
+    {
+      type: "directory_deleted",
+      path: "packages/Empty"
+    }
+  ]);
+});

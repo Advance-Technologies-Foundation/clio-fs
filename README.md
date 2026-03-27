@@ -139,6 +139,7 @@ Implemented today:
 - client-side delete API for conditional file removal
 - file-backed client bind state store at `.clio-fs/client/state.json`
 - local watcher-driven push loop for file create/update/delete events
+- local watcher-driven empty-directory create/delete propagation through directory create and delete endpoints
 - polling watcher-based local file rename propagation through the move endpoint
 - default local watcher debounce is configured at the server level and loaded by clients through `GET /settings/watch`
 - polling watcher-based local directory subtree move propagation through the move endpoint
@@ -192,11 +193,7 @@ Current client behavior:
 - can create directories through the control plane
 - can move files and directory subtrees through the control plane
 - can push a conditional delete through the control plane
-- can watch the local mirror and push changed and deleted files automatically
-
-Current client limitations:
-
-- local watcher-driven empty-directory creation is not implemented yet
+- can watch the local mirror and push changed files, deletes, empty-directory creates/deletes, and move events automatically
 
 ## Opt-In Local Sync Scenario
 

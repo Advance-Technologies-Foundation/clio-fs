@@ -664,7 +664,7 @@ Current implementation note:
 
 - directory creation is implemented for workspace-relative paths
 - duplicate directory creation currently returns `400 invalid_request`
-- local watcher-driven empty-directory propagation is not implemented yet on the client side
+- local watcher-driven empty-directory propagation is implemented on the client side
 - local watcher-driven file rename propagation is implemented through polling watcher detection and the move endpoint
 - the local watcher debounce window is loaded from server-level watch settings
 - local watcher-driven directory subtree move propagation is implemented through subtree translation detection and the move endpoint
@@ -702,7 +702,7 @@ Response `200`:
 Current implementation note:
 
 - file delete is implemented with optimistic concurrency checks
-- directory delete is accepted by the API and journaled, but client-side local delete propagation currently targets file deletions only
+- directory delete is accepted by the API, journaled, and used by client-side local empty-directory delete propagation
 
 Directory move semantics:
 
