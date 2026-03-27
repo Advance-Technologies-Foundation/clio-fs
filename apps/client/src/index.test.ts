@@ -491,6 +491,16 @@ test("pushFile surfaces server conflict errors", async () => {
       }),
     /provided base revision/i
   );
+
+  const conflictState = stateStore.load("demo-workspace");
+  assert.equal(conflictState?.conflicts?.length, 1);
+  assert.equal(conflictState?.conflicts?.[0]?.path, "packages/Alpha/readme.txt");
+  assert.equal(
+    filesystem.snapshot().some((node) =>
+      node.path.includes("readme.txt.conflict-server-")
+    ),
+    true
+  );
 });
 
 test("createDirectory sends a directory create request and advances local bind state", async () => {

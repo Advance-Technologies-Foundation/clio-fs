@@ -758,9 +758,9 @@ Query params:
 
 Current implementation note:
 
-- the change feed is currently backed by an in-memory per-workspace journal
-- it is suitable for API contract development and client integration work
-- durable journal persistence is still a later milestone
+- the change feed is backed by a file-backed per-workspace journal persisted at `.clio-fs/server/change-journal.json`
+- the server also runs a polling watcher over registered workspace roots and appends external filesystem changes made outside the API
+- API-originated writes resync watcher baselines so the same mutation is not journaled twice
 
 Response `200`:
 
@@ -907,6 +907,12 @@ Client behavior on `409`:
 4. mark the path as conflict-blocked in local metadata
 5. optionally attempt 3-way merge for text files into a separate merged artifact
 6. do not resume outbound writes for that path until the conflict is resolved explicitly
+
+Current implementation note:
+
+- the client now persists conflict-blocked paths in local state
+- the client writes sibling `*.conflict-server-*` artifacts for stale file writes and deletes when canonical server content can be materialized
+- conflict-blocked paths are skipped by outbound watcher writes until explicitly resolved
 
 Recommended local conflict file naming:
 

@@ -5,7 +5,8 @@ export const appConfig = {
     port: 4010,
     authToken: "dev-token",
     workspaceRegistryFilePath: ".clio-fs/server/workspaces.json",
-    watchSettingsFilePath: ".clio-fs/server/watch-settings.json"
+    watchSettingsFilePath: ".clio-fs/server/watch-settings.json",
+    changeJournalFilePath: ".clio-fs/server/change-journal.json"
   },
   serverUi: {
     host: "127.0.0.1",

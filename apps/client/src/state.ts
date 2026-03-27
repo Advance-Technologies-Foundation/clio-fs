@@ -7,6 +7,14 @@ export interface ClientBindState {
   mirrorRoot: string;
   lastAppliedRevision: Revision;
   hydrated: boolean;
+  conflicts?: ClientPathConflict[];
+}
+
+export interface ClientPathConflict {
+  path: string;
+  detectedAt: string;
+  serverArtifactPath?: string;
+  message: string;
 }
 
 export interface ClientStateStore {
@@ -43,7 +51,19 @@ const isClientBindState = (value: unknown): value is ClientBindState => {
     typeof record.workspaceId === "string" &&
     typeof record.mirrorRoot === "string" &&
     typeof record.lastAppliedRevision === "number" &&
-    typeof record.hydrated === "boolean"
+    typeof record.hydrated === "boolean" &&
+    (typeof record.conflicts === "undefined" ||
+      (Array.isArray(record.conflicts) &&
+        record.conflicts.every(
+          (conflict) =>
+            typeof conflict === "object" &&
+            conflict !== null &&
+            typeof (conflict as Record<string, unknown>).path === "string" &&
+            typeof (conflict as Record<string, unknown>).detectedAt === "string" &&
+            typeof (conflict as Record<string, unknown>).message === "string" &&
+            (typeof (conflict as Record<string, unknown>).serverArtifactPath === "undefined" ||
+              typeof (conflict as Record<string, unknown>).serverArtifactPath === "string")
+        )))
   );
 };
 

@@ -31,6 +31,7 @@ import {
   putWorkspaceFile
 } from "./file-write.js";
 import { createWorkspaceSnapshot, materializeWorkspaceFiles } from "./snapshot.js";
+import type { WorkspaceChangeWatcher } from "./workspace-watcher.js";
 import { detectServerPlatform, parseRegisterWorkspaceInput } from "./workspace.js";
 
 export interface WorkspaceServerOptions {
@@ -42,6 +43,7 @@ export interface WorkspaceServerOptions {
   journal?: ChangeJournal;
   serverPlatform?: WorkspacePlatform;
   filesystem?: FileSystemAdapter;
+  workspaceWatcher?: WorkspaceChangeWatcher;
 }
 
 export interface StartedWorkspaceServer {
@@ -236,6 +238,7 @@ const routeRequest = async (
 
     try {
       const workspace = options.registry.register(input);
+      options.workspaceWatcher?.resyncWorkspace(workspace.workspaceId);
       json(response, 201, {
         workspaceId: workspace.workspaceId,
         status: workspace.status,
@@ -322,6 +325,7 @@ const routeRequest = async (
           options.journal!
         )
       );
+      options.workspaceWatcher?.resyncWorkspace(workspaceId);
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid directory create request";
@@ -353,6 +357,7 @@ const routeRequest = async (
         200,
         moveWorkspacePath(workspace, input, options.filesystem ?? nodeFileSystem, options.journal!)
       );
+      options.workspaceWatcher?.resyncWorkspace(workspaceId);
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid move request";
@@ -397,6 +402,7 @@ const routeRequest = async (
           options.journal!
         )
       );
+      options.workspaceWatcher?.resyncWorkspace(workspaceId);
       return;
     } catch (error) {
       if (error instanceof FileWriteConflictError) {
@@ -446,6 +452,7 @@ const routeRequest = async (
           options.journal!
         )
       );
+      options.workspaceWatcher?.resyncWorkspace(workspaceId);
       return;
     } catch (error) {
       if (error instanceof FileWriteConflictError) {
@@ -498,6 +505,7 @@ const routeRequest = async (
 
     try {
       options.registry.delete(workspaceId);
+      options.workspaceWatcher?.removeWorkspace(workspaceId);
       noContent(response, 204);
       return;
     } catch (error) {
@@ -534,6 +542,7 @@ export const startWorkspaceServer = async (
   options: WorkspaceServerOptions
 ): Promise<StartedWorkspaceServer> => {
   const server = createWorkspaceServer(options);
+  options.workspaceWatcher?.start();
 
   await new Promise<void>((resolve) => {
     server.listen(options.port, options.host, resolve);
@@ -556,6 +565,7 @@ export const startWorkspaceServer = async (
             reject(error);
             return;
           }
+          options.workspaceWatcher?.stop();
           resolve();
         });
       })

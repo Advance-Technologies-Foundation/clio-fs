@@ -21,6 +21,20 @@ export interface ClientControlPlaneOptions {
   fetchImpl?: typeof fetch;
 }
 
+export class ControlPlaneRequestError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly details?: Record<string, unknown>;
+
+  constructor(status: number, code: string, message: string, details?: Record<string, unknown>) {
+    super(message);
+    this.name = "ControlPlaneRequestError";
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
 export class ClientControlPlane {
   readonly #baseUrl: string;
   readonly #authToken: string;
@@ -156,7 +170,12 @@ export class ClientControlPlane {
 
     if (!response.ok) {
       const error = (await response.json()) as ApiErrorShape;
-      throw new Error(error.error.message);
+      throw new ControlPlaneRequestError(
+        response.status,
+        error.error.code,
+        error.error.message,
+        error.error.details
+      );
     }
 
     return (await response.json()) as T;

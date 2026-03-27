@@ -70,51 +70,57 @@ export const renderControlPlaneHeroVisual = () => `
     <div class="dashboard-hero-glow"></div>
     <svg viewBox="0 0 640 420" class="dashboard-hero-network">
       <defs>
-        <linearGradient id="heroGrid" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="rgba(20,99,200,0.20)"></stop>
-          <stop offset="100%" stop-color="rgba(20,99,200,0.04)"></stop>
-        </linearGradient>
-        <linearGradient id="heroLink" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stop-color="rgba(20,99,200,0.00)"></stop>
-          <stop offset="45%" stop-color="rgba(20,99,200,0.16)"></stop>
-          <stop offset="100%" stop-color="rgba(20,99,200,0.04)"></stop>
-        </linearGradient>
-        <radialGradient id="heroCore" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stop-color="rgba(20,99,200,0.16)"></stop>
-          <stop offset="100%" stop-color="rgba(20,99,200,0.00)"></stop>
+        <radialGradient id="heroAura" cx="64%" cy="44%" r="52%">
+          <stop offset="0%" stop-color="#1463C8" stop-opacity="0.14"></stop>
+          <stop offset="48%" stop-color="#1463C8" stop-opacity="0.06"></stop>
+          <stop offset="100%" stop-color="#1463C8" stop-opacity="0"></stop>
         </radialGradient>
+        <linearGradient id="heroLink" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#1463C8" stop-opacity="0"></stop>
+          <stop offset="42%" stop-color="#1463C8" stop-opacity="0.14"></stop>
+          <stop offset="100%" stop-color="#1463C8" stop-opacity="0"></stop>
+        </linearGradient>
+        <radialGradient id="heroNode" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#1463C8" stop-opacity="0.18"></stop>
+          <stop offset="100%" stop-color="#1463C8" stop-opacity="0"></stop>
+        </radialGradient>
+        <filter id="heroBlur" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="8"></feGaussianBlur>
+        </filter>
       </defs>
-      <g opacity="0.55">
-        <path d="M252 118 L420 84 L514 160 L402 248 L232 216 Z" fill="url(#heroGrid)" stroke="rgba(20,99,200,0.10)" stroke-width="1.5"></path>
-        <path d="M276 160 L394 136 L458 188 L377 248 L260 222 Z" fill="rgba(255,255,255,0.28)" stroke="rgba(20,99,200,0.09)" stroke-width="1.2"></path>
-        <circle cx="345" cy="192" r="106" fill="url(#heroCore)"></circle>
+      <g opacity="0.95">
+        <ellipse cx="410" cy="190" rx="182" ry="126" fill="url(#heroAura)"></ellipse>
+        <ellipse cx="486" cy="150" rx="86" ry="62" fill="#1463C8" fill-opacity="0.05" filter="url(#heroBlur)"></ellipse>
       </g>
-      <g stroke="url(#heroLink)" stroke-width="2.2" stroke-linecap="round">
-        <path d="M120 106 C184 98, 214 110, 252 136"></path>
-        <path d="M136 222 C198 216, 232 212, 278 196"></path>
-        <path d="M210 318 C252 282, 280 258, 320 236"></path>
-        <path d="M344 138 C392 116, 438 102, 502 120"></path>
-        <path d="M366 230 C424 224, 464 236, 534 288"></path>
-        <path d="M304 286 C338 324, 390 336, 456 330"></path>
+      <g stroke="url(#heroLink)" stroke-width="2.2" stroke-linecap="round" fill="none">
+        <path d="M184 120 C250 84, 330 88, 400 144"></path>
+        <path d="M158 212 C238 178, 338 184, 432 242"></path>
+        <path d="M208 308 C280 246, 378 244, 494 300"></path>
+        <path d="M318 96 C388 78, 462 92, 558 168"></path>
+        <path d="M356 162 C430 146, 510 176, 590 244"></path>
+        <path d="M330 248 C400 276, 470 282, 562 266"></path>
       </g>
-      <g fill="rgba(20,99,200,0.10)" stroke="rgba(20,99,200,0.18)" stroke-width="1.5">
-        <rect x="88" y="86" width="52" height="34" rx="11"></rect>
-        <rect x="102" y="204" width="68" height="40" rx="12"></rect>
-        <rect x="176" y="298" width="64" height="38" rx="12"></rect>
-        <rect x="306" y="98" width="78" height="44" rx="14"></rect>
-        <rect x="330" y="214" width="92" height="52" rx="16"></rect>
-        <rect x="470" y="104" width="68" height="38" rx="12"></rect>
-        <rect x="494" y="278" width="56" height="34" rx="11"></rect>
+      <g opacity="0.85">
+        <circle cx="208" cy="118" r="34" fill="#FFFFFF" fill-opacity="0.32" stroke="#1463C8" stroke-opacity="0.10" stroke-width="1.4"></circle>
+        <circle cx="180" cy="218" r="22" fill="#FFFFFF" fill-opacity="0.26" stroke="#1463C8" stroke-opacity="0.08" stroke-width="1.2"></circle>
+        <circle cx="238" cy="308" r="28" fill="#FFFFFF" fill-opacity="0.20" stroke="#1463C8" stroke-opacity="0.09" stroke-width="1.2"></circle>
+        <circle cx="356" cy="114" r="42" fill="#FFFFFF" fill-opacity="0.26" stroke="#1463C8" stroke-opacity="0.10" stroke-width="1.4"></circle>
+        <circle cx="404" cy="196" r="68" fill="#FFFFFF" fill-opacity="0.24" stroke="#1463C8" stroke-opacity="0.11" stroke-width="1.5"></circle>
+        <circle cx="528" cy="168" r="30" fill="#FFFFFF" fill-opacity="0.24" stroke="#1463C8" stroke-opacity="0.09" stroke-width="1.3"></circle>
+        <circle cx="536" cy="286" r="26" fill="#FFFFFF" fill-opacity="0.18" stroke="#1463C8" stroke-opacity="0.08" stroke-width="1.2"></circle>
       </g>
-      <g fill="#1463C8">
-        <circle cx="120" cy="103" r="4.5"></circle>
-        <circle cx="136" cy="224" r="5"></circle>
-        <circle cx="210" cy="316" r="4.5"></circle>
-        <circle cx="344" cy="120" r="5"></circle>
-        <circle cx="344" cy="190" r="6.5"></circle>
-        <circle cx="374" cy="238" r="5"></circle>
-        <circle cx="502" cy="122" r="4.5"></circle>
-        <circle cx="524" cy="292" r="4.5"></circle>
+      <g fill="#1463C8" fill-opacity="0.72">
+        <circle cx="208" cy="118" r="5"></circle>
+        <circle cx="180" cy="218" r="4.5"></circle>
+        <circle cx="238" cy="308" r="4.5"></circle>
+        <circle cx="356" cy="114" r="5"></circle>
+        <circle cx="404" cy="196" r="6.5"></circle>
+        <circle cx="528" cy="168" r="4.5"></circle>
+        <circle cx="536" cy="286" r="4.5"></circle>
+      </g>
+      <g fill="url(#heroNode)" opacity="0.95">
+        <circle cx="404" cy="196" r="108"></circle>
+        <circle cx="528" cy="168" r="64"></circle>
       </g>
     </svg>
   </div>
@@ -284,31 +290,31 @@ export const renderPage = (
       }
       .dashboard-hero-visual {
         position: absolute;
-        inset: 0 0 0 38%;
+        inset: -4% -3% -8% 42%;
         display: flex;
         align-items: center;
         justify-content: flex-end;
         pointer-events: none;
         z-index: 0;
-        mask-image: linear-gradient(to left, rgba(0,0,0,1) 54%, rgba(0,0,0,0.10) 82%, transparent 100%), linear-gradient(to bottom, rgba(0,0,0,1) 58%, rgba(0,0,0,0.18) 86%, transparent 100%);
-        -webkit-mask-image: linear-gradient(to left, rgba(0,0,0,1) 54%, rgba(0,0,0,0.10) 82%, transparent 100%), linear-gradient(to bottom, rgba(0,0,0,1) 58%, rgba(0,0,0,0.18) 86%, transparent 100%);
+        mask-image: linear-gradient(to left, rgba(0,0,0,1) 52%, rgba(0,0,0,0.34) 74%, transparent 100%), linear-gradient(to bottom, rgba(0,0,0,1) 52%, rgba(0,0,0,0.22) 80%, transparent 100%);
+        -webkit-mask-image: linear-gradient(to left, rgba(0,0,0,1) 52%, rgba(0,0,0,0.34) 74%, transparent 100%), linear-gradient(to bottom, rgba(0,0,0,1) 52%, rgba(0,0,0,0.22) 80%, transparent 100%);
         mask-composite: intersect;
         -webkit-mask-composite: source-in;
       }
       .dashboard-hero-glow {
         position: absolute;
-        right: 6%;
-        top: 6%;
-        width: min(36vw, 420px);
-        height: min(28vw, 320px);
+        right: 2%;
+        top: 0;
+        width: min(42vw, 520px);
+        height: min(32vw, 360px);
         border-radius: 9999px;
-        background: radial-gradient(circle, rgba(20,99,200,0.12) 0%, rgba(20,99,200,0.04) 34%, rgba(20,99,200,0.00) 70%);
-        filter: blur(18px);
+        background: radial-gradient(circle, rgba(20,99,200,0.10) 0%, rgba(20,99,200,0.03) 38%, rgba(20,99,200,0.00) 72%);
+        filter: blur(24px);
       }
       .dashboard-hero-network {
-        width: min(48vw, 620px);
+        width: min(50vw, 680px);
         height: auto;
-        opacity: 0.90;
+        opacity: 0.92;
       }
       .eyebrow {
         font-size: 0.75rem;
