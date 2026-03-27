@@ -667,6 +667,7 @@ Current implementation note:
 - local watcher-driven empty-directory propagation is not implemented yet on the client side
 - local watcher-driven file rename propagation is implemented through polling watcher detection and the move endpoint
 - the local watcher debounce window is loaded from server-level watch settings
+- local watcher-driven directory subtree move propagation is implemented through subtree translation detection and the move endpoint
 
 ### DELETE /workspaces/{workspaceId}/file
 
@@ -742,7 +743,7 @@ Current implementation note:
 - the change feed emits one `path_moved` event for the moved root
 - client-side remote move application now uses direct local path moves instead of a full rehydrate fallback
 - local watcher-driven file rename propagation is implemented on the client side
-- local watcher-driven directory subtree move propagation is still pending
+- local watcher-driven directory subtree move propagation is implemented on the client side
 
 ## Change Feed API
 

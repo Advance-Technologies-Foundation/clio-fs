@@ -141,6 +141,7 @@ Implemented today:
 - local watcher-driven push loop for file create/update/delete events
 - polling watcher-based local file rename propagation through the move endpoint
 - default local watcher debounce is configured at the server level and loaded by clients through `GET /settings/watch`
+- polling watcher-based local directory subtree move propagation through the move endpoint
 - client tests covering hydrate and server-originated change application on mocked adapters
 
 ## Run The UI Locally
@@ -196,7 +197,6 @@ Current client behavior:
 Current client limitations:
 
 - local watcher-driven empty-directory creation is not implemented yet
-- local watcher-driven directory subtree move propagation is not implemented yet
 
 ## Opt-In Local Sync Scenario
 

@@ -24,16 +24,135 @@ export interface MirrorWatcher {
   stop: () => void;
 }
 
+interface FileSnapshot {
+  content: string;
+  contentHash: string;
+}
+
+interface MatchedMovePair {
+  oldPath: string;
+  newPath: string;
+  contentHash: string;
+}
+
 const hashText = (content: string) =>
   `sha256:${createHash("sha256").update(content, "utf8").digest("hex")}`;
 
 const shouldIgnoreName = (name: string) => name === ".git";
 
+const splitPathSegments = (path: string) => path.split("/").filter(Boolean);
+
+const isWithinRoot = (path: string, root: string) => path === root || path.startsWith(`${root}/`);
+
+const relativeWithinRoot = (root: string, path: string) => path.slice(root.length).replace(/^\/+/, "");
+
+const joinRelativePath = (root: string, relativePath: string) =>
+  relativePath.length > 0 ? `${root}/${relativePath}` : root;
+
+const deriveMoveRoots = (oldPath: string, newPath: string) => {
+  const oldSegments = splitPathSegments(oldPath);
+  const newSegments = splitPathSegments(newPath);
+  const maxSuffixLength = Math.min(oldSegments.length, newSegments.length);
+  let suffixLength = 0;
+
+  while (
+    suffixLength < maxSuffixLength &&
+    oldSegments[oldSegments.length - 1 - suffixLength] ===
+      newSegments[newSegments.length - 1 - suffixLength]
+  ) {
+    suffixLength += 1;
+  }
+
+  const oldRootSegments = oldSegments.slice(0, oldSegments.length - suffixLength);
+  const newRootSegments = newSegments.slice(0, newSegments.length - suffixLength);
+
+  if (oldRootSegments.length === 0 || newRootSegments.length === 0) {
+    return null;
+  }
+
+  return {
+    oldRoot: oldRootSegments.join("/"),
+    newRoot: newRootSegments.join("/")
+  };
+};
+
+const detectDirectoryMoveGroups = (
+  matchedPairs: MatchedMovePair[],
+  deletedFiles: Map<string, FileSnapshot>,
+  createdFiles: Map<string, FileSnapshot>
+) => {
+  const groups = new Map<string, { oldRoot: string; newRoot: string; pairs: MatchedMovePair[] }>();
+
+  for (const pair of matchedPairs) {
+    const roots = deriveMoveRoots(pair.oldPath, pair.newPath);
+
+    if (!roots) {
+      continue;
+    }
+
+    const key = `${roots.oldRoot}->${roots.newRoot}`;
+    const group = groups.get(key) ?? {
+      oldRoot: roots.oldRoot,
+      newRoot: roots.newRoot,
+      pairs: []
+    };
+
+    group.pairs.push(pair);
+    groups.set(key, group);
+  }
+
+  return [...groups.values()].filter((group) => {
+    if (group.pairs.length < 2) {
+      return false;
+    }
+
+    const deletedUnderRoot = [...deletedFiles.keys()].filter((path) =>
+      isWithinRoot(path, group.oldRoot)
+    );
+    const createdUnderRoot = [...createdFiles.keys()].filter((path) =>
+      isWithinRoot(path, group.newRoot)
+    );
+
+    if (
+      deletedUnderRoot.length !== group.pairs.length ||
+      createdUnderRoot.length !== group.pairs.length
+    ) {
+      return false;
+    }
+
+    const pairByOldPath = new Map(group.pairs.map((pair) => [pair.oldPath, pair]));
+
+    for (const oldPath of deletedUnderRoot) {
+      const pair = pairByOldPath.get(oldPath);
+
+      if (!pair) {
+        return false;
+      }
+
+      const relativePath = relativeWithinRoot(group.oldRoot, oldPath);
+      const expectedNewPath = joinRelativePath(group.newRoot, relativePath);
+
+      if (pair.newPath !== expectedNewPath) {
+        return false;
+      }
+
+      const oldSnapshot = deletedFiles.get(oldPath);
+      const newSnapshot = createdFiles.get(pair.newPath);
+
+      if (!oldSnapshot || !newSnapshot || oldSnapshot.contentHash !== newSnapshot.contentHash) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+};
+
 const scanFiles = (
   filesystem: ClientFileSystemAdapter,
   rootPath: string,
   directoryPath = rootPath,
-  results = new Map<string, { content: string; contentHash: string }>()
+  results = new Map<string, FileSnapshot>()
 ) => {
   if (!filesystem.exists(directoryPath)) {
     return results;
@@ -100,9 +219,9 @@ export class PollingMirrorWatcher implements MirrorWatcher {
     this.#interval = setInterval(() => {
       const now = Date.now();
       const nextFiles = scanFiles(this.#filesystem, this.#rootPath);
-      const createdFiles = new Map<string, { content: string; contentHash: string }>();
-      const changedFiles = new Map<string, { content: string; contentHash: string }>();
-      const deletedFiles = new Map<string, { content: string; contentHash: string }>();
+      const createdFiles = new Map<string, FileSnapshot>();
+      const changedFiles = new Map<string, FileSnapshot>();
+      const deletedFiles = new Map<string, FileSnapshot>();
 
       for (const [path, next] of nextFiles.entries()) {
         const previous = this.#knownFiles.get(path);
@@ -125,6 +244,7 @@ export class PollingMirrorWatcher implements MirrorWatcher {
 
       const createdByHash = new Map<string, string[]>();
       const deletedByHash = new Map<string, string[]>();
+      const matchedPairs: MatchedMovePair[] = [];
 
       for (const [path, created] of createdFiles.entries()) {
         const paths = createdByHash.get(created.contentHash) ?? [];
@@ -153,18 +273,51 @@ export class PollingMirrorWatcher implements MirrorWatcher {
             continue;
           }
 
-          deletedFiles.delete(oldPath);
-          createdFiles.delete(newPath);
-          this.#queuePendingEvent(
-            `path:${newPath}`,
-            {
-              type: "path_moved",
-              oldPath,
-              path: newPath
-            },
-            now
-          );
+          matchedPairs.push({
+            oldPath,
+            newPath,
+            contentHash
+          });
         }
+      }
+
+      const directoryMoveGroups = detectDirectoryMoveGroups(matchedPairs, deletedFiles, createdFiles);
+      const consumedOldPaths = new Set<string>();
+
+      for (const group of directoryMoveGroups) {
+        for (const pair of group.pairs) {
+          consumedOldPaths.add(pair.oldPath);
+          deletedFiles.delete(pair.oldPath);
+          createdFiles.delete(pair.newPath);
+        }
+
+        this.#queuePendingEvent(
+          `path:${group.newRoot}`,
+          {
+            type: "path_moved",
+            oldPath: group.oldRoot,
+            path: group.newRoot
+          },
+          now
+        );
+      }
+
+      for (const pair of matchedPairs) {
+        if (consumedOldPaths.has(pair.oldPath)) {
+          continue;
+        }
+
+        deletedFiles.delete(pair.oldPath);
+        createdFiles.delete(pair.newPath);
+        this.#queuePendingEvent(
+          `path:${pair.newPath}`,
+          {
+            type: "path_moved",
+            oldPath: pair.oldPath,
+            path: pair.newPath
+          },
+          now
+        );
       }
 
       for (const [path, next] of createdFiles.entries()) {

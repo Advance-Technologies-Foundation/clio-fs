@@ -712,6 +712,54 @@ test("local watch loop pushes moved files through the control plane", async () =
   client.stopLocalWatchLoop();
 });
 
+test("local watch loop pushes moved directory subtrees through the control plane", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const watcher = createManualMirrorWatcher();
+  const fetchStub = createFetchStub();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    watcher,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchStub as unknown as typeof fetch
+    }
+  });
+
+  await client.bind();
+  filesystem.writeFileText("/mirror/demo-workspace/packages/Alpha/sub/nested.txt", "nested\n");
+  await client.startLocalWatchLoop();
+
+  filesystem.movePath(
+    "/mirror/demo-workspace/packages/Alpha",
+    "/mirror/demo-workspace/packages/Beta"
+  );
+  watcher.emit({
+    type: "path_moved",
+    oldPath: "packages/Alpha",
+    path: "packages/Beta"
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(fetchStub.getMoveCalls(), [
+    {
+      oldPath: "packages/Alpha",
+      newPath: "packages/Beta"
+    }
+  ]);
+  assert.equal(
+    filesystem.readFileText("/mirror/demo-workspace/packages/Beta/sub/nested.txt"),
+    "nested\n"
+  );
+
+  client.stopLocalWatchLoop();
+});
+
 test("default local watch loop loads server watch settings and settles rapid writes", async () => {
   const filesystem = createInMemoryClientFileSystem();
   const stateStore = createInMemoryClientStateStore();
