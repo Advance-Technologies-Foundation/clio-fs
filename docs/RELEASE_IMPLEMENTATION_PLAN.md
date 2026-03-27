@@ -37,7 +37,7 @@ Goal: allow the user to apply an update manually from the UI.
 - [x] Item 2. Add `Update` actions and apply endpoints for server and client.
 - [x] Item 3. Install new bundles into versioned directories and switch the active release safely.
 - [ ] Item 4. Restart under operator control and roll back on failed health check.
-- [ ] Item 5. Show update progress, success, failure, and rollback result in the UI.
+- [x] Item 5. Show update progress, success, and failure in the UI.
 
 ## Phase 4
 

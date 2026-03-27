@@ -32,6 +32,7 @@ The current implementation supports:
 - downloading and checksum-verifying the release bundle into a staging directory after explicit user confirmation
 - installing the verified release bundle into a versioned install directory
 - switching the `current` runtime pointer to the newly installed release
+- showing `Installing`, `Installed`, and `Install failed` states in the update modal and `About` page
 
 The current implementation does **not** yet support:
 

@@ -1445,7 +1445,9 @@ export const renderPage = (
             publishedAt: "",
             message: "",
             updateAvailable: false,
-            highlights: []
+            highlights: [],
+            installInProgress: false,
+            pendingRestart: false
           };
 
           const setDialogState = (node, state, text) => {
@@ -1544,6 +1546,77 @@ export const renderPage = (
               .join("");
           };
 
+          const setInstalledState = (message) => {
+            runtimeState.installInProgress = false;
+            runtimeState.pendingRestart = true;
+            runtimeState.updateAvailable = false;
+            setDialogState(aboutStatus, "ok", "Installed");
+            setDialogState(updateStatus, "ok", "Installed");
+            if (summaryHeadline instanceof HTMLElement) {
+              summaryHeadline.textContent = "Update installed successfully.";
+            }
+            if (summaryCopy instanceof HTMLElement) {
+              summaryCopy.textContent = "Restart this runtime when you are ready to start the new release.";
+            }
+            if (updateHeadline instanceof HTMLElement) {
+              updateHeadline.textContent = "Update installed. Restart required.";
+            }
+            if (updateCopy instanceof HTMLElement) {
+              updateCopy.textContent = "The new bundle is now marked as current, but the running process still uses the old code until restart.";
+            }
+            if (headerUpdateButton instanceof HTMLElement) {
+              headerUpdateButton.hidden = true;
+            }
+            if (inlineUpdateButton instanceof HTMLElement) {
+              inlineUpdateButton.hidden = true;
+            }
+            if (applyUpdateButton instanceof HTMLButtonElement) {
+              applyUpdateButton.disabled = true;
+            }
+            setFeedback(aboutFeedback, message, "success");
+            setFeedback(updateFeedback, message, "success");
+          };
+
+          const setInstallingState = () => {
+            runtimeState.installInProgress = true;
+            setDialogState(aboutStatus, "warning", "Installing");
+            setDialogState(updateStatus, "warning", "Installing");
+            if (summaryHeadline instanceof HTMLElement) {
+              summaryHeadline.textContent = "Installing the selected release…";
+            }
+            if (summaryCopy instanceof HTMLElement) {
+              summaryCopy.textContent = "The verified bundle is being applied to the active install root.";
+            }
+            if (updateHeadline instanceof HTMLElement) {
+              updateHeadline.textContent = "Installing version " + runtimeState.latestVersion + "…";
+            }
+            if (updateCopy instanceof HTMLElement) {
+              updateCopy.textContent = "Please wait while the release is staged, installed, and marked as current.";
+            }
+            setFeedback(aboutFeedback, "");
+            setFeedback(updateFeedback, "");
+          };
+
+          const setInstallFailedState = (message) => {
+            runtimeState.installInProgress = false;
+            setDialogState(aboutStatus, "error", "Install failed");
+            setDialogState(updateStatus, "error", "Install failed");
+            if (summaryHeadline instanceof HTMLElement) {
+              summaryHeadline.textContent = "Update installation did not complete.";
+            }
+            if (summaryCopy instanceof HTMLElement) {
+              summaryCopy.textContent = "Review the error details and retry the manual update when ready.";
+            }
+            if (updateHeadline instanceof HTMLElement) {
+              updateHeadline.textContent = "Unable to install the selected release.";
+            }
+            if (updateCopy instanceof HTMLElement) {
+              updateCopy.textContent = "No rollback was attempted automatically. The current running process was left unchanged.";
+            }
+            setFeedback(aboutFeedback, message);
+            setFeedback(updateFeedback, message);
+          };
+
           const applyRuntimePayload = (payload, isError = false) => {
             if (typeof payload.currentVersion === "string") {
               runtimeState.currentVersion = payload.currentVersion;
@@ -1568,6 +1641,22 @@ export const renderPage = (
             }
             runtimeState.updateAvailable = payload.updateAvailable === true;
             runtimeState.highlights = Array.isArray(payload.highlights) ? payload.highlights : [];
+
+            if (runtimeState.pendingRestart) {
+              if (typeof payload.latestVersion === "string") {
+                runtimeState.latestVersion = payload.latestVersion;
+              }
+              if (currentVersionNode instanceof HTMLElement) {
+                currentVersionNode.textContent = runtimeState.currentVersion;
+              }
+              if (latestVersionNode instanceof HTMLElement) {
+                latestVersionNode.textContent = runtimeState.latestVersion;
+              }
+              setInstalledState(
+                runtimeState.message || "Update installed successfully. Restart required to load the new release."
+              );
+              return;
+            }
 
             if (currentVersionNode instanceof HTMLElement) {
               currentVersionNode.textContent = runtimeState.currentVersion;
@@ -1750,9 +1839,10 @@ export const renderPage = (
               return;
             }
 
+            runtimeState.installInProgress = true;
             applyUpdateButton.disabled = true;
-            applyUpdateButton.textContent = "Updating…";
-            setFeedback(updateFeedback, "");
+            applyUpdateButton.textContent = "Installing…";
+            setInstallingState();
 
             try {
               const response = await fetch(updateApplyUrl, {
@@ -1768,9 +1858,8 @@ export const renderPage = (
               const successMessage =
                 typeof payload.message === "string" && payload.message.length > 0
                   ? payload.message
-                  : "Update package downloaded successfully.";
+                  : "Update installed successfully. Restart required.";
 
-              setFeedback(updateFeedback, successMessage, "success");
               if (typeof payload.targetVersion === "string") {
                 runtimeState.latestVersion = payload.targetVersion;
               }
@@ -1781,13 +1870,17 @@ export const renderPage = (
                 runtimeState.highlights = payload.highlights;
                 renderHighlights(runtimeState.highlights);
               }
+              if (typeof payload.message === "string") {
+                runtimeState.message = payload.message;
+              }
+              setInstalledState(successMessage);
             } catch (error) {
-              setFeedback(
-                updateFeedback,
+              setInstallFailedState(
                 error instanceof Error ? error.message : "Unable to start the update."
               );
             } finally {
-              applyUpdateButton.disabled = runtimeState.updateAvailable === false;
+              runtimeState.installInProgress = false;
+              applyUpdateButton.disabled = runtimeState.updateAvailable === false || runtimeState.pendingRestart;
               applyUpdateButton.textContent = "Start update";
             }
           };
