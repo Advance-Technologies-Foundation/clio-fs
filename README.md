@@ -152,9 +152,12 @@ Implemented today:
 - server-level `platform` reported via `GET /health`
 - recursive snapshot manifest endpoint for initial hydrate preparation
 - bulk snapshot materialization endpoint for initial file content hydrate
+- binary-safe file transfer using `utf8` or `base64` envelopes on materialize/write flows
 - file-backed per-workspace change journal at `.clio-fs/server/change-journal.json`
 - revision-ordered change feed endpoint backed by the durable journal
-- conditional server-side utf8 file write endpoint with optimistic concurrency
+- optional SSE stream for change delivery at `GET /workspaces/:workspaceId/changes/stream`
+- server diagnostics and recovery endpoints for summary, workspace state, and manual watcher resync
+- conditional server-side file write endpoint with optimistic concurrency
 - conditional server-side delete endpoint for files and directories with revision-aware conflict checks
 - server-side directory create endpoint for revisioned directory bootstrap
 - server-side move endpoint for file and directory renames
@@ -166,9 +169,13 @@ Implemented today:
 - API tests use in-memory registry state and mocked filesystem inputs instead of real disk writes
 - a compiled dev flow for `@clio-fs/server` so `corepack pnpm --filter @clio-fs/server dev` runs against emitted `dist`
 - an operator-facing server UI in `apps/server-ui`
+- a client setup UI in `apps/client-ui`
 - server-rendered dashboard and workspace detail pages backed by control-plane API calls
 - modal-based workspace registration in the UI without `curl`
 - server settings modal opened from a gear action in the dashboard top bar
+- client setup page for choosing server URL, bearer token, remote workspace, and local mirror path
+- client-side sync session manager that can start and stop one active local sync session from the UI
+- file-backed client sync target config at `.clio-fs/client/config.json`
 - native `Choose Folder` button for selecting `rootPath` through the operating system file explorer dialog
 - workspace creation returns to the dashboard and refreshes the workspace list instead of opening detail immediately
 - empty-state dashboard collapses to a blank slate with a single `Add Workspace` action
@@ -192,6 +199,7 @@ Implemented today:
 - polling watcher-based local file rename propagation through the move endpoint
 - default local watcher debounce is configured at the server level and loaded by clients through `GET /settings/watch`
 - polling watcher-based local directory subtree move propagation through the move endpoint
+- binary-safe client hydrate, watcher propagation, retry queue replay, and conflict recovery
 - client tests covering hydrate and server-originated change application on mocked adapters
 - conflict-safe client write handling that stores sibling `*.conflict-server-*` artifacts and blocks stale paths after `409`
 - explicit conflict resolution flows for `accept_server` and `accept_local`
@@ -208,6 +216,22 @@ This starts:
 
 - `@clio-fs/server` on `http://127.0.0.1:4010`
 - `@clio-fs/server-ui` on `http://127.0.0.1:4020`
+
+Client setup UI:
+
+`corepack pnpm run client-ui`
+
+This starts:
+
+- `@clio-fs/client-ui` on `http://127.0.0.1:4030`
+
+Use it to:
+
+- enter the target server URL and bearer token
+- load the remote workspace list from that server
+- choose the workspace to mirror
+- choose the local mirror path through the native folder picker
+- start or stop the active client sync session
 
 If you prefer separate terminals:
 
@@ -284,9 +308,8 @@ The mocked mode remains the default integration path.
 
 ## Next Step
 
-The next practical milestone is production hardening:
+The next practical milestone is production hardening beyond the current MVP:
 
-- richer conflict resolution beyond text-file `accept_server` / `accept_local`
-- binary payload support
-- optional streaming transport in addition to polling
-- broader operational diagnostics and recovery tooling
+- chunked or large-file optimized binary transfer
+- richer operator-facing diagnostics surfacing in the server UI
+- stronger recovery tooling for long offline periods and partial queue replay visibility

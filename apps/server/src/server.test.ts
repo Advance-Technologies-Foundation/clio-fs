@@ -124,6 +124,42 @@ test("reads and updates server watch settings", async () => {
   }
 });
 
+test("returns diagnostics summary for the server", async () => {
+  const server = await startTestServer();
+
+  try {
+    const registerResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "diag-main",
+        rootPath: "/mock/diag-main"
+      })
+    });
+
+    assert.equal(registerResponse.status, 201);
+
+    const diagnosticsResponse = await fetch(`${server.baseUrl}/diagnostics/summary`, {
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`
+      }
+    });
+    const diagnosticsBody = await diagnosticsResponse.json();
+
+    assert.equal(diagnosticsResponse.status, 200);
+    assert.equal(diagnosticsBody.platform, "linux");
+    assert.equal(diagnosticsBody.workspaceCount, 1);
+    assert.deepEqual(diagnosticsBody.workspaceIds, ["diag-main"]);
+    assert.equal(diagnosticsBody.watch.settleDelayMs, 1200);
+    assert.equal(diagnosticsBody.journal.totalEvents, 0);
+  } finally {
+    await server.close();
+  }
+});
+
 test("registers and retrieves a workspace", async () => {
   const server = await startTestServer();
 
@@ -403,17 +439,68 @@ test("materializes file contents for a workspace snapshot", async () => {
     assert.deepEqual(materializeBody.files, [
       {
         path: "packages/Alpha/readme.txt",
+        encoding: "utf8",
         content: "alpha-seed-v1\n",
         fileRevision: 0,
-        workspaceRevision: 0
+        workspaceRevision: 0,
+        sizeBytes: 14
       },
       {
         path: "root.txt",
+        encoding: "utf8",
         content: "root-seed-v1\n",
         fileRevision: 0,
-        workspaceRevision: 0
+        workspaceRevision: 0,
+        sizeBytes: 13
       }
     ]);
+  } finally {
+    await server.close();
+  }
+});
+
+test("materializes binary file contents using base64 encoding", async () => {
+  const mockFileSystem = createMockFileSystem();
+  const pngHeader = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]);
+  mockFileSystem.addDirectory("/mock/binary-main");
+  mockFileSystem.addFile("/mock/binary-main/image.bin", { bytes: pngHeader });
+
+  const server = await startTestServer({ filesystem: mockFileSystem });
+
+  try {
+    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "binary-main",
+        rootPath: "/mock/binary-main"
+      })
+    });
+
+    assert.equal(createResponse.status, 201);
+
+    const materializeResponse = await fetch(
+      `${server.baseUrl}/workspaces/binary-main/snapshot-materialize`,
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${AUTH_TOKEN}`,
+          "content-type": "application/json"
+        },
+        body: JSON.stringify({
+          paths: ["image.bin"]
+        })
+      }
+    );
+    const materializeBody = await materializeResponse.json();
+
+    assert.equal(materializeResponse.status, 200);
+    assert.equal(materializeBody.files[0].encoding, "base64");
+    assert.equal(materializeBody.files[0].content, pngHeader.toString("base64"));
+    assert.equal(materializeBody.files[0].sizeBytes, pngHeader.byteLength);
   } finally {
     await server.close();
   }

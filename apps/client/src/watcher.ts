@@ -1,11 +1,13 @@
-import { createHash } from "node:crypto";
 import { join, relative } from "node:path";
+import type { FileTransferEncoding } from "@clio-fs/contracts";
 import type { ClientFileSystemAdapter } from "./filesystem.js";
+import { encodeTransferContent, hashBytes } from "./file-content.js";
 
 export type MirrorWatcherEvent =
   | {
       type: "file_changed";
       path: string;
+      encoding: FileTransferEncoding;
       content: string;
       contentHash: string;
     }
@@ -33,6 +35,7 @@ export interface MirrorWatcher {
 }
 
 interface FileSnapshot {
+  encoding: FileTransferEncoding;
   content: string;
   contentHash: string;
 }
@@ -42,9 +45,6 @@ interface MatchedMovePair {
   newPath: string;
   contentHash: string;
 }
-
-const hashText = (content: string) =>
-  `sha256:${createHash("sha256").update(content, "utf8").digest("hex")}`;
 
 const shouldIgnoreName = (name: string) => name === ".git";
 
@@ -178,12 +178,14 @@ const scanFiles = (
       continue;
     }
 
-    const content = filesystem.readFileText(absolutePath);
+    const bytes = filesystem.readFileBytes(absolutePath);
     const relativePath = relative(rootPath, absolutePath).replaceAll("\\", "/");
+    const encoded = encodeTransferContent(bytes);
 
     results.set(relativePath, {
-      content,
-      contentHash: hashText(content)
+      encoding: encoded.encoding,
+      content: encoded.content,
+      contentHash: hashBytes(bytes)
     });
   }
 
@@ -233,7 +235,7 @@ export class PollingMirrorWatcher implements MirrorWatcher {
   readonly #settleDelayMs: number;
   #listener?: (event: MirrorWatcherEvent) => void;
   #interval?: NodeJS.Timeout;
-  #knownFiles = new Map<string, { content: string; contentHash: string }>();
+  #knownFiles = new Map<string, FileSnapshot>();
   #knownDirectories = new Set<string>();
   #pendingEvents = new Map<string, PendingWatcherEvent>();
 
@@ -385,6 +387,7 @@ export class PollingMirrorWatcher implements MirrorWatcher {
         this.#queuePendingEvent(`path:${path}`, {
           type: "file_changed",
           path,
+          encoding: next.encoding,
           content: next.content,
           contentHash: next.contentHash
         }, now);
@@ -394,6 +397,7 @@ export class PollingMirrorWatcher implements MirrorWatcher {
         this.#queuePendingEvent(`path:${path}`, {
           type: "file_changed",
           path,
+          encoding: next.encoding,
           content: next.content,
           contentHash: next.contentHash
         }, now);

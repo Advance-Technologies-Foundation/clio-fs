@@ -11,7 +11,7 @@ interface MockNode {
   path: string;
   size: number;
   mtime: Date;
-  content?: string;
+  content?: Buffer;
 }
 
 const toKey = (path: string) => normalize(path);
@@ -32,18 +32,19 @@ export class MockFileSystem implements FileSystemAdapter {
     path: string,
     options: {
       content?: string;
+      bytes?: Buffer;
       size?: number;
       mtime?: Date;
     } = {}
   ) {
     this.#ensureParentDirectories(path);
-    const content = options.content ?? "";
+    const content = options.bytes ?? Buffer.from(options.content ?? "", "utf8");
     this.#nodes.set(toKey(path), {
       kind: "file",
       path: toKey(path),
-      size: options.size ?? Buffer.byteLength(content, "utf8"),
+      size: options.size ?? content.byteLength,
       mtime: options.mtime ?? new Date("2026-03-27T00:00:00.000Z"),
-      content
+      content: Buffer.from(content)
     });
   }
 
@@ -90,18 +91,26 @@ export class MockFileSystem implements FileSystemAdapter {
     };
   }
 
-  readFileText(path: string): string {
+  readFileBytes(path: string): Buffer {
     const node = this.#nodes.get(toKey(path));
 
     if (!node || node.kind !== "file") {
       throw new Error(`Mock file not found: ${path}`);
     }
 
-    return node.content ?? "";
+    return Buffer.from(node.content ?? Buffer.alloc(0));
+  }
+
+  readFileText(path: string): string {
+    return this.readFileBytes(path).toString("utf8");
+  }
+
+  writeFileBytes(path: string, content: Buffer) {
+    this.addFile(path, { bytes: content });
   }
 
   writeFileText(path: string, content: string) {
-    this.addFile(path, { content });
+    this.writeFileBytes(path, Buffer.from(content, "utf8"));
   }
 
   ensureDirectory(path: string) {
@@ -162,7 +171,7 @@ export class MockFileSystem implements FileSystemAdapter {
         path: node.path,
         kind: node.kind,
         size: node.size,
-        content: node.content
+        content: node.content?.toString("utf8")
       }))
       .sort((left, right) => left.path.localeCompare(right.path));
   }

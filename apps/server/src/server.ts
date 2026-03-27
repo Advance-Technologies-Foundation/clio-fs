@@ -4,10 +4,13 @@ import { healthSummary } from "@clio-fs/sync-core";
 import {
   type ApiErrorShape,
   type RegisterWorkspaceInput,
+  type ServerDiagnosticsSummaryResponse,
   type ServerWatchSettings,
   type ServerWatchSettingsResponse,
   type SnapshotMaterializeRequest,
   type UpdateServerWatchSettingsRequest,
+  type WorkspaceChangesStreamEvent,
+  type WorkspaceDiagnosticsResponse,
   type WorkspacePlatform,
   type WorkspaceRecord
 } from "@clio-fs/contracts";
@@ -78,6 +81,8 @@ const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
 
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 };
+
+const wait = (durationMs: number) => new Promise((resolve) => setTimeout(resolve, durationMs));
 
 const writeError = (
   response: ServerResponse,
@@ -159,6 +164,28 @@ const routeRequest = async (
     return;
   }
 
+  if (method === "GET" && url.pathname === "/diagnostics/summary") {
+    const serverPlatform = options.serverPlatform ?? detectServerPlatform();
+    const stats = options.journal?.getStats() ?? {
+      totalEvents: 0,
+      latestRevisions: {},
+      workspaceEventCounts: {}
+    };
+    const body: ServerDiagnosticsSummaryResponse = {
+      service: "clio-fs-server",
+      platform: serverPlatform,
+      workspaceCount: options.registry.list().length,
+      workspaceIds: options.registry.list().map((workspace) => workspace.workspaceId),
+      watch: options.watchSettingsStore.get(),
+      journal: {
+        totalEvents: stats.totalEvents,
+        latestRevisions: stats.latestRevisions
+      }
+    };
+    json(response, 200, body);
+    return;
+  }
+
   if (method === "GET" && url.pathname === "/settings/watch") {
     const settings: ServerWatchSettingsResponse = options.watchSettingsStore.get();
     json(response, 200, settings);
@@ -220,10 +247,108 @@ const routeRequest = async (
     return;
   }
 
+  if (
+    method === "GET" &&
+    url.pathname.startsWith("/workspaces/") &&
+    url.pathname.endsWith("/changes/stream")
+  ) {
+    const [, , workspaceId] = url.pathname.split("/");
+
+    if (!workspaceId) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    const workspace = options.registry.get(workspaceId);
+
+    if (!workspace) {
+      writeError(response, 404, "not_found", "Workspace not found", { workspaceId });
+      return;
+    }
+
+    const sinceValue = url.searchParams.get("since");
+    let lastRevision = Number(sinceValue);
+
+    if (!Number.isInteger(lastRevision) || lastRevision < 0) {
+      writeError(response, 400, "invalid_request", "since must be a non-negative integer", {
+        workspaceId
+      });
+      return;
+    }
+
+    response.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive"
+    });
+
+    let closed = false;
+    request.on("close", () => {
+      closed = true;
+    });
+
+    const sendEvent = (payload: WorkspaceChangesStreamEvent | "heartbeat") => {
+      if (closed) {
+        return;
+      }
+
+      response.write(`data: ${payload === "heartbeat" ? payload : JSON.stringify(payload)}\n\n`);
+    };
+
+    while (!closed) {
+      const result = options.journal!.listSince({ workspaceId, since: lastRevision, limit: 500 });
+
+      if (result.items.length > 0) {
+        const payload: WorkspaceChangesStreamEvent = {
+          workspaceId,
+          fromRevision: lastRevision,
+          toRevision: result.items.at(-1)?.revision ?? lastRevision,
+          items: result.items
+        };
+        lastRevision = payload.toRevision;
+        sendEvent(payload);
+      } else {
+        sendEvent("heartbeat");
+      }
+
+      await wait(1000);
+    }
+
+    response.end();
+    return;
+  }
+
   if (method === "GET" && url.pathname === "/workspaces") {
     json(response, 200, {
       items: options.registry.list().map(publicWorkspaceShape)
     });
+    return;
+  }
+
+  if (method === "GET" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/diagnostics")) {
+    const [, , workspaceId] = url.pathname.split("/");
+
+    if (!workspaceId) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    const workspace = options.registry.get(workspaceId);
+
+    if (!workspace) {
+      writeError(response, 404, "not_found", "Workspace not found", { workspaceId });
+      return;
+    }
+
+    const stats = options.journal?.getStats();
+    const body: WorkspaceDiagnosticsResponse = {
+      workspaceId,
+      currentRevision: workspace.currentRevision,
+      journalEventCount: stats?.workspaceEventCounts[workspaceId] ?? 0,
+      latestPathEvent: undefined,
+      latestRevisionEvent: options.journal?.getLatestEvent(workspaceId)
+    };
+    json(response, 200, body);
     return;
   }
 
@@ -257,6 +382,33 @@ const routeRequest = async (
 
       throw error;
     }
+  }
+
+  if (
+    method === "POST" &&
+    url.pathname.startsWith("/workspaces/") &&
+    url.pathname.endsWith("/recovery/resync")
+  ) {
+    const [, , workspaceId] = url.pathname.split("/");
+
+    if (!workspaceId) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    const workspace = options.registry.get(workspaceId);
+
+    if (!workspace) {
+      writeError(response, 404, "not_found", "Workspace not found", { workspaceId });
+      return;
+    }
+
+    options.workspaceWatcher?.resyncWorkspace(workspaceId);
+    json(response, 200, {
+      workspaceId,
+      resynced: true
+    });
+    return;
   }
 
   if (method === "POST" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/snapshot-materialize")) {

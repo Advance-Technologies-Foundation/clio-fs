@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type {
   CreateWorkspaceDirectoryRequest,
@@ -15,6 +14,7 @@ import type {
 } from "@clio-fs/contracts";
 import type { ChangeJournal } from "@clio-fs/database";
 import type { FileSystemAdapter } from "./filesystem.js";
+import { decodeTransferContent, detectTransferEncoding, hashBytes } from "./file-content.js";
 import { ensureRelativeWorkspacePath } from "./snapshot.js";
 
 export class FileWriteConflictError extends Error {
@@ -27,9 +27,6 @@ export class FileWriteConflictError extends Error {
   }
 }
 
-const sha256 = (content: string) =>
-  `sha256:${createHash("sha256").update(content, "utf8").digest("hex")}`;
-
 export const parsePutWorkspaceFileRequest = (value: unknown): PutWorkspaceFileRequest => {
   if (typeof value !== "object" || value === null) {
     throw new Error("request body must be a JSON object");
@@ -38,7 +35,7 @@ export const parsePutWorkspaceFileRequest = (value: unknown): PutWorkspaceFileRe
   const record = value as Record<string, unknown>;
 
   if (typeof record.content !== "string") {
-    throw new Error("content must be a utf8 string");
+    throw new Error("content must be a string");
   }
 
   if (
@@ -62,8 +59,12 @@ export const parsePutWorkspaceFileRequest = (value: unknown): PutWorkspaceFileRe
     throw new Error("operationId must be omitted or a string");
   }
 
-  if (typeof record.encoding !== "undefined" && record.encoding !== "utf8") {
-    throw new Error("only utf8 encoding is currently supported");
+  if (
+    typeof record.encoding !== "undefined" &&
+    record.encoding !== "utf8" &&
+    record.encoding !== "base64"
+  ) {
+    throw new Error("encoding must be omitted, utf8, or base64");
   }
 
   return {
@@ -72,7 +73,7 @@ export const parsePutWorkspaceFileRequest = (value: unknown): PutWorkspaceFileRe
       typeof record.baseFileRevision === "number" ? record.baseFileRevision : undefined,
     baseContentHash:
       typeof record.baseContentHash === "string" ? record.baseContentHash : undefined,
-    encoding: "utf8",
+    encoding: record.encoding === "base64" ? "base64" : "utf8",
     content: record.content,
     origin: record.origin
   };
@@ -221,7 +222,7 @@ export const putWorkspaceFile = (
   const existed = filesystem.exists(absolutePath);
   const latestEvent = journal.getLatestForPath(workspace.workspaceId, path);
   const currentFileRevision = latestEvent?.revision ?? 0;
-  const currentContentHash = existed ? sha256(filesystem.readFileText(absolutePath)) : null;
+  const currentContentHash = existed ? hashBytes(filesystem.readFileBytes(absolutePath)) : null;
 
   if (
     typeof input.baseFileRevision === "number" &&
@@ -249,16 +250,17 @@ export const putWorkspaceFile = (
     });
   }
 
-  filesystem.writeFileText(absolutePath, input.content);
+  const decodedContent = decodeTransferContent(input.content, input.encoding ?? "utf8");
+  filesystem.writeFileBytes(absolutePath, decodedContent);
 
-  const nextHash = sha256(input.content);
+  const nextHash = hashBytes(decodedContent);
   const event = journal.append({
     workspaceId: workspace.workspaceId,
     operation: existed ? "file_updated" : "file_created",
     path,
     origin: input.origin,
     contentHash: nextHash,
-    size: Buffer.byteLength(input.content, "utf8"),
+    size: decodedContent.byteLength,
     operationId: input.operationId
   });
 
@@ -289,7 +291,7 @@ export const deleteWorkspacePath = (
   const latestEvent = journal.getLatestForPath(workspace.workspaceId, path);
   const currentFileRevision = latestEvent?.revision ?? 0;
   const currentContentHash =
-    stats.kind === "file" ? sha256(filesystem.readFileText(absolutePath)) : null;
+    stats.kind === "file" ? hashBytes(filesystem.readFileBytes(absolutePath)) : null;
 
   if (
     stats.kind === "file" &&
@@ -451,7 +453,9 @@ export const resolveWorkspaceConflict = (
     throw new Error("only file conflict resolution is currently supported");
   }
 
-  const contentHash = sha256(filesystem.readFileText(absolutePath));
+  const bytes = filesystem.readFileBytes(absolutePath);
+  const contentHash = hashBytes(bytes);
+  const materialized = detectTransferEncoding(bytes);
 
   return {
     workspaceId: workspace.workspaceId,
@@ -460,6 +464,7 @@ export const resolveWorkspaceConflict = (
     workspaceRevision: workspace.currentRevision,
     existsOnServer: true,
     fileRevision: latestEvent?.revision ?? workspace.currentRevision,
+    encoding: materialized.encoding,
     contentHash
   };
 };

@@ -370,19 +370,29 @@ Response `200`:
   "files": [
     {
       "path": "packages/MyPkg/descriptor.json",
+      "encoding": "utf8",
       "content": "{\n  \"name\": \"MyPkg\"\n}\n",
       "fileRevision": 18442,
-      "workspaceRevision": 18442
+      "workspaceRevision": 18442,
+      "sizeBytes": 24
     },
     {
       "path": "root.txt",
+      "encoding": "utf8",
       "content": "server-seed-v1\n",
       "fileRevision": 18442,
-      "workspaceRevision": 18442
+      "workspaceRevision": 18442,
+      "sizeBytes": 15
     }
   ]
 }
 ```
+
+Binary files are returned with:
+
+- `"encoding": "base64"`
+- `content` set to a base64 payload
+- `sizeBytes` equal to the original byte length
 
 Possible errors:
 
@@ -844,18 +854,38 @@ Operation values:
 - `directory_deleted`
 - `path_moved`
 
-### GET /workspaces/{workspaceId}/events/stream
+### GET /workspaces/{workspaceId}/changes/stream
 
 Optional SSE endpoint for near-real-time notifications.
 
 Event example:
 
 ```text
-event: workspace-change
-data: {"workspaceId":"crm-prod-main","revision":18447}
+data: {"workspaceId":"crm-prod-main","fromRevision":18442,"toRevision":18447,"items":[{"workspaceId":"crm-prod-main","revision":18447,"timestamp":"2026-03-27T10:11:12.000Z","operation":"file_updated","path":"root.txt","oldPath":null,"origin":"unknown","contentHash":"sha256:...","size":15,"operationId":null}]}
 ```
 
 This endpoint is optional. Clients must still support polling via `/changes`.
+
+### GET /diagnostics/summary
+
+Returns server-level diagnostics:
+
+- platform
+- registered workspace ids
+- watch settings
+- durable journal statistics
+
+### GET /workspaces/{workspaceId}/diagnostics
+
+Returns workspace-level diagnostics:
+
+- current revision
+- journal event count
+- latest revision event
+
+### POST /workspaces/{workspaceId}/recovery/resync
+
+Requests a manual watcher resync for one workspace. This is intended as a lightweight recovery hook for operators and tests.
 
 ## Git APIs
 
@@ -1025,6 +1055,10 @@ The smallest useful version of this API includes:
 - `DELETE /workspaces/{workspaceId}/file`
 - `POST /workspaces/{workspaceId}/move`
 - `GET /workspaces/{workspaceId}/changes`
+- `GET /workspaces/{workspaceId}/changes/stream`
+- `GET /diagnostics/summary`
+- `GET /workspaces/{workspaceId}/diagnostics`
+- `POST /workspaces/{workspaceId}/recovery/resync`
 
 ## Future Extensions
 

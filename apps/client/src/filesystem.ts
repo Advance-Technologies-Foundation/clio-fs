@@ -10,18 +10,24 @@ export interface ClientDirectoryEntry {
 
 export interface ClientFileSystemAdapter {
   ensureDirectory: (path: string) => void;
+  writeFileBytes: (path: string, content: Buffer) => void;
   writeFileText: (path: string, content: string) => void;
   movePath: (fromPath: string, toPath: string) => void;
   removePath: (path: string) => void;
   removeDirectoryContents: (path: string) => void;
   readdir: (path: string) => ClientDirectoryEntry[];
   exists: (path: string) => boolean;
+  readFileBytes: (path: string) => Buffer;
   readFileText: (path: string) => string;
 }
 
 export const nodeClientFileSystem: ClientFileSystemAdapter = {
   ensureDirectory(path) {
     mkdirSync(path, { recursive: true });
+  },
+  writeFileBytes(path, content) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, content);
   },
   writeFileText(path, content) {
     mkdirSync(dirname(path), { recursive: true });
@@ -74,6 +80,9 @@ export const nodeClientFileSystem: ClientFileSystemAdapter = {
       throw error;
     }
   },
+  readFileBytes(path) {
+    return readFileSync(path);
+  },
   readFileText(path) {
     return readFileSync(path, "utf8");
   }
@@ -81,7 +90,7 @@ export const nodeClientFileSystem: ClientFileSystemAdapter = {
 
 interface InMemoryNode {
   kind: ClientEntryKind;
-  content?: string;
+  content?: Buffer;
 }
 
 const normalizeKey = (path: string) => normalize(path);
@@ -101,9 +110,13 @@ export class InMemoryClientFileSystem implements ClientFileSystemAdapter {
   }
 
   writeFileText(path: string, content: string) {
+    this.writeFileBytes(path, Buffer.from(content, "utf8"));
+  }
+
+  writeFileBytes(path: string, content: Buffer) {
     const key = normalizeKey(path);
     this.#ensureParents(key);
-    this.#nodes.set(key, { kind: "file", content });
+    this.#nodes.set(key, { kind: "file", content: Buffer.from(content) });
   }
 
   movePath(fromPath: string, toPath: string) {
@@ -184,18 +197,26 @@ export class InMemoryClientFileSystem implements ClientFileSystemAdapter {
   }
 
   readFileText(path: string) {
+    return this.readFileBytes(path).toString("utf8");
+  }
+
+  readFileBytes(path: string) {
     const node = this.#nodes.get(normalizeKey(path));
 
     if (!node || node.kind !== "file") {
       throw new Error(`File not found: ${path}`);
     }
 
-    return node.content ?? "";
+    return Buffer.from(node.content ?? Buffer.alloc(0));
   }
 
   snapshot() {
     return [...this.#nodes.entries()]
-      .map(([path, node]) => ({ path, kind: node.kind, content: node.content }))
+      .map(([path, node]) => ({
+        path,
+        kind: node.kind,
+        content: node.content ? node.content.toString("utf8") : undefined
+      }))
       .sort((left, right) => left.path.localeCompare(right.path));
   }
 

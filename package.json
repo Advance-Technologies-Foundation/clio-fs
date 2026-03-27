@@ -13,6 +13,7 @@
   "scripts": {
     "build": "corepack pnpm -r build",
     "check": "corepack pnpm -r check",
+    "client-ui": "node scripts/dev-client-ui.mjs",
     "dev": "node scripts/dev.mjs",
     "release:artifacts": "node scripts/build-release-artifacts.mjs",
     "server": "node scripts/dev-server.mjs",

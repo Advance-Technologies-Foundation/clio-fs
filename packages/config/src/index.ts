@@ -46,9 +46,14 @@ export interface AppConfig {
     controlPlaneBaseUrl: string;
     controlPlaneAuthToken: string;
     defaultWorkspaceRoot: string;
+    syncConfigFilePath: string;
     stateFilePath: string;
     pollIntervalMs: number;
     localWatchScanIntervalMs: number;
+  };
+  clientUi: {
+    host: string;
+    port: number;
   };
 }
 
@@ -109,9 +114,18 @@ export const readAppConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig =
         "CLIO_FS_CLIENT_DEFAULT_WORKSPACE_ROOT",
         "./workspaces"
       ),
+      syncConfigFilePath: readString(
+        env,
+        "CLIO_FS_CLIENT_SYNC_CONFIG_FILE",
+        ".clio-fs/client/config.json"
+      ),
       stateFilePath: readString(env, "CLIO_FS_CLIENT_STATE_FILE", ".clio-fs/client/state.json"),
       pollIntervalMs: readInteger(env, "CLIO_FS_CLIENT_POLL_INTERVAL_MS", 1000),
       localWatchScanIntervalMs: readInteger(env, "CLIO_FS_CLIENT_LOCAL_WATCH_SCAN_INTERVAL_MS", 250)
+    },
+    clientUi: {
+      host: readString(env, "CLIO_FS_CLIENT_UI_HOST", "127.0.0.1"),
+      port: readInteger(env, "CLIO_FS_CLIENT_UI_PORT", 4030)
     }
   };
 };

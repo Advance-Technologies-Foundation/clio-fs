@@ -44,7 +44,10 @@ const main = async () => {
   }
 
   if (parsed.mode === "all" || parsed.mode === "ui") {
-    const { startDefaultServerUi } = await import("@clio-fs/server-ui");
+    const serverUiModuleUrl = new URL("../../server-ui/dist/index.js", import.meta.url);
+    const { startDefaultServerUi } = (await import(serverUiModuleUrl.href)) as {
+      startDefaultServerUi: () => Promise<{ close: () => Promise<void> }>;
+    };
     started.push(await startDefaultServerUi());
   }
 
