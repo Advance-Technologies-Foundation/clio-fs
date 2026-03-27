@@ -18,7 +18,8 @@ import {
   type WorkspaceChangesStreamEvent,
   type WorkspaceDiagnosticsResponse,
   type WorkspacePlatform,
-  type WorkspaceRecord
+  type WorkspaceRecord,
+  type WorkspaceSyncStatusResponse
 } from "@clio-fs/contracts";
 import {
   type WorkspaceRegistry,
@@ -49,6 +50,13 @@ import { type Logger, noopLogger } from "./logger.js";
 import type { WorkspaceChangeWatcher } from "./workspace-watcher.js";
 import { detectServerPlatform, parseRegisterWorkspaceInput } from "./workspace.js";
 
+interface WorkspaceClientActivity {
+  lastPollAt?: Date;
+  lastMaterializeAt?: Date;
+  lastMaterializeOrigin?: string;
+  staleSince?: Date;
+}
+
 export interface WorkspaceServerOptions {
   host: string;
   port: number;
@@ -61,6 +69,8 @@ export interface WorkspaceServerOptions {
   filesystem?: FileSystemAdapter;
   workspaceWatcher?: WorkspaceChangeWatcher;
   logger?: Logger;
+  /** Internal: populated by createWorkspaceServer, do not set manually */
+  clientActivity?: Map<string, WorkspaceClientActivity>;
 }
 
 export interface StartedWorkspaceServer {
@@ -291,6 +301,90 @@ connect();
 </body>
 </html>`;
 
+/** Client is considered live if it polled within this window */
+const LIVE_THRESHOLD_MS = 10_000;
+/** Client is considered syncing if materialize was called within this window with no poll after it */
+const SYNCING_THRESHOLD_MS = 60_000;
+
+const computeSyncStatus = (
+  workspaceId: string,
+  registry: WorkspaceRegistry,
+  activity: Map<string, WorkspaceClientActivity>
+): WorkspaceSyncStatusResponse => {
+  const workspace = registry.get(workspaceId);
+
+  if (!workspace) {
+    return {
+      workspaceId,
+      status: "not_registered",
+      description: "Workspace is not registered on this server. Call POST /workspaces/register first."
+    };
+  }
+
+  const act = activity.get(workspaceId);
+  const now = Date.now();
+
+  if (!act?.lastPollAt && !act?.lastMaterializeAt) {
+    return {
+      workspaceId,
+      status: "unbound",
+      currentRevision: workspace.currentRevision,
+      description: "Workspace is registered but no client has connected yet. Start the client daemon with CLIO_FS_WORKSPACE_ID set."
+    };
+  }
+
+  const materializeAt = act?.lastMaterializeAt?.getTime();
+  const pollAt = act?.lastPollAt?.getTime();
+
+  // Syncing: materialize happened recently and no poll has occurred after it
+  if (
+    materializeAt !== undefined &&
+    now - materializeAt < SYNCING_THRESHOLD_MS &&
+    (pollAt === undefined || pollAt < materializeAt)
+  ) {
+    return {
+      workspaceId,
+      status: "syncing",
+      currentRevision: workspace.currentRevision,
+      lastSyncAt: act!.lastMaterializeAt!.toISOString(),
+      lastSyncOrigin: act!.lastMaterializeOrigin,
+      description: `Client is hydrating the local mirror (origin: ${act!.lastMaterializeOrigin ?? "unknown"}). Wait for status to become "live".`
+    };
+  }
+
+  // Live: polled recently
+  if (pollAt !== undefined && now - pollAt < LIVE_THRESHOLD_MS) {
+    if (act?.staleSince) {
+      act.staleSince = undefined;
+    }
+    return {
+      workspaceId,
+      status: "live",
+      currentRevision: workspace.currentRevision,
+      lastClientPollAt: act!.lastPollAt!.toISOString(),
+      lastSyncAt: act?.lastMaterializeAt?.toISOString(),
+      lastSyncOrigin: act?.lastMaterializeOrigin,
+      description: "Client is connected and actively polling. Local mirror is up-to-date."
+    };
+  }
+
+  // Stale: had activity but stopped
+  const staleSince = act?.staleSince ?? (pollAt ? new Date(pollAt + LIVE_THRESHOLD_MS) : undefined);
+  if (act && !act.staleSince && staleSince) {
+    act.staleSince = staleSince;
+  }
+  return {
+    workspaceId,
+    status: "stale",
+    currentRevision: workspace.currentRevision,
+    lastClientPollAt: act?.lastPollAt?.toISOString(),
+    lastSyncAt: act?.lastMaterializeAt?.toISOString(),
+    lastSyncOrigin: act?.lastMaterializeOrigin,
+    staleSince: staleSince?.toISOString(),
+    description: "Client was connected but has stopped polling. The local mirror may be outdated."
+  };
+};
+
 const publicWorkspaceShape = (workspace: WorkspaceRecord) => ({
   workspaceId: workspace.workspaceId,
   displayName: workspace.displayName,
@@ -445,6 +539,10 @@ button{background:#1f6feb;border:none;color:#fff;padding:8px;border-radius:6px;c
 
     const result = options.journal!.listSince({ workspaceId, since, limit });
 
+    const pollAct = options.clientActivity!.get(workspaceId) ?? {};
+    pollAct.lastPollAt = new Date();
+    options.clientActivity!.set(workspaceId, pollAct);
+
     json(response, 200, {
       workspaceId,
       fromRevision: since,
@@ -530,6 +628,18 @@ button{background:#1f6feb;border:none;color:#fff;padding:8px;border-radius:6px;c
     json(response, 200, {
       items: options.registry.list().map(publicWorkspaceShape)
     });
+    return;
+  }
+
+  if (method === "GET" && pathname.startsWith("/workspaces/") && pathname.endsWith("/sync-status")) {
+    const [, , workspaceId] = pathname.split("/");
+
+    if (!workspaceId) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    json(response, 200, computeSyncStatus(workspaceId, options.registry, options.clientActivity!));
     return;
   }
 
@@ -678,11 +788,16 @@ button{background:#1f6feb;border:none;color:#fff;padding:8px;border-radius:6px;c
     try {
       input = (await readJsonBody(request)) as SnapshotMaterializeRequest;
       const result = materializeWorkspaceFiles(workspace, input.paths, options.filesystem ?? nodeFileSystem);
+      const materializeOrigin = url.searchParams.get("origin") ?? "unknown";
       (options.logger ?? noopLogger).audit("snapshot_materialized", {
         workspaceId,
         pathCount: input.paths?.length ?? result.files.length,
-        origin: url.searchParams.get("origin") ?? "unknown"
+        origin: materializeOrigin
       });
+      const matAct = options.clientActivity!.get(workspaceId) ?? {};
+      matAct.lastMaterializeAt = new Date();
+      matAct.lastMaterializeOrigin = materializeOrigin;
+      options.clientActivity!.set(workspaceId, matAct);
       json(response, 200, result);
       return;
     } catch (error) {
@@ -1158,7 +1273,8 @@ button{background:#1f6feb;border:none;color:#fff;padding:8px;border-radius:6px;c
 export const createWorkspaceServer = (options: WorkspaceServerOptions) => {
   const resolvedOptions: WorkspaceServerOptions = {
     ...options,
-    journal: options.journal ?? createInMemoryChangeJournal(options.registry)
+    journal: options.journal ?? createInMemoryChangeJournal(options.registry),
+    clientActivity: options.clientActivity ?? new Map<string, WorkspaceClientActivity>()
   };
 
   return createServer(async (request, response) => {

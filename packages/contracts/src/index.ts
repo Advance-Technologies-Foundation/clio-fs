@@ -281,6 +281,45 @@ export interface GitDiffResponse {
   diff: string;
 }
 
+/**
+ * Describes the synchronization state of a workspace from the server's perspective.
+ *
+ * Designed for agent workflows that need to wait for the local mirror to be ready
+ * before reading or writing files.
+ *
+ * Status values:
+ * - `not_registered`  — workspace ID is unknown to the server
+ * - `unbound`         — workspace is registered but no client has ever connected
+ * - `syncing`         — client is actively hydrating the local mirror (materialize in progress)
+ * - `live`            — client is connected and polling; mirror is up-to-date
+ * - `stale`           — client was connected but has not polled recently; mirror may be outdated
+ * - `error`           — last client interaction ended with an unrecoverable error
+ */
+export type WorkspaceSyncStatusValue =
+  | "not_registered"
+  | "unbound"
+  | "syncing"
+  | "live"
+  | "stale"
+  | "error";
+
+export interface WorkspaceSyncStatusResponse {
+  workspaceId: WorkspaceId;
+  status: WorkspaceSyncStatusValue;
+  /** Human-readable explanation, useful for agent reasoning */
+  description: string;
+  /** Current server-side revision of the workspace */
+  currentRevision?: Revision;
+  /** ISO timestamp of the last poll request from any client */
+  lastClientPollAt?: string;
+  /** ISO timestamp of the last full materialize (resync) */
+  lastSyncAt?: string;
+  /** Origin tag of the last materialize: e.g. "resync-from-server", "resync-from-local" */
+  lastSyncOrigin?: string;
+  /** ISO timestamp when the client became stale (only present when status === "stale") */
+  staleSince?: string;
+}
+
 export const DEFAULT_WORKSPACE_POLICIES: WorkspacePolicies = {
   allowGit: true,
   allowBinaryWrites: true,

@@ -23,6 +23,7 @@ import type {
   WorkspaceChangesStreamEvent,
   WorkspaceChangesResponse,
   WorkspaceDiagnosticsResponse,
+  WorkspaceSyncStatusResponse,
   WorkspaceSnapshotResponse
 } from "@clio-fs/contracts";
 
@@ -94,6 +95,12 @@ export class ClientControlPlane {
   async getWorkspaceDiagnostics(workspaceId: string): Promise<WorkspaceDiagnosticsResponse> {
     return this.#request<WorkspaceDiagnosticsResponse>(
       `/workspaces/${encodeURIComponent(workspaceId)}/diagnostics`
+    );
+  }
+
+  async getSyncStatus(workspaceId: string): Promise<WorkspaceSyncStatusResponse> {
+    return this.#request<WorkspaceSyncStatusResponse>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/sync-status`
     );
   }
 
