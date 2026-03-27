@@ -21,6 +21,7 @@ import {
   formatWorkspaceLabel,
   renderControlPlaneHeroVisual,
   renderMetricCard,
+  renderPlatformCard,
   type MetricTone,
   renderNotice,
   renderEmptyWorkspaceState,
@@ -458,7 +459,7 @@ const renderDashboardBody = (
           <div class="dashboard-hero-grid">
             ${renderMetricCard("Service", health.service, "info")}
             ${renderMetricCard("Health", health.status, health.status === "ok" ? "ok" : "error")}
-            ${renderMetricCard("Platform", health.platform, "neutral")}
+            ${renderPlatformCard(health.platform)}
             ${renderMetricCard("Workspaces", String(workspaces.length), workspaces.length > 0 ? "ok" : "info")}
           </div>
         </div>

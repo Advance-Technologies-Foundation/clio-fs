@@ -520,13 +520,17 @@ const renderConflictResolutionPanel = (
 const renderLiveMetricCard = (
   label: string,
   value: string,
-  metricKey: "targets" | "running" | "lastRevision" | "unsyncedObjects"
-) => `
-  <section class="panel ${getMetricToneClass(metricKey)}" style="margin-bottom:0;">
+  metricKey: "targets" | "running" | "lastRevision" | "unsyncedObjects",
+  tone?: string
+) => {
+  const cls = tone ? `metric-card metric-${tone}` : getMetricToneClass(metricKey);
+  return `
+  <section class="panel ${cls}" style="margin-bottom:0;" data-metric-card="${escapeHtml(metricKey)}">
     <div class="metric">${escapeHtml(label)}</div>
     <div class="metric-value" data-sync-metric="${escapeHtml(metricKey)}">${escapeHtml(value)}</div>
   </section>
 `;
+};
 
 const renderTargetTable = (targets: ClientSyncTarget[], status: ClientSyncManagerStatus) => `
   <div class="table-card">
@@ -767,7 +771,7 @@ const renderDashboardBody = (
           <div class="dashboard-hero-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">
             ${renderLiveMetricCard("Targets", String(targets.length), "targets")}
             ${renderLiveMetricCard("Running", status.running ? "1" : "0", "running")}
-            ${renderLiveMetricCard("Unsynced Objects", String(status.unsyncedObjectCount ?? 0), "unsyncedObjects")}
+            ${renderLiveMetricCard("Unsynced Objects", String(status.unsyncedObjectCount ?? 0), "unsyncedObjects", (status.unsyncedObjectCount ?? 0) > 0 ? "warning" : "ok")}
             ${renderLiveMetricCard("Last Revision", typeof status.lastAppliedRevision === "number" ? String(status.lastAppliedRevision) : "n/a", "lastRevision")}
           </div>
         </div>
@@ -982,6 +986,11 @@ const renderClientPage = (
 
           if (metric("unsyncedObjects") instanceof HTMLElement) {
             metric("unsyncedObjects").textContent = unsyncedValue;
+            const card = document.querySelector('[data-metric-card="unsyncedObjects"]');
+            if (card instanceof HTMLElement) {
+              card.classList.remove("metric-ok", "metric-warning", "metric-error");
+              card.classList.add(Number(unsyncedValue) > 0 ? "metric-warning" : "metric-ok");
+            }
           }
 
           const activeTargetId = typeof payload?.targetId === "string" ? payload.targetId : null;

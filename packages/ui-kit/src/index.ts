@@ -1198,6 +1198,21 @@ export const renderMetricCard = (label: string, value: string, tone?: MetricTone
   </section>
 `;
 
+const platformIcons: Record<string, string> = {
+  macos: `<svg viewBox="0 0 24 24" fill="currentColor" width="48" height="48" aria-label="macOS"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>`,
+  windows: `<svg viewBox="0 0 24 24" fill="currentColor" width="48" height="48" aria-label="Windows"><path d="M3 12V6.75l6-1.32v6.57H3zm17 0v-8.5l-9 1.63V12h9zM3 13h6v6.43l-6-1.33V13zm17 0h-9v8.25l9 1.75V13z"/></svg>`,
+  linux: `<svg viewBox="0 0 24 24" fill="currentColor" width="48" height="48" aria-label="Linux"><path d="M12.504 0c-.155 0-.315.008-.48.021C7.309.156 5.374 3.678 5.15 5.65c-.108.957.07 1.868.321 2.53C4.932 8.754 4.75 9.4 4.75 10c0 1.2.622 2.098 1.373 2.731a8.23 8.23 0 00-.122 1.019c0 1.26.422 2.312 1.146 3.068.657.685 1.512 1.078 2.413 1.104.32.01.64-.02.955-.087.284.368.61.698.972.978.682.523 1.474.845 2.32.968.3.043.602.065.906.065 1.148 0 2.19-.354 2.978-.987.663-.52 1.13-1.228 1.33-2.028.046-.182.077-.37.077-.566 0-.498-.14-.935-.385-1.273.17-.19.32-.398.446-.624.296-.536.454-1.146.454-1.802 0-.704-.185-1.374-.535-1.944.38-.507.596-1.122.596-1.775 0-.685-.235-1.327-.659-1.847.16-.433.244-.896.244-1.37 0-1.054-.365-2.038-1.026-2.747C14.97.39 13.76 0 12.504 0zm-.042 1.5c.945 0 1.835.297 2.49.862.556.48.91 1.144.91 1.917 0 .35-.073.686-.208.992-.356.8-1.12 1.338-2.032 1.338-.358 0-.706-.09-1.014-.26l-.003-.001C11.837 6 11.08 5.5 10.2 5.5c-.44 0-.846.13-1.178.35-.17.11-.32.25-.45.4-.23-.37-.365-.81-.365-1.27 0-.79.38-1.508.99-1.968.62-.467 1.43-.71 2.265-.712zm-3.5 8c.552 0 1 .448 1 1s-.448 1-1 1-1-.448-1-1 .448-1 1-1zm7 0c.552 0 1 .448 1 1s-.448 1-1 1-1-.448-1-1 .448-1 1-1z"/></svg>`
+};
+
+export const renderPlatformCard = (platform: string) => `
+  <section class="panel metric-card metric-neutral" style="margin-bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0.5rem;">
+    <div class="metric">PLATFORM</div>
+    <div style="display:flex;align-items:center;justify-content:center;opacity:0.92;">
+      ${platformIcons[platform] ?? `<span style="font-size:2rem;font-weight:700;">${escapeHtml(platform)}</span>`}
+    </div>
+  </section>
+`;
+
 export const renderServerSettingsButton = () => `
   <button
     type="button"
