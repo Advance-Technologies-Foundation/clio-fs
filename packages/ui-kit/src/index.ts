@@ -988,10 +988,18 @@ export const renderWorkspaceRegistrationModal = (
           data-close-add-workspace
         >×</button>
       </div>
-      <div class="modal-body">
+        <div class="modal-body">
         Register a server workspace so it becomes available in the control plane and sync workflows.
         <div class="modal-inline-error" data-add-workspace-error hidden></div>
         <form method="post" action="/workspaces/register" data-add-workspace-form class="form-grid" style="margin-top:1.25rem;">
+          <div class="form-field">
+            <label for="rootPath">Root Path<span style="color:var(--color-danger);margin-left:2px;">*</span></label>
+            <div class="field-row">
+              <input id="rootPath" name="rootPath" required value="${escapeHtml(values?.rootPath ?? "")}" />
+              <button type="button" class="secondary-button" data-root-path-picker data-target-input="rootPath" autofocus>Choose Folder</button>
+            </div>
+            <p class="helper-text" data-root-picker-status>Use the button to select a folder with the native file explorer.</p>
+          </div>
           <div class="form-field">
             <label for="workspaceId">Workspace ID<span style="color:var(--color-danger);margin-left:2px;">*</span></label>
             <input id="workspaceId" name="workspaceId" required value="${escapeHtml(values?.workspaceId ?? "")}" />
@@ -1000,14 +1008,6 @@ export const renderWorkspaceRegistrationModal = (
             <label for="displayName">Display Name</label>
             <input id="displayName" name="displayName" value="${escapeHtml(values?.displayName ?? "")}" />
             <p class="helper-text">Optional. If omitted, the UI will show only the workspace ID.</p>
-          </div>
-          <div class="form-field">
-            <label for="rootPath">Root Path<span style="color:var(--color-danger);margin-left:2px;">*</span></label>
-            <div class="field-row">
-              <input id="rootPath" name="rootPath" required value="${escapeHtml(values?.rootPath ?? "")}" />
-              <button type="button" class="secondary-button" data-root-path-picker data-target-input="rootPath">Choose Folder</button>
-            </div>
-            <p class="helper-text" data-root-picker-status>Use the button to select a folder with the native file explorer.</p>
           </div>
           <div class="modal-actions" style="padding:0;border-top:none;background:transparent;">
             <button type="button" class="secondary-button" data-close-add-workspace>Cancel</button>
