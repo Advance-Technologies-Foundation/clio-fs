@@ -625,6 +625,7 @@ Current implementation note:
 - directory creation is implemented for workspace-relative paths
 - duplicate directory creation currently returns `400 invalid_request`
 - local watcher-driven empty-directory propagation is not implemented yet on the client side
+- local watcher-driven file rename propagation is implemented through polling watcher detection and the move endpoint
 
 ### DELETE /workspaces/{workspaceId}/file
 
@@ -699,7 +700,8 @@ Current implementation note:
 - file and directory moves are implemented for workspace-relative paths
 - the change feed emits one `path_moved` event for the moved root
 - client-side remote move application now uses direct local path moves instead of a full rehydrate fallback
-- local watcher-driven rename propagation is not implemented yet
+- local watcher-driven file rename propagation is implemented on the client side
+- local watcher-driven directory subtree move propagation is still pending
 
 ## Change Feed API
 

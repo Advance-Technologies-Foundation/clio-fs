@@ -204,6 +204,9 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
     });
   const suppressedHashes = new Map<string, string>();
   const suppressedDeletes = new Set<string>();
+  const suppressedMoves = new Set<string>();
+
+  const getMoveSignature = (oldPath: string, newPath: string) => `${oldPath}->${newPath}`;
 
   const suppressPath = (path: string, content: string) => {
     suppressedHashes.set(path, hashText(content));
@@ -221,6 +224,18 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
     const bound = stateStore.load(options.workspaceId);
 
     if (!bound?.hydrated) {
+      return;
+    }
+
+    if (event.type === "path_moved") {
+      const signature = getMoveSignature(event.oldPath, event.path);
+
+      if (suppressedMoves.has(signature)) {
+        suppressedMoves.delete(signature);
+        return;
+      }
+
+      await submitMove(event.oldPath, event.path, { applyLocal: false });
       return;
     }
 
@@ -246,6 +261,38 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
     }
 
     await client.pushFile(event.path, event.content);
+  };
+
+  const submitMove = async (
+    oldPath: string,
+    newPath: string,
+    moveOptions: {
+      applyLocal: boolean;
+    }
+  ) => {
+    const bound = (await client.bind()) ?? stateStore.load(options.workspaceId);
+
+    if (!bound) {
+      throw new Error(`Workspace is not bound: ${options.workspaceId}`);
+    }
+
+    if (moveOptions.applyLocal) {
+      suppressedMoves.add(getMoveSignature(oldPath, newPath));
+      filesystem.movePath(join(bound.mirrorRoot, oldPath), join(bound.mirrorRoot, newPath));
+    }
+
+    const result = await controlPlane.movePath(bound.workspaceId, {
+      oldPath,
+      newPath,
+      origin: "local-client"
+    });
+    const nextState = {
+      ...bound,
+      lastAppliedRevision: result.workspaceRevision
+    };
+
+    stateStore.save(nextState);
+    return nextState;
   };
 
   client = {
@@ -290,6 +337,10 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
 
         if (change.operation === "file_deleted" || change.operation === "directory_deleted") {
           suppressedDeletes.add(change.path);
+        }
+
+        if (change.operation === "path_moved" && change.oldPath) {
+          suppressedMoves.add(getMoveSignature(change.oldPath, change.path));
         }
       }
 
@@ -338,26 +389,7 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       return nextState;
     },
     async movePath(oldPath, newPath) {
-      const bound = (await client.bind()) ?? stateStore.load(options.workspaceId);
-
-      if (!bound) {
-        throw new Error(`Workspace is not bound: ${options.workspaceId}`);
-      }
-
-      filesystem.movePath(join(bound.mirrorRoot, oldPath), join(bound.mirrorRoot, newPath));
-
-      const result = await controlPlane.movePath(bound.workspaceId, {
-        oldPath,
-        newPath,
-        origin: "local-client"
-      });
-      const nextState = {
-        ...bound,
-        lastAppliedRevision: result.workspaceRevision
-      };
-
-      stateStore.save(nextState);
-      return nextState;
+      return submitMove(oldPath, newPath, { applyLocal: true });
     },
     async deleteFile(path, deleteOptions) {
       const bound = (await client.bind()) ?? stateStore.load(options.workspaceId);

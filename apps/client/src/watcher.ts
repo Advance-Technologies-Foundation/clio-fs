@@ -1,13 +1,23 @@
 import { createHash } from "node:crypto";
-import { dirname, join, relative } from "node:path";
+import { join, relative } from "node:path";
 import type { ClientFileSystemAdapter } from "./filesystem.js";
 
-export interface MirrorWatcherEvent {
-  type: "file_changed" | "file_deleted";
-  path: string;
-  content?: string;
-  contentHash?: string;
-}
+export type MirrorWatcherEvent =
+  | {
+      type: "file_changed";
+      path: string;
+      content: string;
+      contentHash: string;
+    }
+  | {
+      type: "file_deleted";
+      path: string;
+    }
+  | {
+      type: "path_moved";
+      path: string;
+      oldPath: string;
+    };
 
 export interface MirrorWatcher {
   start: (listener: (event: MirrorWatcherEvent) => void) => void;
@@ -79,27 +89,92 @@ export class PollingMirrorWatcher implements MirrorWatcher {
 
     this.#interval = setInterval(() => {
       const nextFiles = scanFiles(this.#filesystem, this.#rootPath);
+      const createdFiles = new Map<string, { content: string; contentHash: string }>();
+      const changedFiles = new Map<string, { content: string; contentHash: string }>();
+      const deletedFiles = new Map<string, { content: string; contentHash: string }>();
 
       for (const [path, next] of nextFiles.entries()) {
         const previous = this.#knownFiles.get(path);
 
-        if (!previous || previous.contentHash !== next.contentHash) {
+        if (!previous) {
+          createdFiles.set(path, next);
+          continue;
+        }
+
+        if (previous.contentHash !== next.contentHash) {
+          changedFiles.set(path, next);
+        }
+      }
+
+      for (const [path, previous] of this.#knownFiles.entries()) {
+        if (!nextFiles.has(path)) {
+          deletedFiles.set(path, previous);
+        }
+      }
+
+      const createdByHash = new Map<string, string[]>();
+      const deletedByHash = new Map<string, string[]>();
+
+      for (const [path, created] of createdFiles.entries()) {
+        const paths = createdByHash.get(created.contentHash) ?? [];
+        paths.push(path);
+        createdByHash.set(created.contentHash, paths.sort((left, right) => left.localeCompare(right)));
+      }
+
+      for (const [path, deleted] of deletedFiles.entries()) {
+        const paths = deletedByHash.get(deleted.contentHash) ?? [];
+        paths.push(path);
+        deletedByHash.set(deleted.contentHash, paths.sort((left, right) => left.localeCompare(right)));
+      }
+
+      for (const [contentHash, oldPaths] of deletedByHash.entries()) {
+        const newPaths = createdByHash.get(contentHash);
+
+        if (!newPaths) {
+          continue;
+        }
+
+        while (oldPaths.length > 0 && newPaths.length > 0) {
+          const oldPath = oldPaths.shift();
+          const newPath = newPaths.shift();
+
+          if (typeof oldPath !== "string" || typeof newPath !== "string") {
+            continue;
+          }
+
+          deletedFiles.delete(oldPath);
+          createdFiles.delete(newPath);
           this.#listener?.({
-            type: "file_changed",
-            path,
-            content: next.content,
-            contentHash: next.contentHash
+            type: "path_moved",
+            oldPath,
+            path: newPath
           });
         }
       }
 
-      for (const path of this.#knownFiles.keys()) {
-        if (!nextFiles.has(path)) {
-          this.#listener?.({
-            type: "file_deleted",
-            path
-          });
-        }
+      for (const [path, next] of createdFiles.entries()) {
+        this.#listener?.({
+          type: "file_changed",
+          path,
+          content: next.content,
+          contentHash: next.contentHash
+        });
+      }
+
+      for (const [path, next] of changedFiles.entries()) {
+        this.#listener?.({
+          type: "file_changed",
+          path,
+          content: next.content,
+          contentHash: next.contentHash
+        });
+      }
+
+      for (const path of deletedFiles.keys()) {
+        this.#listener?.({
+          type: "file_deleted",
+          path
+        });
       }
 
       this.#knownFiles = nextFiles;
