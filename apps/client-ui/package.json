@@ -15,6 +15,7 @@
     "@clio-fs/client": "workspace:*",
     "@clio-fs/config": "workspace:*",
     "@clio-fs/contracts": "workspace:*",
+    "@clio-fs/sync-core": "workspace:*",
     "@clio-fs/ui-kit": "workspace:*"
   }
 }

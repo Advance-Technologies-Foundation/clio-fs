@@ -16,6 +16,7 @@ const startTestServer = async (
     filesystem?: Parameters<typeof createWorkspaceServer>[0]["filesystem"];
     authTokens?: string[];
     tokenStore?: Parameters<typeof createWorkspaceServer>[0]["tokenStore"];
+    fetchImpl?: Parameters<typeof createWorkspaceServer>[0]["fetchImpl"];
   } = {}
 ) => {
   const registry = createInMemoryWorkspaceRegistry();
@@ -31,7 +32,9 @@ const startTestServer = async (
     serverPlatform: "linux",
     filesystem: options.filesystem,
     authTokens: options.authTokens,
-    tokenStore: options.tokenStore
+    tokenStore: options.tokenStore,
+    fetchImpl: options.fetchImpl,
+    updateManifestUrl: "https://releases.example.test/manifest.json"
   });
 
   await new Promise<void>((resolve) => {
@@ -84,6 +87,69 @@ test("GET /api/version exposes runtime version metadata", async () => {
     assert.equal(body.service, "clio-fs-server");
     assert.equal(body.version, "0.1.0");
     assert.equal(body.channel, "stable");
+  } finally {
+    await server.close();
+  }
+});
+
+test("GET /api/update/check exposes update metadata for the current platform bundle", async () => {
+  const server = await startTestServer({
+    fetchImpl: (async (input: RequestInfo | URL) => {
+      assert.equal(String(input), "https://releases.example.test/manifest.json");
+      return new Response(
+        JSON.stringify({
+          channel: "stable",
+          version: "0.2.0",
+          publishedAt: "2026-03-27T12:00:00Z",
+          notesUrl: "https://example.test/releases/v0.2.0",
+          assets: {
+            "bundle-linux": {
+              fileName: "clio-fs-v0.2.0-linux.tar.gz",
+              platform: "linux",
+              format: "tar.gz",
+              url: "https://example.test/clio-fs-v0.2.0-linux.tar.gz",
+              sha256: "abc"
+            }
+          },
+          compatibility: {
+            minServerVersion: "0.2.0",
+            minClientVersion: "0.2.0"
+          }
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        }
+      );
+    }) as typeof fetch
+  });
+
+  try {
+    const response = await fetch(`${server.apiBaseUrl}/update/check`);
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.service, "clio-fs-server");
+    assert.equal(body.currentVersion, "0.1.0");
+    assert.equal(body.latestVersion, "0.2.0");
+    assert.equal(body.updateAvailable, true);
+    assert.equal(body.asset?.platform, "linux");
+  } finally {
+    await server.close();
+  }
+});
+
+test("GET /api/update/check returns explicit failure when the manifest fetch fails", async () => {
+  const server = await startTestServer({
+    fetchImpl: (async () => new Response("not found", { status: 404 })) as typeof fetch
+  });
+
+  try {
+    const response = await fetch(`${server.apiBaseUrl}/update/check`);
+    const body = await response.json();
+
+    assert.equal(response.status, 502);
+    assert.equal(body.error.code, "update_check_failed");
   } finally {
     await server.close();
   }

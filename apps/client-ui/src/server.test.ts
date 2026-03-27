@@ -217,6 +217,92 @@ test("returns runtime version metadata", async () => {
   }
 });
 
+test("returns update-check metadata for the current runtime", async () => {
+  const server = await startTestUi({
+    fetchImpl: (async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+
+      if (url.href === "https://github.com/Advance-Technologies-Foundation/clio-fs/releases/latest/download/manifest.json") {
+        return new Response(
+          JSON.stringify({
+            channel: "stable",
+            version: "0.2.0",
+            publishedAt: "2026-03-27T12:00:00Z",
+            notesUrl: "https://example.test/releases/v0.2.0",
+            assets: {
+              "bundle-macos": {
+                fileName: "clio-fs-v0.2.0-macos.tar.gz",
+                platform: "macos",
+                format: "tar.gz",
+                url: "https://example.test/clio-fs-v0.2.0-macos.tar.gz",
+                sha256: "abc"
+              },
+              "bundle-linux": {
+                fileName: "clio-fs-v0.2.0-linux.tar.gz",
+                platform: "linux",
+                format: "tar.gz",
+                url: "https://example.test/clio-fs-v0.2.0-linux.tar.gz",
+                sha256: "def"
+              },
+              "bundle-windows": {
+                fileName: "clio-fs-v0.2.0-windows.zip",
+                platform: "windows",
+                format: "zip",
+                url: "https://example.test/clio-fs-v0.2.0-windows.zip",
+                sha256: "ghi"
+              }
+            },
+            compatibility: {
+              minServerVersion: "0.2.0",
+              minClientVersion: "0.2.0"
+            }
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        );
+      }
+
+      return createFetchStub()(input);
+    }) as typeof fetch
+  });
+
+  try {
+    const response = await fetch(`${server.baseUrl}/update/check`);
+    assert.equal(response.status, 200);
+    const payload = (await response.json()) as {
+      service: string;
+      currentVersion: string;
+      latestVersion: string;
+      updateAvailable: boolean;
+      asset?: { platform: string };
+    };
+    assert.equal(payload.service, "clio-fs-client-ui");
+    assert.equal(payload.currentVersion, "0.1.0");
+    assert.equal(payload.latestVersion, "0.2.0");
+    assert.equal(payload.updateAvailable, true);
+    assert.equal(typeof payload.asset?.platform, "string");
+  } finally {
+    await server.close();
+  }
+});
+
+test("returns explicit update-check failures", async () => {
+  const server = await startTestUi({
+    fetchImpl: (async () => new Response("bad gateway", { status: 502 })) as typeof fetch
+  });
+
+  try {
+    const response = await fetch(`${server.baseUrl}/update/check`);
+    const payload = await response.json();
+    assert.equal(response.status, 502);
+    assert.equal(payload.error.code, "update_check_failed");
+  } finally {
+    await server.close();
+  }
+});
+
 test("renders metrics and registry when sync targets exist", async () => {
   const targetStore = new InMemoryClientSyncTargetStore();
   targetStore.save(seedTarget({ enabled: false }));

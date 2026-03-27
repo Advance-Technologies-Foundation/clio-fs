@@ -216,6 +216,49 @@ Response `200`:
 }
 ```
 
+### GET /update/check
+
+Client UI manual update-check endpoint.
+
+Response `200`:
+
+```json
+{
+  "service": "clio-fs-client-ui",
+  "currentVersion": "1.2.3",
+  "latestVersion": "1.3.0",
+  "channel": "stable",
+  "updateAvailable": true,
+  "manifestUrl": "https://github.com/<org>/<repo>/releases/latest/download/manifest.json",
+  "notesUrl": "https://github.com/<org>/<repo>/releases/tag/v1.3.0",
+  "publishedAt": "2026-03-27T12:00:00Z",
+  "asset": {
+    "fileName": "clio-fs-v1.3.0-linux.tar.gz",
+    "platform": "linux",
+    "format": "tar.gz",
+    "url": "https://github.com/<org>/<repo>/releases/download/v1.3.0/clio-fs-v1.3.0-linux.tar.gz",
+    "sha256": "..."
+  }
+}
+```
+
+Failure response `502`:
+
+```json
+{
+  "error": {
+    "code": "update_check_failed",
+    "message": "Update manifest request failed with HTTP 404"
+  }
+}
+```
+
+### GET /api/update/check
+
+Server control-plane manual update-check endpoint.
+
+Response shape matches `GET /update/check`, with `service` set to `clio-fs-server`.
+
 ### GET /settings/watch
 
 Returns server-level watcher settings shared by all workspaces on the control plane.

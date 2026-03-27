@@ -9,3 +9,4 @@ CLIO_FS_SERVER_AUTH_TOKENS=change-me,operator-token-2
 CLIO_FS_SERVER_WORKSPACE_REGISTRY_FILE=.clio-fs/server/workspaces.json
 CLIO_FS_SERVER_WATCH_SETTINGS_FILE=.clio-fs/server/watch-settings.json
 CLIO_FS_SERVER_CHANGE_JOURNAL_FILE=.clio-fs/server/change-journal.json
+CLIO_FS_SERVER_UPDATE_MANIFEST_URL=https://github.com/Advance-Technologies-Foundation/clio-fs/releases/latest/download/manifest.json

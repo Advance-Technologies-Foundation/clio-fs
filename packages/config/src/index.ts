@@ -140,6 +140,7 @@ export interface AppConfig {
     watchSettingsFilePath: string;
     changeJournalFilePath: string;
     authTokensFilePath: string;
+    updateManifestUrl: string;
   };
   serverUi: {
     host: string;
@@ -155,6 +156,7 @@ export interface AppConfig {
     pollIntervalMs: number;
     localWatchScanIntervalMs: number;
     reconcileIntervalMs: number;
+    updateManifestUrl: string;
   };
   clientUi: {
     host: string;
@@ -205,6 +207,11 @@ export const readAppConfig = (
         runtimeEnv,
         "CLIO_FS_SERVER_AUTH_TOKENS_FILE",
         ".clio-fs/server/auth-tokens.json"
+      ),
+      updateManifestUrl: readString(
+        runtimeEnv,
+        "CLIO_FS_SERVER_UPDATE_MANIFEST_URL",
+        "https://github.com/Advance-Technologies-Foundation/clio-fs/releases/latest/download/manifest.json"
       )
     },
     serverUi: {
@@ -248,6 +255,11 @@ export const readAppConfig = (
         runtimeEnv,
         "CLIO_FS_CLIENT_RECONCILE_INTERVAL_MS",
         6 * 60 * 60 * 1000
+      ),
+      updateManifestUrl: readString(
+        runtimeEnv,
+        "CLIO_FS_CLIENT_UPDATE_MANIFEST_URL",
+        "https://github.com/Advance-Technologies-Foundation/clio-fs/releases/latest/download/manifest.json"
       )
     },
     clientUi: {

@@ -84,6 +84,7 @@ const main = async () => {
   await startClientUi({
     host: appConfig.clientUi.host,
     port: appConfig.clientUi.port,
+    updateManifestUrl: appConfig.client.updateManifestUrl,
     createMirrorClientImpl: clientModule.createMirrorClient,
     logger
   });

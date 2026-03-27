@@ -9,6 +9,7 @@ CLIO_FS_CLIENT_SYNC_CONFIG_FILE=.clio-fs/client/config.json
 CLIO_FS_CLIENT_STATE_FILE=.clio-fs/client/state.json
 CLIO_FS_CLIENT_POLL_INTERVAL_MS=1000
 CLIO_FS_CLIENT_LOCAL_WATCH_SCAN_INTERVAL_MS=250
+CLIO_FS_CLIENT_UPDATE_MANIFEST_URL=https://github.com/Advance-Technologies-Foundation/clio-fs/releases/latest/download/manifest.json
 
 CLIO_FS_CLIENT_UI_HOST=127.0.0.1
 CLIO_FS_CLIENT_UI_PORT=4030

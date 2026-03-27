@@ -335,6 +335,8 @@ Runtime metadata endpoints:
 
 - server: `GET /api/version`
 - client UI: `GET /version`
+- server update check: `GET /api/update/check`
+- client update check: `GET /update/check`
 
 ## Current Implementation Status
 

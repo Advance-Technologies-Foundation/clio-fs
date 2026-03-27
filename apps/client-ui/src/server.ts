@@ -6,7 +6,13 @@ import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { URL } from "node:url";
 import { appConfig } from "@clio-fs/config";
-import type { ApiErrorShape, RuntimeVersionResponse, WorkspaceDescriptor, WorkspaceListResponse } from "@clio-fs/contracts";
+import type {
+  ApiErrorShape,
+  RuntimeVersionResponse,
+  WorkspaceDescriptor,
+  WorkspaceListResponse
+} from "@clio-fs/contracts";
+import { checkForRuntimeUpdate } from "@clio-fs/sync-core";
 import { escapeHtml, renderNotice, renderPage } from "@clio-fs/ui-kit";
 import { noopLogger, type Logger } from "./logger.js";
 
@@ -14,6 +20,7 @@ export interface ClientUiOptions {
   host: string;
   port: number;
   fetchImpl?: typeof fetch;
+  updateManifestUrl?: string;
   selectDirectory?: () => Promise<string | null>;
   targetStore?: ClientSyncTargetStore;
   createMirrorClientImpl: (options: MirrorClientOptions) => MirrorClient;
@@ -2143,6 +2150,30 @@ export const createClientUi = (options: ClientUiOptions) => {
       if (method === "GET" && url.pathname === "/version") {
         writeJson(response, 200, CLIENT_UI_RUNTIME_VERSION);
         return;
+      }
+
+      if (method === "GET" && url.pathname === "/update/check") {
+        try {
+          const payload = await checkForRuntimeUpdate({
+            service: CLIENT_UI_RUNTIME_VERSION.service,
+            currentVersion: CLIENT_UI_RUNTIME_VERSION.version,
+            manifestUrl:
+              options.updateManifestUrl ??
+              appConfig.client.updateManifestUrl,
+            platform: process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux",
+            fetchImpl: options.fetchImpl
+          });
+          writeJson(response, 200, payload);
+          return;
+        } catch (error) {
+          writeJson(response, 502, {
+            error: {
+              code: "update_check_failed",
+              message: error instanceof Error ? error.message : "Unable to check for updates"
+            }
+          });
+          return;
+        }
       }
 
       if (method === "GET" && url.pathname === "/dashboard-fragment") {

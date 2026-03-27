@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { URL } from "node:url";
 import { healthSummary } from "@clio-fs/sync-core";
+import { checkForRuntimeUpdate } from "@clio-fs/sync-core";
 import { createServerUiRequestHandler } from "../../server-ui/dist/server.js";
 import {
   type ApiErrorShape,
@@ -81,6 +82,8 @@ export interface WorkspaceServerOptions {
   workspaceWatcher?: WorkspaceChangeWatcher;
   logger?: Logger;
   tokenStore?: AuthTokenStore;
+  fetchImpl?: typeof fetch;
+  updateManifestUrl?: string;
   /** Internal: populated by createWorkspaceServer, do not set manually */
   clientActivity?: Map<string, WorkspaceClientActivity>;
 }
@@ -484,6 +487,30 @@ const routeRequest = async (
   if (method === "GET" && pathname === "/version") {
     json(response, 200, SERVER_RUNTIME_VERSION);
     return;
+  }
+
+  if (method === "GET" && pathname === "/update/check") {
+    try {
+      const body = await checkForRuntimeUpdate({
+        service: SERVER_RUNTIME_VERSION.service,
+        currentVersion: SERVER_RUNTIME_VERSION.version,
+        manifestUrl:
+          options.updateManifestUrl ??
+          "https://github.com/Advance-Technologies-Foundation/clio-fs/releases/latest/download/manifest.json",
+        platform: options.serverPlatform ?? detectServerPlatform(),
+        fetchImpl: options.fetchImpl
+      });
+      json(response, 200, body);
+      return;
+    } catch (error) {
+      writeError(
+        response,
+        502,
+        "update_check_failed",
+        error instanceof Error ? error.message : "Unable to check for updates"
+      );
+      return;
+    }
   }
 
   if (method === "GET" && pathname === "/logs") {

@@ -15,6 +15,8 @@ test("readAppConfig returns the documented defaults", () => {
   assert.deepEqual(config.server.authTokens, ["dev-token"]);
   assert.equal(config.client.controlPlaneBaseUrl, "http://127.0.0.1:4020");
   assert.equal(config.client.pollIntervalMs, 1000);
+  assert.match(config.server.updateManifestUrl, /manifest\.json$/);
+  assert.match(config.client.updateManifestUrl, /manifest\.json$/);
 });
 
 test("readAppConfig honors runtime environment overrides", () => {
@@ -23,9 +25,11 @@ test("readAppConfig honors runtime environment overrides", () => {
     CLIO_FS_SERVER_PORT: "5020",
     CLIO_FS_SERVER_AUTH_TOKEN: "prod-token",
     CLIO_FS_SERVER_WORKSPACE_REGISTRY_FILE: "/data/workspaces.json",
+    CLIO_FS_SERVER_UPDATE_MANIFEST_URL: "https://releases.example.test/server-manifest.json",
     CLIO_FS_CLIENT_DEFAULT_WORKSPACE_ROOT: "/mirrors",
     CLIO_FS_CLIENT_STATE_FILE: "/state/client.json",
-    CLIO_FS_CLIENT_POLL_INTERVAL_MS: "2500"
+    CLIO_FS_CLIENT_POLL_INTERVAL_MS: "2500",
+    CLIO_FS_CLIENT_UPDATE_MANIFEST_URL: "https://releases.example.test/client-manifest.json"
   });
 
   assert.equal(config.server.host, "0.0.0.0");
@@ -33,12 +37,20 @@ test("readAppConfig honors runtime environment overrides", () => {
   assert.equal(config.server.authToken, "prod-token");
   assert.deepEqual(config.server.authTokens, ["prod-token"]);
   assert.equal(config.server.workspaceRegistryFilePath, "/data/workspaces.json");
+  assert.equal(
+    config.server.updateManifestUrl,
+    "https://releases.example.test/server-manifest.json"
+  );
   assert.equal(config.serverUi.controlPlaneAuthToken, "prod-token");
   assert.equal(config.client.controlPlaneBaseUrl, "http://127.0.0.1:5020");
   assert.equal(config.client.controlPlaneAuthToken, "prod-token");
   assert.equal(config.client.defaultWorkspaceRoot, "/mirrors");
   assert.equal(config.client.stateFilePath, "/state/client.json");
   assert.equal(config.client.pollIntervalMs, 2500);
+  assert.equal(
+    config.client.updateManifestUrl,
+    "https://releases.example.test/client-manifest.json"
+  );
 });
 
 test("readAppConfig loads conventional conf files from the working directory", () => {

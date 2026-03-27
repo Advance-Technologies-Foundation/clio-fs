@@ -48,7 +48,8 @@ export const startDefaultWorkspaceServer = () => {
     workspaceWatcher,
     logger,
     tokenStore,
-    serverPlatform: detectServerPlatform()
+    serverPlatform: detectServerPlatform(),
+    updateManifestUrl: appConfig.server.updateManifestUrl
   });
 };
 

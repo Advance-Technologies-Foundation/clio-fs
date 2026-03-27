@@ -57,6 +57,38 @@ export interface RuntimeVersionResponse {
   channel: "stable" | "beta";
 }
 
+export interface ReleaseBundleAsset {
+  fileName: string;
+  platform: WorkspacePlatform;
+  format: "tar.gz" | "zip";
+  url: string;
+  sha256: string;
+}
+
+export interface ReleaseManifest {
+  channel: "stable" | "beta";
+  version: string;
+  publishedAt: string;
+  notesUrl: string;
+  assets: Record<string, ReleaseBundleAsset>;
+  compatibility: {
+    minServerVersion: string;
+    minClientVersion: string;
+  };
+}
+
+export interface UpdateCheckResponse {
+  service: string;
+  currentVersion: string;
+  latestVersion: string;
+  channel: "stable" | "beta";
+  updateAvailable: boolean;
+  manifestUrl: string;
+  notesUrl: string;
+  publishedAt: string;
+  asset?: ReleaseBundleAsset;
+}
+
 export interface ServerWatchSettings {
   settleDelayMs: number;
   /** Allow unauthenticated access from localhost (127.0.0.1 / ::1). */
