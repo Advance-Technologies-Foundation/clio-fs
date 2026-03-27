@@ -500,7 +500,10 @@ test("renders workspace detail page", async () => {
     const html = await response.text();
 
     assert.equal(response.status, 200);
-    assert.match(html, /Workspace Detail/);
+    assert.doesNotMatch(html, /Workspace Detail/);
+    assert.doesNotMatch(html, /Back to dashboard/);
+    assert.doesNotMatch(html, /Operator view for workspace/);
+    assert.doesNotMatch(html, /<h1>.*Demo Main.*<\/h1>/);
     assert.match(html, /\/srv\/clio\/demo-main/);
     assert.match(html, /Allow Git/i);
   } finally {

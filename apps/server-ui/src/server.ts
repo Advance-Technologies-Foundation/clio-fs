@@ -528,16 +528,6 @@ const renderWorkspaceDetail = (
     `${formatWorkspaceLabel(workspace)} | Clio FS Server`,
     `
       ${renderServerSettingsModal(watchSettings)}
-      <div class="nav"><a href="/">← Back to dashboard</a></div>
-      <section class="hero">
-        <div class="eyebrow">Workspace Detail</div>
-        <h1>${escapeHtml(formatWorkspaceLabel(workspace))}</h1>
-        <p class="lede">Operator view for workspace <code>${escapeHtml(
-          workspace.workspaceId
-        )}</code>${workspace.displayName?.trim() ? ` with explicit display name <code>${escapeHtml(
-          workspace.displayName
-        )}</code>` : ""}.</p>
-      </section>
       ${isStale ? renderNotice("error", `Workspace has had no activity for over ${Math.round((lastEventAge ?? 0) / 60_000)} minutes. Last event: ${lastEventLabel}`) : ""}
       <section class="grid">
         ${renderMetricCard("Revision", String(workspace.currentRevision), "info")}
