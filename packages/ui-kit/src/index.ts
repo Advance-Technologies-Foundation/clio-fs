@@ -430,6 +430,22 @@ export const renderPage = (
       .metric-tone-4 {
         background: linear-gradient(135deg, var(--color-brand-gold) 0%, #F28A22 100%);
       }
+      /* Semantic tones */
+      .metric-ok {
+        background: linear-gradient(135deg, #1a9e6e 0%, #157a55 100%);
+      }
+      .metric-error {
+        background: linear-gradient(135deg, #c53030 0%, #9b2c2c 100%);
+      }
+      .metric-warning {
+        background: linear-gradient(135deg, #b7791f 0%, #975a16 100%);
+      }
+      .metric-info {
+        background: linear-gradient(135deg, var(--color-brand-cyan) 0%, var(--color-primary) 100%);
+      }
+      .metric-neutral {
+        background: linear-gradient(135deg, #4a5568 0%, #2d3748 100%);
+      }
       /* --- Breadcrumb nav --- */
       .nav {
         margin-bottom: 1.5rem;
@@ -1173,8 +1189,10 @@ export const renderPage = (
   </body>
 </html>`;
 
-export const renderMetricCard = (label: string, value: string) => `
-  <section class="panel ${metricToneClass(label)}" style="margin-bottom:0;">
+export type MetricTone = "ok" | "error" | "warning" | "info" | "neutral";
+
+export const renderMetricCard = (label: string, value: string, tone?: MetricTone) => `
+  <section class="panel ${tone ? `metric-card metric-${tone}` : metricToneClass(label)}" style="margin-bottom:0;">
     <div class="metric">${escapeHtml(label)}</div>
     <div class="metric-value">${escapeHtml(value)}</div>
   </section>

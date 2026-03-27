@@ -21,6 +21,7 @@ import {
   formatWorkspaceLabel,
   renderControlPlaneHeroVisual,
   renderMetricCard,
+  type MetricTone,
   renderNotice,
   renderEmptyWorkspaceState,
   renderPage,
@@ -455,10 +456,10 @@ const renderDashboardBody = (
         <div class="dashboard-hero-content">
           <div class="eyebrow">Info</div>
           <div class="dashboard-hero-grid">
-            ${renderMetricCard("Service", health.service)}
-            ${renderMetricCard("Health", health.status)}
-            ${renderMetricCard("Platform", health.platform)}
-            ${renderMetricCard("Workspaces", String(workspaces.length))}
+            ${renderMetricCard("Service", health.service, "info")}
+            ${renderMetricCard("Health", health.status, health.status === "ok" ? "ok" : "error")}
+            ${renderMetricCard("Platform", health.platform, "neutral")}
+            ${renderMetricCard("Workspaces", String(workspaces.length), workspaces.length > 0 ? "ok" : "info")}
           </div>
         </div>
       </section>
@@ -505,10 +506,10 @@ const renderWorkspaceDetail = (
       </section>
       ${isStale ? renderNotice("error", `Workspace has had no activity for over ${Math.round((lastEventAge ?? 0) / 60_000)} minutes. Last event: ${lastEventLabel}`) : ""}
       <section class="grid">
-        ${renderMetricCard("Revision", String(workspace.currentRevision))}
-        ${renderMetricCard("Status", workspace.status)}
-        ${renderMetricCard("Journal Events", String(diagnostics?.journalEventCount ?? "—"))}
-        ${renderMetricCard("Last Event", lastEventLabel)}
+        ${renderMetricCard("Revision", String(workspace.currentRevision), "info")}
+        ${renderMetricCard("Status", workspace.status, workspace.status === "active" ? "ok" : "warning")}
+        ${renderMetricCard("Journal Events", String(diagnostics?.journalEventCount ?? "—"), diagnostics?.journalEventCount ? "info" : "neutral")}
+        ${renderMetricCard("Last Event", lastEventLabel, isStale ? "error" : lastEvent ? "ok" : "neutral")}
       </section>
       <section class="panel stack">
         <dl class="meta-list">
