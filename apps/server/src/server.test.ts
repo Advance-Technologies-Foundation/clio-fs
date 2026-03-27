@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  createInMemoryAuthTokenStore,
   createInMemoryChangeJournal,
   createInMemoryServerWatchSettingsStore,
   createInMemoryWorkspaceRegistry
@@ -13,6 +14,8 @@ const AUTH_TOKEN = "test-token";
 const startTestServer = async (
   options: {
     filesystem?: Parameters<typeof createWorkspaceServer>[0]["filesystem"];
+    authTokens?: string[];
+    tokenStore?: Parameters<typeof createWorkspaceServer>[0]["tokenStore"];
   } = {}
 ) => {
   const registry = createInMemoryWorkspaceRegistry();
@@ -26,7 +29,9 @@ const startTestServer = async (
     watchSettingsStore,
     journal,
     serverPlatform: "linux",
-    filesystem: options.filesystem
+    filesystem: options.filesystem,
+    authTokens: options.authTokens,
+    tokenStore: options.tokenStore
   });
 
   await new Promise<void>((resolve) => {
@@ -171,6 +176,33 @@ test("reads and updates server watch settings", async () => {
 
     assert.equal(reloadedResponse.status, 200);
     assert.equal(reloadedBody.settleDelayMs, 2200);
+  } finally {
+    await server.close();
+  }
+});
+
+test("lists admin tokens with visible token values for built-in and stored records", async () => {
+  const tokenStore = createInMemoryAuthTokenStore();
+  const created = tokenStore.add("Deploy token", "deploy-secret-token");
+  const server = await startTestServer({
+    authTokens: [AUTH_TOKEN],
+    tokenStore
+  });
+
+  try {
+    const response = await fetch(`${server.apiBaseUrl}/admin/tokens`, {
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`
+      }
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.items[0]?.token, AUTH_TOKEN);
+    assert.equal(body.items[0]?.readonly, true);
+    assert.equal(body.items[1]?.id, created.id);
+    assert.equal(body.items[1]?.token, "deploy-secret-token");
+    assert.equal(body.items[1]?.readonly, undefined);
   } finally {
     await server.close();
   }

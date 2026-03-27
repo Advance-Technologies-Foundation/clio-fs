@@ -736,6 +736,7 @@ button{background:#1f6feb;border:none;color:#fff;padding:8px;border-radius:6px;c
     const configItems: AuthTokenListItem[] = (options.authTokens ?? []).map((t) => ({
       id: `config:${t}`,
       label: "Built-in (config)",
+      token: t,
       maskedToken: maskToken(t),
       createdAt: "",
       readonly: true,
@@ -744,6 +745,7 @@ button{background:#1f6feb;border:none;color:#fff;padding:8px;border-radius:6px;c
     const storeItems: AuthTokenListItem[] = (store?.list() ?? []).map((r) => ({
       id: r.id,
       label: r.label,
+      token: r.token,
       maskedToken: maskToken(r.token),
       createdAt: r.createdAt,
       enabled: r.enabled !== false

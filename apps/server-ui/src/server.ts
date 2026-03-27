@@ -646,13 +646,21 @@ const renderTokensPage = (tokens: AuthTokenListItem[], watchSettings: ServerWatc
   renderPage(
     "Token Management | Clio FS Server",
     `
+      <style>
+        main.shell{
+          max-width:none;
+          min-height:calc(100vh - 56px);
+          padding:calc(56px + 2rem) 2rem 2rem;
+        }
+      </style>
+      <section style="min-height:calc(100vh - 56px - 4rem);display:flex;flex-direction:column;">
       ${renderServerSettingsModal(watchSettings)}
       <section class="hero">
         <div class="eyebrow">Administration</div>
         <h1>Access Tokens</h1>
       </section>
-      ${notice ? `<div style="max-width:900px;margin:0 auto 1.5rem;">${renderNotice(notice.tone, notice.message)}</div>` : ""}
-      <section class="panel stack" style="max-width:900px;margin:0 auto 2rem;">
+      ${notice ? `<div style="margin:0 0 1.5rem;">${renderNotice(notice.tone, notice.message)}</div>` : ""}
+      <section class="panel stack" style="margin:0 0 2rem;">
         <h2 style="font-size:1rem;font-weight:600;padding:1.25rem 1.5rem 0;">Add New Token</h2>
         <form action="/admin/tokens" method="post" class="stack" style="padding:1rem 1.5rem 1.5rem;gap:1rem;">
           <div style="display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap;">
@@ -711,7 +719,8 @@ const renderTokensPage = (tokens: AuthTokenListItem[], watchSettings: ServerWatc
           </div>
         </div>
       </dialog>
-      <section class="panel" style="max-width:900px;margin:0 auto 2rem;padding:0;overflow:hidden;">
+      <section class="panel" style="margin:0;padding:0;overflow:hidden;min-height:calc(100vh - 56px - 4rem - 360px);">
+        <div style="width:100%;overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;">
           <thead>
             <tr style="border-bottom:1px solid var(--color-border);">
@@ -738,7 +747,39 @@ const renderTokensPage = (tokens: AuthTokenListItem[], watchSettings: ServerWatc
                      </form>`
                 }
               </td>
-              <td style="padding:0.75rem 1rem;font-family:monospace;font-size:0.875rem;color:var(--color-muted);">${escapeHtml(t.maskedToken)}</td>
+              <td style="padding:0.75rem 1rem;font-family:monospace;font-size:0.875rem;color:var(--color-muted);">
+                <div style="display:flex;align-items:center;gap:0.5rem;min-width:0;">
+                  <input
+                    type="password"
+                    readonly
+                    value="${escapeHtml(t.token)}"
+                    data-token-value
+                    data-token-id="${escapeHtml(t.id)}"
+                    aria-label="Token value for ${escapeHtml(t.label)}"
+                    style="flex:1;min-width:260px;font-family:'Consolas','Courier New',monospace;font-size:0.875rem;background:transparent;border:none;padding:0;color:var(--color-text-primary);box-shadow:none;"
+                  />
+                  <button
+                    type="button"
+                    class="icon-button"
+                    data-token-visibility-toggle
+                    data-token-id="${escapeHtml(t.id)}"
+                    aria-label="Toggle token visibility for ${escapeHtml(t.label)}"
+                    title="Show token"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="icon-button"
+                    data-token-copy
+                    data-token-id="${escapeHtml(t.id)}"
+                    aria-label="Copy token for ${escapeHtml(t.label)}"
+                    title="Copy token"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  </button>
+                </div>
+              </td>
               <td style="padding:0.75rem 1rem;font-size:0.8rem;color:var(--color-muted);">${t.createdAt ? new Date(t.createdAt).toLocaleDateString() : "—"}</td>
               <td style="padding:0.75rem 1rem;">
                 <span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;background:${isEnabled ? "rgba(22,163,74,0.12)" : "rgba(100,116,139,0.12)"};color:${isEnabled ? "#16a34a" : "#94a3b8"};">${isEnabled ? "Active" : "Inactive"}</span>
@@ -753,17 +794,23 @@ const renderTokensPage = (tokens: AuthTokenListItem[], watchSettings: ServerWatc
                   ${isEnabled ? "Deactivate" : "Activate"}
                 </button>
                 ${!t.readonly ? `
-                <button type="button" class="token-delete-btn"
+                <button
+                  type="button"
+                  class="icon-button danger token-delete-btn"
                   data-id="${escapeHtml(t.id)}"
                   data-label="${escapeHtml(t.label)}"
-                  style="padding:0.25rem 0.75rem;font-size:0.8rem;border-radius:6px;border:1px solid #e53e3e;background:transparent;color:#e53e3e;cursor:pointer;">
-                  Delete
+                  aria-label="Delete ${escapeHtml(t.label)}"
+                  title="Delete token"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>
                 </button>` : ""}
               </td>
             </tr>`;
             }).join("")}
           </tbody>
         </table>
+        </div>
+      </section>
       </section>
       <script>
       // Rename inline edit
@@ -816,6 +863,60 @@ const renderTokensPage = (tokens: AuthTokenListItem[], watchSettings: ServerWatc
       });
       document.getElementById('token-deactivate-close').addEventListener('click', () => deactivateDialog.close());
       document.getElementById('token-deactivate-cancel').addEventListener('click', () => deactivateDialog.close());
+
+      const copyTokenToClipboard = async (value) => {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+          await navigator.clipboard.writeText(value);
+          return;
+        }
+
+        const scratch = document.createElement('textarea');
+        scratch.value = value;
+        scratch.setAttribute('readonly', 'true');
+        scratch.style.position = 'absolute';
+        scratch.style.left = '-9999px';
+        document.body.appendChild(scratch);
+        scratch.select();
+        document.execCommand('copy');
+        document.body.removeChild(scratch);
+      };
+
+      document.querySelectorAll('[data-token-visibility-toggle]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const tokenId = btn.getAttribute('data-token-id');
+          const input = document.querySelector('[data-token-value][data-token-id="' + CSS.escape(tokenId) + '"]');
+
+          if (!(input instanceof HTMLInputElement)) {
+            return;
+          }
+
+          const reveal = input.type === 'password';
+          input.type = reveal ? 'text' : 'password';
+          btn.setAttribute('title', reveal ? 'Hide token' : 'Show token');
+        });
+      });
+
+      document.querySelectorAll('[data-token-copy]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const tokenId = btn.getAttribute('data-token-id');
+          const input = document.querySelector('[data-token-value][data-token-id="' + CSS.escape(tokenId) + '"]');
+
+          if (!(input instanceof HTMLInputElement)) {
+            return;
+          }
+
+          const originalTitle = btn.getAttribute('title') || 'Copy token';
+
+          try {
+            await copyTokenToClipboard(input.value);
+            btn.setAttribute('title', 'Copied');
+          } catch {
+            btn.setAttribute('title', 'Copy failed');
+          } finally {
+            setTimeout(() => btn.setAttribute('title', originalTitle), 1200);
+          }
+        });
+      });
 
       // Delete modal
       const deleteDialog = document.getElementById('token-delete-dialog');

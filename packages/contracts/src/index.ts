@@ -332,6 +332,7 @@ export interface WorkspaceSyncStatusResponse {
 export interface AuthTokenListItem {
   id: string;
   label: string;
+  token: string;
   maskedToken: string;
   createdAt: string;
   readonly?: boolean;

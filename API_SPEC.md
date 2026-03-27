@@ -453,6 +453,38 @@ Possible errors:
 
 - `404` if `workspaceId` does not exist
 
+## Admin Token APIs
+
+### GET /admin/tokens
+
+Returns built-in and stored auth tokens for operator management.
+
+Response `200`:
+
+```json
+{
+  "items": [
+    {
+      "id": "config:dev-token",
+      "label": "Built-in (config)",
+      "token": "dev-token",
+      "maskedToken": "de••••••en",
+      "createdAt": "",
+      "readonly": true,
+      "enabled": true
+    },
+    {
+      "id": "9f6f0f7b",
+      "label": "Deploy token",
+      "token": "deploy-secret-token",
+      "maskedToken": "de••••••••••••••en",
+      "createdAt": "2026-03-27T10:00:00.000Z",
+      "enabled": true
+    }
+  ]
+}
+```
+
 ## Snapshot and Tree APIs
 
 ### GET /workspaces/{workspaceId}/snapshot

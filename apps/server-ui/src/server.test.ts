@@ -35,23 +35,36 @@ const fetchWithRetry = async (
 };
 
 const createFetchStub = (
-  workspaces: Array<{
-    workspaceId: string;
-    displayName?: string;
-    rootPath: string;
-    status: "active" | "disabled";
-    currentRevision: number;
-    policies: {
-      allowGit: boolean;
-      allowBinaryWrites: boolean;
-      maxFileBytes: number;
-    };
-  }> = [
+  options: {
+    workspaces?: Array<{
+      workspaceId: string;
+      displayName?: string;
+      rootPath: string;
+      status: "active" | "disabled";
+      currentRevision: number;
+      policies: {
+        allowGit: boolean;
+        allowBinaryWrites: boolean;
+        maxFileBytes: number;
+      };
+    }>;
+    tokens?: Array<{
+      id: string;
+      label: string;
+      token: string;
+      maskedToken: string;
+      createdAt: string;
+      readonly?: boolean;
+      enabled?: boolean;
+    }>;
+  } = {}
+) => {
+  const workspaces = options.workspaces ?? [
     {
       workspaceId: "demo-main",
       displayName: "Demo Main",
       rootPath: "/srv/clio/demo-main",
-      status: "active",
+      status: "active" as const,
       currentRevision: 0,
       policies: {
         allowGit: true,
@@ -59,10 +72,28 @@ const createFetchStub = (
         maxFileBytes: 10 * 1024 * 1024
       }
     }
-  ]
-) => {
+  ];
   const items = workspaces.map((workspace) => ({ ...workspace }));
   const [workspace] = items;
+  const tokens = (options.tokens ?? [
+    {
+      id: "config:test-token",
+      label: "Built-in (config)",
+      token: TEST_UI_TOKEN,
+      maskedToken: "te••••••en",
+      createdAt: "",
+      readonly: true,
+      enabled: true
+    },
+    {
+      id: "token-1",
+      label: "Deploy token",
+      token: "deploy-secret-token",
+      maskedToken: "de••••••••••••••en",
+      createdAt: "2026-03-27T10:00:00.000Z",
+      enabled: true
+    }
+  ]).map((token) => ({ ...token }));
   let watchSettings = {
     settleDelayMs: 1200
   };
@@ -117,6 +148,13 @@ const createFetchStub = (
       });
     }
 
+    if (pathname === "/admin/tokens" && (init?.method ?? "GET") === "GET") {
+      return new Response(JSON.stringify({ items: tokens }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
     if (pathname === "/workspaces/register" && (init?.method ?? "GET") === "POST") {
       return new Response(
         JSON.stringify({
@@ -139,6 +177,19 @@ const createFetchStub = (
         matchedWorkspaceForUpdate.rootPath = payload.rootPath;
 
         return new Response(JSON.stringify(matchedWorkspaceForUpdate), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+    }
+
+    if ((init?.method ?? "GET") === "DELETE") {
+      const tokenId = pathname.startsWith("/admin/tokens/") ? decodeURIComponent(pathname.slice("/admin/tokens/".length)) : "";
+      const tokenIndex = tokens.findIndex((item) => item.id === tokenId && !item.readonly);
+
+      if (tokenIndex >= 0) {
+        tokens.splice(tokenIndex, 1);
+        return new Response(JSON.stringify({ ok: true }), {
           status: 200,
           headers: { "content-type": "application/json" }
         });
@@ -170,14 +221,26 @@ const createFetchStub = (
 };
 
 const startTestServer = async (
-  workspaces?: Parameters<typeof createFetchStub>[0]
+  options?: Parameters<typeof createFetchStub>[0] | Array<{
+    workspaceId: string;
+    displayName?: string;
+    rootPath: string;
+    status: "active" | "disabled";
+    currentRevision: number;
+    policies: {
+      allowGit: boolean;
+      allowBinaryWrites: boolean;
+      maxFileBytes: number;
+    };
+  }>
 ) => {
+  const fetchStubOptions = Array.isArray(options) ? { workspaces: options } : options;
   const server = createServerUi({
     host: "127.0.0.1",
     port: 0,
     controlPlaneAuthToken: TEST_UI_TOKEN,
     allowedUiTokens: [TEST_UI_TOKEN, "backup-token"],
-    fetchImpl: createFetchStub(workspaces) as typeof fetch,
+    fetchImpl: createFetchStub(fetchStubOptions) as typeof fetch,
     selectDirectory: async () => "/srv/clio/picked-from-dialog"
   });
 
@@ -470,6 +533,55 @@ test("updates a workspace from the shared modal in JSON mode", async () => {
 
     assert.match(html, /Demo Updated \(demo-main\)/);
     assert.match(html, /data-edit-root-path="\/srv\/clio\/demo-updated"/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("renders token management page with show copy and delete controls", async () => {
+  const server = await startTestServer();
+
+  try {
+    const { cookie } = await server.login();
+    const response = await fetch(`${server.baseUrl}/admin/tokens`, {
+      headers: withCookie(cookie)
+    });
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /Access Tokens/);
+    assert.match(html, /data-token-value/);
+    assert.match(html, /data-token-visibility-toggle/);
+    assert.match(html, /data-token-copy/);
+    assert.match(html, /token-delete-btn/);
+    assert.match(html, /Built-in \(config\)/);
+    assert.match(html, /Delete Token/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("deletes a non built-in token through the confirmation flow", async () => {
+  const server = await startTestServer();
+
+  try {
+    const { cookie } = await server.login();
+    const response = await fetch(`${server.baseUrl}/admin/tokens/token-1/delete`, {
+      method: "POST",
+      headers: withCookie(cookie),
+      redirect: "manual"
+    });
+
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.get("location"), "/admin/tokens");
+
+    const page = await fetch(`${server.baseUrl}/admin/tokens`, {
+      headers: withCookie(cookie)
+    });
+    const html = await page.text();
+
+    assert.doesNotMatch(html, /Deploy token/);
+    assert.match(html, /Built-in \(config\)/);
   } finally {
     await server.close();
   }
