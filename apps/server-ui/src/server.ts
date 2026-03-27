@@ -250,7 +250,7 @@ const renderDashboard = async (
         <div class="metric">Runtime Summary</div>
         <p style="margin:0.5rem 0 0;font-size:0.875rem;color:var(--color-text-secondary);line-height:1.6;">${escapeHtml(health.summary)}</p>
       </section>
-      ${renderWorkspaceRegistrationForm(state?.formValues, health.platform)}
+      ${renderWorkspaceRegistrationForm(state?.formValues)}
       ${renderWorkspaceTable(workspaces)}
     `
   );
@@ -340,8 +340,8 @@ export const createServerUi = (options: ServerUiOptions) => {
         };
 
         try {
-          const result = await client.registerWorkspace(input);
-          redirect(response, `/workspaces/${encodeURIComponent(result.workspaceId)}`);
+          await client.registerWorkspace(input);
+          redirect(response, `/`);
           return;
         } catch (error) {
           const message = error instanceof Error ? error.message : "Failed to register workspace";

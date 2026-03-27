@@ -597,12 +597,15 @@ export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
     .map(
       (workspace) => `
         <tr>
-          <td><a href="/workspaces/${encodeURIComponent(workspace.workspaceId)}">${escapeHtml(
-            formatWorkspaceLabel(workspace)
-          )}</a></td>
+          <td>${escapeHtml(formatWorkspaceLabel(workspace))}</td>
           <td>${renderStatusBadge(workspace.status)}</td>
           <td>${String(workspace.currentRevision)}</td>
           <td>
+            <a
+              href="/workspaces/${encodeURIComponent(workspace.workspaceId)}"
+              class="secondary-button"
+              style="margin-right:0.5rem;"
+            >Details</a>
             <button
               type="button"
               class="danger-button"
@@ -659,8 +662,7 @@ export const renderWorkspaceRegistrationForm = (
     workspaceId?: string;
     displayName?: string;
     rootPath?: string;
-  },
-  serverPlatform: "windows" | "macos" | "linux" = "linux"
+  }
 ) => `
   <section class="panel">
     <div class="metric">Register Workspace</div>
@@ -681,13 +683,6 @@ export const renderWorkspaceRegistrationForm = (
           <button type="button" class="secondary-button" data-root-path-picker data-target-input="rootPath">Choose Folder</button>
         </div>
         <p class="helper-text" data-root-picker-status>Use the button to select a folder with the native file explorer.</p>
-      </div>
-      <div class="form-field">
-        <label for="platformDisplay">Platform</label>
-        <input id="platformDisplay" value="${escapeHtml(
-          serverPlatform
-        )}" readonly aria-readonly="true" />
-        <p class="helper-text">Platform is determined by the server and cannot be changed from the UI.</p>
       </div>
       <div>
         <button type="submit" class="primary-button">Create Workspace</button>

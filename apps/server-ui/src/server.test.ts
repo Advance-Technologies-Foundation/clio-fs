@@ -137,12 +137,14 @@ test("renders dashboard with workspace content", async () => {
     assert.match(html, /Demo Main/);
     assert.match(html, /sync-core ready; workspaces=1/);
     assert.match(html, /Choose Folder/);
-    assert.match(html, /Platform is determined by the server/i);
     assert.match(html, /Demo Main \(demo-main\)/);
+    assert.match(html, />Details</);
     assert.match(html, /Delete/);
     assert.match(html, /Delete Workspace/);
     assert.match(html, /The underlying project folder is not deleted/i);
     assert.doesNotMatch(html, /onsubmit="return confirm/);
+    assert.doesNotMatch(html, /Platform is determined by the server/i);
+    assert.doesNotMatch(html, /<label for="platformDisplay">Platform<\/label>/);
   } finally {
     await server.close();
   }
@@ -180,7 +182,7 @@ test("deletes workspace from the UI and redirects to dashboard", async () => {
   }
 });
 
-test("submits workspace registration form and redirects to detail page", async () => {
+test("submits workspace registration form and redirects to dashboard", async () => {
   const server = await startTestServer();
 
   try {
@@ -198,7 +200,7 @@ test("submits workspace registration form and redirects to detail page", async (
     });
 
     assert.equal(response.status, 303);
-    assert.equal(response.headers.get("location"), "/workspaces/created-from-form");
+    assert.equal(response.headers.get("location"), "/");
   } finally {
     await server.close();
   }
@@ -230,8 +232,7 @@ test("renders a blank slate when there are no workspaces", async () => {
     const html = await response.text();
 
     assert.equal(response.status, 200);
-    assert.match(html, /No Workspaces Yet/);
-    assert.match(html, /Start from a folder\./);
+    assert.match(html, /no workspaces registered yet\./i);
     assert.doesNotMatch(html, /<table>/);
   } finally {
     await server.close();

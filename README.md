@@ -117,7 +117,8 @@ Implemented today:
 - server-rendered dashboard and workspace detail pages backed by control-plane API calls
 - registration form in the UI for creating workspaces without `curl`
 - native `Choose Folder` button for selecting `rootPath` through the operating system file explorer dialog
-- readonly `Platform` field in the UI; it is determined by the server and cannot be changed from the tool
+- workspace creation returns to the dashboard and refreshes the workspace list instead of opening detail immediately
+- dashboard actions include an explicit `Details` button per workspace
 - auto-fill of `workspaceId` from the selected folder when that field is empty
 - delete actions for removing workspaces from the dashboard
 - simplified workspace list UI that shows either `Display Name (workspaceId)` or just `workspaceId`
