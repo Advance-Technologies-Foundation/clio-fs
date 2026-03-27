@@ -102,6 +102,7 @@ export interface UpdateApplyResponse {
   publishedAt: string;
   highlights?: string[];
   stagedAt?: string;
+  installedAt?: string;
 }
 
 export interface ServerWatchSettings {

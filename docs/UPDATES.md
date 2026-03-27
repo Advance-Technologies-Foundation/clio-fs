@@ -30,10 +30,11 @@ The current implementation supports:
 - opening a `What's new` modal with release highlights and release notes link
 - exposing the platform-specific bundle URL and checksum for the current runtime platform
 - downloading and checksum-verifying the release bundle into a staging directory after explicit user confirmation
+- installing the verified release bundle into a versioned install directory
+- switching the `current` runtime pointer to the newly installed release
 
 The current implementation does **not** yet support:
 
-- switching the active release automatically after staging
 - restart orchestration
 - rollback
 - compatibility enforcement between server and client versions
@@ -54,7 +55,9 @@ Server UI and client UI follow the same runtime flow:
 7. The `Update` button opens a `What's new` modal with release highlights and manual confirmation.
 8. After the operator confirms, the runtime calls the local `.../update/apply` endpoint.
 9. The apply endpoint downloads the platform bundle into a staging directory and verifies its checksum.
-10. The operator may press `Check for updates` again at any time.
+10. The runtime installs the verified bundle into a versioned release directory and switches `current` to it.
+11. The running process stays on the old code until the operator restarts it.
+12. The operator may press `Check for updates` again at any time.
 
 Automatic behavior that is allowed:
 
@@ -71,7 +74,8 @@ Automatic behavior that is not allowed:
 Manual apply behavior that is now allowed:
 
 - downloading the release bundle after the operator presses `Start update`
-- staging the release archive for later activation
+- staging and installing the release archive after explicit confirmation
+- switching the install root's `current` pointer without restarting automatically
 - showing release highlights and notes before confirmation
 
 ## Configured Manifest URLs
@@ -107,11 +111,12 @@ That automatic gating is planned later under Phase 4.
 
 ## Operator Guidance
 
-Until version switching and restart orchestration are implemented:
+Until restart orchestration and rollback are implemented:
 
 - use `About` for system and release inspection
-- use the header `Update` button only when you are ready to stage the new bundle
+- use the header `Update` button only when you are ready to install the new bundle into `current`
 - use `Release notes` to review the release before confirmation
 - plan server and client upgrades together
 - prefer updating both sides to the same release tag
 - do not assume mixed-version operation is supported unless explicitly documented for that release
+- restart the runtime after a successful install if you want the new bundle to take effect

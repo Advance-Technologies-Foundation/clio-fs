@@ -2,8 +2,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { URL } from "node:url";
+import { appConfig } from "@clio-fs/config";
 import { healthSummary } from "@clio-fs/sync-core";
-import { checkForRuntimeUpdate, stageRuntimeUpdate } from "@clio-fs/sync-core";
+import { checkForRuntimeUpdate, installStagedRuntimeUpdate, stageRuntimeUpdate } from "@clio-fs/sync-core";
 import { createServerUiRequestHandler } from "../../server-ui/dist/server.js";
 import {
   type ApiErrorShape,
@@ -85,6 +86,7 @@ export interface WorkspaceServerOptions {
   tokenStore?: AuthTokenStore;
   fetchImpl?: typeof fetch;
   updateManifestUrl?: string;
+  installRoot?: string;
   /** Internal: populated by createWorkspaceServer, do not set manually */
   clientActivity?: Map<string, WorkspaceClientActivity>;
 }
@@ -549,8 +551,14 @@ const routeRequest = async (
         currentVersion: update.currentVersion,
         targetVersion: update.latestVersion,
         asset: update.asset,
-        stagingRoot: resolve(process.cwd(), ".clio-fs/server/updates"),
+        stagingRoot: resolve(options.installRoot ?? appConfig.server.installRoot, "updates"),
         fetchImpl: options.fetchImpl
+      });
+      const installed = installStagedRuntimeUpdate({
+        staged,
+        installRoot: options.installRoot ?? appConfig.server.installRoot,
+        packageDirectoryPrefix: "clio-fs-server-",
+        configExampleFiles: ["shared.conf.example", "server.conf.example"]
       });
 
       const body: UpdateApplyResponse = {
@@ -559,11 +567,12 @@ const routeRequest = async (
         targetVersion: update.latestVersion,
         updateApplied: true,
         restartRequired: true,
-        message: `Release ${update.latestVersion} was downloaded and staged. Restart the installed server runtime to switch to the new bundle.`,
+        message: `Release ${update.latestVersion} was installed and marked as current. Restart the installed server runtime to start the new bundle.`,
         notesUrl: update.notesUrl,
         publishedAt: update.publishedAt,
         highlights: update.highlights,
-        stagedAt: staged.downloadedAt
+        stagedAt: staged.downloadedAt,
+        installedAt: installed.appliedAt
       };
       json(response, 200, body);
       return;

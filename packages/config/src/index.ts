@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 const readString = (env: NodeJS.ProcessEnv, name: string, fallback: string) => {
   const value = env[name]?.trim();
@@ -39,6 +39,23 @@ const normalizeLoopbackHost = (host: string) => {
 
 const defaultControlPlaneBaseUrl = (host: string, port: number) =>
   `http://${normalizeLoopbackHost(host)}:${port}`;
+
+const inferInstallRoot = (cwd: string, fallbackRelativePath: string) => {
+  const resolvedCwd = resolve(cwd);
+
+  if (basename(resolvedCwd) === "current") {
+    const candidate = dirname(resolvedCwd);
+    if (existsSync(join(candidate, "releases"))) {
+      return candidate;
+    }
+  }
+
+  if (existsSync(join(resolvedCwd, "releases")) && existsSync(join(resolvedCwd, "current"))) {
+    return resolvedCwd;
+  }
+
+  return resolve(cwd, fallbackRelativePath);
+};
 
 const CONVENTIONAL_CONFIG_FILES = [
   "config/shared.conf",
@@ -136,6 +153,7 @@ export interface AppConfig {
     port: number;
     authToken: string;
     authTokens: string[];
+    installRoot: string;
     workspaceRegistryFilePath: string;
     watchSettingsFilePath: string;
     changeJournalFilePath: string;
@@ -151,6 +169,7 @@ export interface AppConfig {
     controlPlaneBaseUrl: string;
     controlPlaneAuthToken: string;
     defaultWorkspaceRoot: string;
+    installRoot: string;
     syncConfigFilePath: string;
     stateFilePath: string;
     pollIntervalMs: number;
@@ -168,7 +187,8 @@ export const readAppConfig = (
   env: NodeJS.ProcessEnv = process.env,
   options: { cwd?: string } = {}
 ): AppConfig => {
-  const runtimeEnv = resolveRuntimeEnv(env, options.cwd ?? process.cwd());
+  const cwd = options.cwd ?? process.cwd();
+  const runtimeEnv = resolveRuntimeEnv(env, cwd);
   const serverHost = readString(runtimeEnv, "CLIO_FS_SERVER_HOST", "127.0.0.1");
   const serverPort = readInteger(runtimeEnv, "CLIO_FS_SERVER_PORT", 4020);
   const explicitServerAuthToken = readOptionalString(runtimeEnv, "CLIO_FS_SERVER_AUTH_TOKEN");
@@ -188,6 +208,11 @@ export const readAppConfig = (
       port: serverPort,
       authToken: serverAuthToken,
       authTokens: serverAuthTokens,
+      installRoot: readString(
+        runtimeEnv,
+        "CLIO_FS_SERVER_INSTALL_ROOT",
+        inferInstallRoot(cwd, ".clio-fs/server/runtime")
+      ),
       workspaceRegistryFilePath: readString(
         runtimeEnv,
         "CLIO_FS_SERVER_WORKSPACE_REGISTRY_FILE",
@@ -229,6 +254,11 @@ export const readAppConfig = (
         runtimeEnv,
         "CLIO_FS_CLIENT_CONTROL_PLANE_AUTH_TOKEN",
         serverAuthToken
+      ),
+      installRoot: readString(
+        runtimeEnv,
+        "CLIO_FS_CLIENT_INSTALL_ROOT",
+        inferInstallRoot(cwd, ".clio-fs/client/runtime")
       ),
       defaultWorkspaceRoot: readString(
         runtimeEnv,

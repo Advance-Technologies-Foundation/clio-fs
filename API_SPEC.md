@@ -248,7 +248,7 @@ Response `200`:
 
 ### POST /update/apply
 
-Client UI manual staged-update endpoint.
+Client UI manual update-install endpoint.
 
 Behavior:
 
@@ -256,7 +256,9 @@ Behavior:
 - downloads the platform-specific bundle only after an explicit UI action
 - verifies the bundle checksum
 - stores the verified bundle in the client staging directory
-- does not switch the active runtime yet
+- installs the bundle into the versioned client install root
+- switches `current` to the new installed release
+- does not restart the running runtime yet
 
 Response `200`:
 
@@ -267,14 +269,15 @@ Response `200`:
   "targetVersion": "1.3.0",
   "updateApplied": true,
   "restartRequired": true,
-  "message": "Release 1.3.0 was downloaded and staged. Restart the installed client runtime to switch to the new bundle.",
+  "message": "Release 1.3.0 was installed and marked as current. Restart the installed client runtime to start the new bundle.",
   "notesUrl": "https://github.com/<org>/<repo>/releases/tag/v1.3.0",
   "publishedAt": "2026-03-27T12:00:00Z",
   "highlights": [
     "About now carries expanded runtime metadata",
     "Header shows a manual Update button when a release is available"
   ],
-  "stagedAt": "2026-03-27T12:05:00Z"
+  "stagedAt": "2026-03-27T12:05:00Z",
+  "installedAt": "2026-03-27T12:05:01Z"
 }
 ```
 
@@ -297,7 +300,7 @@ Response shape matches `GET /update/check`, with `service` set to `clio-fs-serve
 
 ### POST /api/update/apply
 
-Server control-plane manual staged-update endpoint.
+Server control-plane manual update-install endpoint.
 
 Behavior matches `POST /update/apply`, but the request must be authenticated with a bearer token.
 

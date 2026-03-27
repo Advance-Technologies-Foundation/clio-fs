@@ -35,7 +35,7 @@ Goal: allow the user to apply an update manually from the UI.
 
 - [x] Item 1. Add a shared updater engine for staged download and checksum verification.
 - [x] Item 2. Add `Update` actions and apply endpoints for server and client.
-- [ ] Item 3. Install new bundles into versioned directories and switch the active release safely.
+- [x] Item 3. Install new bundles into versioned directories and switch the active release safely.
 - [ ] Item 4. Restart under operator control and roll back on failed health check.
 - [ ] Item 5. Show update progress, success, failure, and rollback result in the UI.
 

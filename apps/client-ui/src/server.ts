@@ -13,7 +13,7 @@ import type {
   WorkspaceDescriptor,
   WorkspaceListResponse
 } from "@clio-fs/contracts";
-import { checkForRuntimeUpdate, stageRuntimeUpdate } from "@clio-fs/sync-core";
+import { checkForRuntimeUpdate, installStagedRuntimeUpdate, stageRuntimeUpdate } from "@clio-fs/sync-core";
 import { escapeHtml, renderNotice, renderPage, renderRuntimeAboutSection } from "@clio-fs/ui-kit";
 import { noopLogger, type Logger } from "./logger.js";
 
@@ -22,6 +22,7 @@ export interface ClientUiOptions {
   port: number;
   fetchImpl?: typeof fetch;
   updateManifestUrl?: string;
+  installRoot?: string;
   selectDirectory?: () => Promise<string | null>;
   targetStore?: ClientSyncTargetStore;
   createMirrorClientImpl: (options: MirrorClientOptions) => MirrorClient;
@@ -2219,8 +2220,14 @@ export const createClientUi = (options: ClientUiOptions) => {
       currentVersion: update.currentVersion,
       targetVersion: update.latestVersion,
       asset: update.asset,
-      stagingRoot: resolve(dirname(appConfig.client.syncConfigFilePath), "updates"),
+      stagingRoot: resolve(options.installRoot ?? appConfig.client.installRoot, "updates"),
       fetchImpl
+    });
+    const installed = installStagedRuntimeUpdate({
+      staged,
+      installRoot: options.installRoot ?? appConfig.client.installRoot,
+      packageDirectoryPrefix: "clio-fs-client-",
+      configExampleFiles: ["shared.conf.example", "client.conf.example", "client-ui.conf.example"]
     });
 
     return {
@@ -2229,11 +2236,12 @@ export const createClientUi = (options: ClientUiOptions) => {
       targetVersion: update.latestVersion,
       updateApplied: true,
       restartRequired: true,
-      message: `Release ${update.latestVersion} was downloaded and staged. Restart the installed client runtime to switch to the new bundle.`,
+      message: `Release ${update.latestVersion} was installed and marked as current. Restart the installed client runtime to start the new bundle.`,
       notesUrl: update.notesUrl,
       publishedAt: update.publishedAt,
       highlights: update.highlights,
-      stagedAt: staged.downloadedAt
+      stagedAt: staged.downloadedAt,
+      installedAt: installed.appliedAt
     };
   };
 

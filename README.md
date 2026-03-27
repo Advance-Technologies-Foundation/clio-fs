@@ -338,15 +338,15 @@ Runtime metadata endpoints:
 - client UI: `GET /version`
 - server update check: `GET /api/update/check`
 - client update check: `GET /update/check`
-- server staged apply: `POST /api/update/apply`
-- client staged apply: `POST /update/apply`
+- server install apply: `POST /api/update/apply`
+- client install apply: `POST /update/apply`
 
 Current release UX:
 
 - `About` in the header opens a dedicated runtime-information page
 - when an update is detected, a bright amber header `Update` button appears next to the control-plane subtitle
 - `Update` opens a `What's new` modal with release highlights and manual confirmation
-- manual apply downloads and verifies the release archive into a staging directory; active version switching is still a later phase
+- manual apply downloads, verifies, installs, and switches `current` to the new release without restarting automatically
 
 ## Current Implementation Status
 

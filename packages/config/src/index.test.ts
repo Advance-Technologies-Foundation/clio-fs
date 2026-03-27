@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 
 import { readAppConfig } from "@clio-fs/config";
@@ -13,7 +13,9 @@ test("readAppConfig returns the documented defaults", () => {
   assert.equal(config.server.port, 4020);
   assert.equal(config.server.authToken, "dev-token");
   assert.deepEqual(config.server.authTokens, ["dev-token"]);
+  assert.equal(config.server.installRoot, resolve(".clio-fs/server/runtime"));
   assert.equal(config.client.controlPlaneBaseUrl, "http://127.0.0.1:4020");
+  assert.equal(config.client.installRoot, resolve(".clio-fs/client/runtime"));
   assert.equal(config.client.pollIntervalMs, 1000);
   assert.match(config.server.updateManifestUrl, /manifest\.json$/);
   assert.match(config.client.updateManifestUrl, /manifest\.json$/);
@@ -24,9 +26,11 @@ test("readAppConfig honors runtime environment overrides", () => {
     CLIO_FS_SERVER_HOST: "0.0.0.0",
     CLIO_FS_SERVER_PORT: "5020",
     CLIO_FS_SERVER_AUTH_TOKEN: "prod-token",
+    CLIO_FS_SERVER_INSTALL_ROOT: "/srv/clio-fs/server",
     CLIO_FS_SERVER_WORKSPACE_REGISTRY_FILE: "/data/workspaces.json",
     CLIO_FS_SERVER_UPDATE_MANIFEST_URL: "https://releases.example.test/server-manifest.json",
     CLIO_FS_CLIENT_DEFAULT_WORKSPACE_ROOT: "/mirrors",
+    CLIO_FS_CLIENT_INSTALL_ROOT: "/srv/clio-fs/client",
     CLIO_FS_CLIENT_STATE_FILE: "/state/client.json",
     CLIO_FS_CLIENT_POLL_INTERVAL_MS: "2500",
     CLIO_FS_CLIENT_UPDATE_MANIFEST_URL: "https://releases.example.test/client-manifest.json"
@@ -36,6 +40,7 @@ test("readAppConfig honors runtime environment overrides", () => {
   assert.equal(config.server.port, 5020);
   assert.equal(config.server.authToken, "prod-token");
   assert.deepEqual(config.server.authTokens, ["prod-token"]);
+  assert.equal(config.server.installRoot, "/srv/clio-fs/server");
   assert.equal(config.server.workspaceRegistryFilePath, "/data/workspaces.json");
   assert.equal(
     config.server.updateManifestUrl,
@@ -44,6 +49,7 @@ test("readAppConfig honors runtime environment overrides", () => {
   assert.equal(config.serverUi.controlPlaneAuthToken, "prod-token");
   assert.equal(config.client.controlPlaneBaseUrl, "http://127.0.0.1:5020");
   assert.equal(config.client.controlPlaneAuthToken, "prod-token");
+  assert.equal(config.client.installRoot, "/srv/clio-fs/client");
   assert.equal(config.client.defaultWorkspaceRoot, "/mirrors");
   assert.equal(config.client.stateFilePath, "/state/client.json");
   assert.equal(config.client.pollIntervalMs, 2500);
@@ -51,6 +57,17 @@ test("readAppConfig honors runtime environment overrides", () => {
     config.client.updateManifestUrl,
     "https://releases.example.test/client-manifest.json"
   );
+});
+
+test("readAppConfig infers install roots from a current symlink style working directory", () => {
+  const installRoot = mkdtempSync(join(tmpdir(), "clio-fs-install-root-"));
+  const cwd = join(installRoot, "current");
+  mkdirSync(join(installRoot, "releases"), { recursive: true });
+  mkdirSync(cwd, { recursive: true });
+  const config = readAppConfig({}, { cwd });
+
+  assert.equal(config.server.installRoot, installRoot);
+  assert.equal(config.client.installRoot, installRoot);
 });
 
 test("readAppConfig loads conventional conf files from the working directory", () => {

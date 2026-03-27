@@ -1,4 +1,9 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   createInMemoryAuthTokenStore,
@@ -11,12 +16,47 @@ import { createWorkspaceServer } from "./server.js";
 
 const AUTH_TOKEN = "test-token";
 
+const createReleaseArchive = (options: {
+  rootDir: string;
+  packageDirectoryName: string;
+  fileName: string;
+  format: "tar.gz" | "zip";
+  configExamples: string[];
+}) => {
+  const archiveSourceDir = join(options.rootDir, "archive-source");
+  const packageDir = join(archiveSourceDir, options.packageDirectoryName);
+  const configDir = join(packageDir, "config");
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(join(packageDir, "VERSION.txt"), "0.2.0\n", "utf8");
+
+  for (const fileName of options.configExamples) {
+    writeFileSync(join(configDir, fileName), `${fileName}=1\n`, "utf8");
+  }
+
+  const archivePath = join(options.rootDir, options.fileName);
+
+  if (options.format === "tar.gz") {
+    execFileSync("tar", ["-czf", archivePath, "-C", archiveSourceDir, options.packageDirectoryName]);
+  } else if (process.platform === "win32") {
+    execFileSync("powershell.exe", [
+      "-NoProfile",
+      "-Command",
+      `Compress-Archive -LiteralPath '${join(archiveSourceDir, options.packageDirectoryName).replace(/'/g, "''")}' -DestinationPath '${archivePath.replace(/'/g, "''")}' -Force`
+    ]);
+  } else {
+    execFileSync("zip", ["-qr", archivePath, options.packageDirectoryName], { cwd: archiveSourceDir });
+  }
+
+  return archivePath;
+};
+
 const startTestServer = async (
   options: {
     filesystem?: Parameters<typeof createWorkspaceServer>[0]["filesystem"];
     authTokens?: string[];
     tokenStore?: Parameters<typeof createWorkspaceServer>[0]["tokenStore"];
     fetchImpl?: Parameters<typeof createWorkspaceServer>[0]["fetchImpl"];
+    installRoot?: string;
   } = {}
 ) => {
   const registry = createInMemoryWorkspaceRegistry();
@@ -34,7 +74,8 @@ const startTestServer = async (
     authTokens: options.authTokens,
     tokenStore: options.tokenStore,
     fetchImpl: options.fetchImpl,
-    updateManifestUrl: "https://releases.example.test/manifest.json"
+    updateManifestUrl: "https://releases.example.test/manifest.json",
+    installRoot: options.installRoot
   });
 
   await new Promise<void>((resolve) => {
@@ -141,11 +182,21 @@ test("GET /api/update/check exposes update metadata for the current platform bun
   }
 });
 
-test("POST /api/update/apply stages the latest server bundle when authorized", async () => {
-  const assetBytes = Buffer.from("server-release-asset\n", "utf8");
-  const assetSha256 = "0702f51333d8d3856e64ed180ad0df75839161b43bed8f0ec1b12c32519421d2";
+test("POST /api/update/apply installs the latest server bundle into the active runtime root", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "clio-fs-server-update-"));
+  const installRoot = join(tempRoot, "install-root");
+  const archivePath = createReleaseArchive({
+    rootDir: tempRoot,
+    packageDirectoryName: "clio-fs-server-0.2.0",
+    fileName: "clio-fs-v0.2.0-linux.tar.gz",
+    format: "tar.gz",
+    configExamples: ["shared.conf.example", "server.conf.example"]
+  });
+  const assetBytes = readFileSync(archivePath);
+  const assetSha256 = createHash("sha256").update(assetBytes).digest("hex");
   const requests: string[] = [];
   const server = await startTestServer({
+    installRoot,
     fetchImpl: (async (input: RequestInfo | URL) => {
       const url = String(input);
       requests.push(url);
@@ -194,17 +245,23 @@ test("POST /api/update/apply stages the latest server bundle when authorized", a
         authorization: `Bearer ${AUTH_TOKEN}`
       }
     });
-    const body = await response.json();
+      const body = await response.json();
 
     assert.equal(response.status, 200);
     assert.equal(body.updateApplied, true);
     assert.equal(body.restartRequired, true);
     assert.equal(body.targetVersion, "0.2.0");
+    assert.equal(typeof body.installedAt, "string");
     assert.deepEqual(body.highlights, ["Updated About and Update modals"]);
+    assert.match(body.message, /installed and marked as current/i);
     assert.deepEqual(requests, [
       "https://releases.example.test/manifest.json",
       "https://example.test/clio-fs-v0.2.0-linux.tar.gz"
     ]);
+    assert.ok(existsSync(join(installRoot, "releases", "0.2.0")));
+    assert.equal(realpathSync(join(installRoot, "current")), realpathSync(join(installRoot, "releases", "0.2.0")));
+    assert.ok(existsSync(join(installRoot, "config", "shared.conf")));
+    assert.ok(existsSync(join(installRoot, "config", "server.conf")));
   } finally {
     await server.close();
   }

@@ -119,6 +119,10 @@ Installer behavior:
 - the first install copies `.example` templates into the shared config directory if no real config file exists yet
 - later installs preserve the existing config directory and only switch `current` to a new versioned release
 - runtime commands such as `version` and `healthcheck` should be executed from the `current` launcher path
+- manual update apply uses these install roots:
+  - server: `CLIO_FS_SERVER_INSTALL_ROOT`
+  - client: `CLIO_FS_CLIENT_INSTALL_ROOT`
+- if those variables are not set, development runs fall back to `.clio-fs/server/runtime` and `.clio-fs/client/runtime`
 
 Typical installer workflow:
 

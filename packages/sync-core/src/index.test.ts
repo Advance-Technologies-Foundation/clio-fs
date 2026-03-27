@@ -219,3 +219,55 @@ test("installStagedRuntimeUpdate extracts the staged bundle into releases and sw
   assert.ok(existsSync(join(installed.sharedConfigDir, "client.conf")));
   assert.ok(existsSync(join(installed.sharedConfigDir, "client-ui.conf")));
 });
+
+test("installStagedRuntimeUpdate rejects reinstalling the same target version", () => {
+  const rootDir = mkdtempSync(join(tmpdir(), "clio-fs-install-stage-"));
+  const archiveSourceDir = join(rootDir, "archive-source");
+  const packageDir = join(archiveSourceDir, "clio-fs-server-9.9.9");
+  const configDir = join(packageDir, "config");
+  const releaseArchivePath = join(rootDir, "clio-fs-v9.9.9-linux.tar.gz");
+  const installRoot = join(rootDir, "install-root");
+
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(join(packageDir, "VERSION.txt"), "9.9.9\n", "utf8");
+  writeFileSync(join(configDir, "shared.conf.example"), "SHARED=1\n", "utf8");
+  writeFileSync(join(configDir, "server.conf.example"), "SERVER=1\n", "utf8");
+  execFileSync("tar", ["-czf", releaseArchivePath, "-C", archiveSourceDir, "clio-fs-server-9.9.9"]);
+
+  const staged = {
+    service: "clio-fs-server",
+    currentVersion: "0.1.0",
+    targetVersion: "9.9.9",
+    stageDir: rootDir,
+    archivePath: releaseArchivePath,
+    metadataPath: join(rootDir, "stage-metadata.json"),
+    downloadedAt: "2026-03-27T12:00:00Z",
+    archiveSha256: sha256File(releaseArchivePath),
+    asset: {
+      fileName: "clio-fs-v9.9.9-linux.tar.gz",
+      platform: "linux" as const,
+      format: "tar.gz" as const,
+      url: "https://example.test/clio-fs-v9.9.9-linux.tar.gz",
+      sha256: sha256File(releaseArchivePath)
+    },
+    verified: true as const
+  };
+
+  installStagedRuntimeUpdate({
+    staged,
+    installRoot,
+    packageDirectoryPrefix: "clio-fs-server-",
+    configExampleFiles: ["shared.conf.example", "server.conf.example"]
+  });
+
+  assert.throws(
+    () =>
+      installStagedRuntimeUpdate({
+        staged,
+        installRoot,
+        packageDirectoryPrefix: "clio-fs-server-",
+        configExampleFiles: ["shared.conf.example", "server.conf.example"]
+      }),
+    /install target already exists/i
+  );
+});

@@ -1,10 +1,49 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   createClientUi,
   InMemoryClientSyncTargetStore,
   type ClientSyncTarget
 } from "./server.js";
+
+const createReleaseArchive = (options: {
+  rootDir: string;
+  packageDirectoryName: string;
+  fileName: string;
+  format: "tar.gz" | "zip";
+  configExamples: string[];
+}) => {
+  const archiveSourceDir = join(options.rootDir, "archive-source");
+  const packageDir = join(archiveSourceDir, options.packageDirectoryName);
+  const configDir = join(packageDir, "config");
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(join(packageDir, "VERSION.txt"), "0.2.0\n", "utf8");
+
+  for (const fileName of options.configExamples) {
+    writeFileSync(join(configDir, fileName), `${fileName}=1\n`, "utf8");
+  }
+
+  const archivePath = join(options.rootDir, options.fileName);
+
+  if (options.format === "tar.gz") {
+    execFileSync("tar", ["-czf", archivePath, "-C", archiveSourceDir, options.packageDirectoryName]);
+  } else if (process.platform === "win32") {
+    execFileSync("powershell.exe", [
+      "-NoProfile",
+      "-Command",
+      `Compress-Archive -LiteralPath '${join(archiveSourceDir, options.packageDirectoryName).replace(/'/g, "''")}' -DestinationPath '${archivePath.replace(/'/g, "''")}' -Force`
+    ]);
+  } else {
+    execFileSync("zip", ["-qr", archivePath, options.packageDirectoryName], { cwd: archiveSourceDir });
+  }
+
+  return archivePath;
+};
 
 const createMirrorClientStub = () => {
   let startedTarget:
@@ -128,6 +167,7 @@ const startTestUi = async (
     selectDirectory?: () => Promise<string | null>;
     createMirrorClientImpl?: Parameters<typeof createClientUi>[0]["createMirrorClientImpl"];
     targetStore?: InMemoryClientSyncTargetStore;
+    installRoot?: string;
   } = {}
 ) => {
   const mirrorClientStub = createMirrorClientStub();
@@ -139,7 +179,8 @@ const startTestUi = async (
     createMirrorClientImpl:
       options.createMirrorClientImpl ??
       (mirrorClientStub.factory as Parameters<typeof createClientUi>[0]["createMirrorClientImpl"]),
-    targetStore: options.targetStore ?? new InMemoryClientSyncTargetStore()
+    targetStore: options.targetStore ?? new InMemoryClientSyncTargetStore(),
+    installRoot: options.installRoot
   });
 
   await new Promise<void>((resolve) => {
@@ -291,13 +332,23 @@ test("returns update-check metadata for the current runtime", async () => {
   }
 });
 
-test("stages a client update when /update/apply is called", async () => {
-  const assetBytes = Buffer.from("client-release-asset\n", "utf8");
-  const assetSha256 = "de2dd6e2ea3b642efc264dd09e756ae8763d63d207d6cb37cc15b6badae871b8";
+test("installs a client update into the active runtime root when /update/apply is called", async () => {
   const platform = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux";
   const format = platform === "windows" ? "zip" : "tar.gz";
+  const tempRoot = mkdtempSync(join(tmpdir(), "clio-fs-client-update-"));
   const fileName = `clio-fs-v0.2.0-${platform}.${format}`;
+  const archivePath = createReleaseArchive({
+    rootDir: tempRoot,
+    packageDirectoryName: "clio-fs-client-0.2.0",
+    fileName,
+    format,
+    configExamples: ["shared.conf.example", "client.conf.example", "client-ui.conf.example"]
+  });
+  const assetBytes = readFileSync(archivePath);
+  const assetSha256 = createHash("sha256").update(assetBytes).digest("hex");
+  const installRoot = join(tempRoot, "install-root");
   const server = await startTestUi({
+    installRoot,
     fetchImpl: (async (input: RequestInfo | URL) => {
       const url = new URL(String(input));
 
@@ -348,7 +399,14 @@ test("stages a client update when /update/apply is called", async () => {
     assert.equal(payload.updateApplied, true);
     assert.equal(payload.restartRequired, true);
     assert.equal(payload.targetVersion, "0.2.0");
+    assert.equal(typeof payload.installedAt, "string");
     assert.deepEqual(payload.highlights, ["Manual staged client update"]);
+    assert.match(payload.message, /installed and marked as current/i);
+    assert.ok(existsSync(join(installRoot, "releases", "0.2.0")));
+    assert.equal(realpathSync(join(installRoot, "current")), realpathSync(join(installRoot, "releases", "0.2.0")));
+    assert.ok(existsSync(join(installRoot, "config", "shared.conf")));
+    assert.ok(existsSync(join(installRoot, "config", "client.conf")));
+    assert.ok(existsSync(join(installRoot, "config", "client-ui.conf")));
   } finally {
     await server.close();
   }
