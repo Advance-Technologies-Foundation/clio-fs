@@ -38,6 +38,9 @@ importers:
       '@clio-fs/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@clio-fs/server-ui':
+        specifier: workspace:*
+        version: link:../server-ui
       '@clio-fs/sync-core':
         specifier: workspace:*
         version: link:../../packages/sync-core

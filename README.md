@@ -74,6 +74,7 @@ Root-level commands:
 - `corepack pnpm dev`
 - `corepack pnpm run server`
 - `corepack pnpm build`
+- `corepack pnpm run release:publish`
 
 App-level examples:
 
@@ -81,6 +82,58 @@ App-level examples:
 - `corepack pnpm --filter @clio-fs/server-ui dev`
 - `corepack pnpm --filter @clio-fs/client dev`
 - `corepack pnpm run scenario:local-sync`
+
+## Release Flow
+
+GitHub releases now drive npm publication.
+
+- `.github/workflows/release.yml` runs when a GitHub release is published
+- the workflow installs dependencies, runs `check`, `test`, and `build`, then publishes staged npm artifacts
+- the published npm version is derived from the GitHub release tag, for example `v1.2.3` -> `1.2.3`
+- release targets are `@clio-fs/server` and `@clio-fs/client`
+- `@clio-fs/server` publishes the installable `clio-fs-server` command and bundles the operator UI runtime it needs
+- `@clio-fs/client` publishes the installable `clio-fs-client` command
+- internal workspaces under `packages/*`, plus `@clio-fs/server-ui`, are vendored into those app releases as bundled dependencies instead of being published separately
+- staged publish manifests are generated from built `dist/` output so local workspace development can continue using source-based exports
+- if a package version already exists on npm, the release script skips it instead of failing the whole publish job
+- GitHub prereleases publish with the npm dist-tag `next`; regular releases publish with `latest`
+
+Repository setup required for releases:
+
+- create a repository secret named `NPM_TOKEN`
+- use an npm automation token that can publish the `@clio-fs` scope
+- create GitHub releases with semver tags such as `v1.2.3` or `v1.2.3-beta.1`
+
+## Install Published Apps
+
+Global install example:
+
+```bash
+npm install --global @clio-fs/server @clio-fs/client
+```
+
+Server commands:
+
+- `clio-fs-server` starts the control plane and operator UI together
+- `clio-fs-server api` starts only the control-plane API
+- `clio-fs-server ui` starts only the operator UI
+
+Client command:
+
+- `clio-fs-client` starts the mirror client daemon
+
+Key runtime environment variables:
+
+- `CLIO_FS_SERVER_HOST` and `CLIO_FS_SERVER_PORT` control the API listener
+- `CLIO_FS_SERVER_AUTH_TOKEN` sets the bearer token used by the UI and client by default
+- `CLIO_FS_SERVER_WORKSPACE_REGISTRY_FILE` sets the file-backed workspace registry path
+- `CLIO_FS_SERVER_UI_HOST` and `CLIO_FS_SERVER_UI_PORT` control the operator UI listener
+- `CLIO_FS_SERVER_UI_CONTROL_PLANE_BASE_URL` overrides the UI target for the control plane
+- `CLIO_FS_CLIENT_CONTROL_PLANE_BASE_URL` points the client at the server API
+- `CLIO_FS_CLIENT_CONTROL_PLANE_AUTH_TOKEN` overrides the client bearer token
+- `CLIO_FS_CLIENT_DEFAULT_WORKSPACE_ROOT` sets the default mirror root base directory
+- `CLIO_FS_CLIENT_STATE_FILE` sets the client state file path
+- `CLIO_FS_CLIENT_POLL_INTERVAL_MS` sets the polling interval
 
 ## Current Implementation Status
 

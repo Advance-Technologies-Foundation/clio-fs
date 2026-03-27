@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -474,6 +475,6 @@ export const runClientDaemon = async () => {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   runClientDaemon().catch((error) => {
     console.error("[client] bind failed:", error);
-    process.exitCode = 1;
+    process.exit(1);
   });
 }

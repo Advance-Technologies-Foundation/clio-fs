@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "exports": "./src/index.ts",
+  "bin": {
+    "clio-fs-server": "./dist/cli.js"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
@@ -15,6 +18,7 @@
     "@clio-fs/config": "workspace:*",
     "@clio-fs/contracts": "workspace:*",
     "@clio-fs/database": "workspace:*",
+    "@clio-fs/server-ui": "workspace:*",
     "@clio-fs/sync-core": "workspace:*"
   }
 }
