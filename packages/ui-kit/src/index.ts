@@ -142,6 +142,8 @@ export const renderPage = (
   options?: {
     topbarActions?: string;
     topbarSubtitle?: string;
+    topbarStatus?: "ok" | "warning" | "error";
+    topbarStatusPollUrl?: string;
   }
 ) => `<!doctype html>
 <html lang="en">
@@ -242,6 +244,19 @@ export const renderPage = (
         border-radius: 9999px;
         background: var(--color-brand-orange);
         flex-shrink: 0;
+        transition: background-color 0.2s ease, box-shadow 0.2s ease;
+      }
+      .topbar-dot[data-status="ok"] {
+        background: #22c55e;
+        box-shadow: 0 0 0 5px rgba(34,197,94,0.18);
+      }
+      .topbar-dot[data-status="warning"] {
+        background: #f59e0b;
+        box-shadow: 0 0 0 5px rgba(245,158,11,0.18);
+      }
+      .topbar-dot[data-status="error"] {
+        background: #ef4444;
+        box-shadow: 0 0 0 5px rgba(239,68,68,0.18);
       }
       .topbar-title {
         color: var(--color-text-inverse);
@@ -818,7 +833,7 @@ export const renderPage = (
     <header class="topbar">
       <div class="topbar-inner">
         <div class="topbar-brand">
-          <span class="topbar-dot"></span>
+          <span class="topbar-dot" data-topbar-status-dot data-status="${options?.topbarStatus ?? ""}" aria-label="Sync status"></span>
           <span class="topbar-title">Clio FS</span>
           <span class="topbar-subtitle">${escapeHtml(options?.topbarSubtitle ?? "Control Plane")}</span>
         </div>
@@ -828,6 +843,57 @@ export const renderPage = (
     <main class="shell">${body}</main>
     <script>
       (() => {
+        const topbarDot = document.querySelector("[data-topbar-status-dot]");
+        const topbarStatusPollUrl = ${JSON.stringify(options?.topbarStatusPollUrl ?? "")};
+
+        const setTopbarStatus = (nextStatus) => {
+          if (!(topbarDot instanceof HTMLElement)) {
+            return;
+          }
+
+          if (!["ok", "warning", "error"].includes(nextStatus)) {
+            topbarDot.removeAttribute("data-status");
+            topbarDot.setAttribute("aria-label", "Sync status unavailable");
+            return;
+          }
+
+          topbarDot.setAttribute("data-status", nextStatus);
+          const label =
+            nextStatus === "ok"
+              ? "Sync status healthy"
+              : nextStatus === "warning"
+                ? "Sync status warning"
+                : "Sync status error";
+          topbarDot.setAttribute("aria-label", label);
+        };
+
+        window.clioSetTopbarStatus = setTopbarStatus;
+        setTopbarStatus(${JSON.stringify(options?.topbarStatus ?? "")});
+
+        if (topbarStatusPollUrl.length > 0) {
+          const pollTopbarStatus = async () => {
+            const response = await fetch(topbarStatusPollUrl, {
+              headers: {
+                "x-clio-ui-request": "1"
+              }
+            });
+
+            if (!response.ok) {
+              return;
+            }
+
+            const payload = await response.json().catch(() => null);
+            if (payload && typeof payload.severity === "string") {
+              setTopbarStatus(payload.severity);
+            }
+          };
+
+          void pollTopbarStatus().catch(() => {});
+          setInterval(() => {
+            void pollTopbarStatus().catch(() => {});
+          }, 1000);
+        }
+
         const inferFolderName = (selectedPath) => {
           const normalized = selectedPath.replace(/[\\\\/]+$/, "");
           const parts = normalized.split(/[\\\\/]/).filter(Boolean);

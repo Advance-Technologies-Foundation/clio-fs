@@ -103,6 +103,8 @@ interface ClientSyncManager {
   restore: (target?: ClientSyncTarget) => Promise<void>;
 }
 
+type TopbarSeverity = "ok" | "warning" | "error";
+
 export class InMemoryClientSyncTargetStore implements ClientSyncTargetStore {
   #targets = new Map<string, ClientSyncTarget>();
 
@@ -532,6 +534,18 @@ const renderLiveMetricCard = (
     <div class="metric-value" data-sync-metric="${escapeHtml(metricKey)}">${escapeHtml(value)}</div>
   </section>
 `;
+};
+
+const getClientTopbarSeverity = (status: ClientSyncManagerStatus): TopbarSeverity => {
+  if (typeof status.lastError === "string" && status.lastError.trim().length > 0) {
+    return "error";
+  }
+
+  if ((status.conflictCount ?? 0) > 0 || (status.unsyncedObjectCount ?? 0) > 0) {
+    return "warning";
+  }
+
+  return "ok";
 };
 
 const renderTargetTable = (targets: ClientSyncTarget[], status: ClientSyncManagerStatus) => `
@@ -1596,7 +1610,10 @@ const renderClientPage = (
       })();
     </script>`,
     {
-      topbarSubtitle: "Sync Client Control Plane", topbarActions: clientTopbarActions()
+      topbarSubtitle: "Sync Client Control Plane",
+      topbarActions: clientTopbarActions(),
+      topbarStatus: getClientTopbarSeverity(status),
+      topbarStatusPollUrl: "/topbar-status"
     }
   );
 
@@ -1656,7 +1673,10 @@ const renderTargetDetail = (target: ClientSyncTarget, status: ClientSyncManagerS
       ${renderConflictResolutionPanel(target, status)}
     `,
     {
-      topbarSubtitle: "Sync Client Control Plane", topbarActions: clientTopbarActions()
+      topbarSubtitle: "Sync Client Control Plane",
+      topbarActions: clientTopbarActions(),
+      topbarStatus: getClientTopbarSeverity(status),
+      topbarStatusPollUrl: "/topbar-status"
     }
   );
 
@@ -1881,7 +1901,11 @@ const renderLogViewerPage = () =>
         };
       </script>
     `,
-    { topbarSubtitle: "Sync Client Control Plane", topbarActions: clientTopbarActions() }
+    {
+      topbarSubtitle: "Sync Client Control Plane",
+      topbarActions: clientTopbarActions(),
+      topbarStatusPollUrl: "/topbar-status"
+    }
   );
 
 const createClientSyncManager = (
@@ -2107,6 +2131,13 @@ export const createClientUi = (options: ClientUiOptions) => {
 
       if (method === "GET" && url.pathname === "/sync-status") {
         writeJson(response, 200, syncManager.getStatus());
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/topbar-status") {
+        writeJson(response, 200, {
+          severity: getClientTopbarSeverity(syncManager.getStatus())
+        });
         return;
       }
 

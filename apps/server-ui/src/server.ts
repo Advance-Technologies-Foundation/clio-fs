@@ -67,6 +67,8 @@ interface ControlPlaneClient {
   setTokenEnabled: (authToken: string, id: string, enabled: boolean) => Promise<{ ok: boolean }>;
 }
 
+type TopbarSeverity = "ok" | "warning" | "error";
+
 const UI_SESSION_COOKIE_NAME = "clio_fs_server_ui_session";
 
 const writeHtml = (response: ServerResponse, statusCode: number, html: string) => {
@@ -174,6 +176,18 @@ const renderLoginPage = (notice?: { tone: "error" | "success"; message: string }
       topbarSubtitle: "Server Control Plane"
     }
   );
+
+const getServerTopbarSeverity = (health: ServerHealthResponse, workspaces: WorkspaceRecord[]): TopbarSeverity => {
+  if (health.status !== "ok") {
+    return "error";
+  }
+
+  if (workspaces.some((workspace) => workspace.status !== "active")) {
+    return "warning";
+  }
+
+  return "ok";
+};
 
 const selectDirectoryWithNativeDialog = async (): Promise<string | null> => {
   if (process.platform === "darwin") {
@@ -464,7 +478,9 @@ const renderDashboard = async (
 
   return renderPage("Clio FS Server", body, {
     topbarActions: `${renderHomeLink()}${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
-    topbarSubtitle: "Server Control Plane"
+    topbarSubtitle: "Server Control Plane",
+    topbarStatus: getServerTopbarSeverity(health, workspaces),
+    topbarStatusPollUrl: "/topbar-status"
   });
 };
 
@@ -569,7 +585,9 @@ const renderWorkspaceDetail = (
     `,
     {
       topbarActions: `${renderHomeLink()}${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
-      topbarSubtitle: "Server Control Plane"
+      topbarSubtitle: "Server Control Plane",
+      topbarStatus: workspace.status === "active" && !isStale ? "ok" : isStale ? "error" : "warning",
+      topbarStatusPollUrl: "/topbar-status"
     }
   );
 };
@@ -817,7 +835,11 @@ const renderLogViewerPage = (watchSettings: ServerWatchSettings) =>
         };
       </script>
     `,
-    { topbarSubtitle: "Server Control Plane", topbarActions: `${renderHomeLink()}${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}` }
+    {
+      topbarSubtitle: "Server Control Plane",
+      topbarActions: `${renderHomeLink()}${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
+      topbarStatusPollUrl: "/topbar-status"
+    }
   );
 
 const renderTokensPage = (tokens: AuthTokenListItem[], watchSettings: ServerWatchSettings, notice?: { tone: "error" | "success"; message: string }) =>
@@ -1116,7 +1138,8 @@ const renderTokensPage = (tokens: AuthTokenListItem[], watchSettings: ServerWatc
     `,
     {
       topbarActions: `${renderHomeLink()}${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
-      topbarSubtitle: "Server Control Plane"
+      topbarSubtitle: "Server Control Plane",
+      topbarStatusPollUrl: "/topbar-status"
     }
   );
 
@@ -1132,7 +1155,8 @@ const renderNotFound = () =>
     `
     ,
     {
-      topbarSubtitle: "Server Control Plane"
+      topbarSubtitle: "Server Control Plane",
+      topbarStatusPollUrl: "/topbar-status"
     }
   );
 
@@ -1148,7 +1172,9 @@ const renderError = (message: string) =>
     `
     ,
     {
-      topbarSubtitle: "Server Control Plane"
+      topbarSubtitle: "Server Control Plane",
+      topbarStatus: "error",
+      topbarStatusPollUrl: "/topbar-status"
     }
   );
 
@@ -1324,6 +1350,17 @@ export const createServerUiRequestHandler = (options: ServerUiOptions) => {
           html: renderDashboardBody(health, workspaces, {
             watchSettings
           })
+        });
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/topbar-status") {
+        const [health, workspaces] = await Promise.all([
+          client.getHealth(),
+          client.listWorkspaces(authenticatedToken)
+        ]);
+        writeJson(response, 200, {
+          severity: getServerTopbarSeverity(health, workspaces)
         });
         return;
       }
