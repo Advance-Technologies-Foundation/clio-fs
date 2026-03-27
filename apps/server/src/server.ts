@@ -1,4 +1,6 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { URL } from "node:url";
 import { healthSummary } from "@clio-fs/sync-core";
 import { createServerUiRequestHandler } from "../../server-ui/dist/server.js";
@@ -16,6 +18,7 @@ import {
   type GitStatusRequest,
   type GitStatusResponse,
   type RegisterWorkspaceInput,
+  type RuntimeVersionResponse,
   type ServerDiagnosticsSummaryResponse,
   type ServerWatchSettings,
   type ServerWatchSettingsResponse,
@@ -99,6 +102,14 @@ const noContent = (response: ServerResponse, statusCode: number) => {
 };
 
 const MAX_REQUEST_BODY_BYTES = 12 * 1024 * 1024; // 12 MB
+const SERVER_PACKAGE_MANIFEST = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "../package.json"), "utf8")
+) as { version?: string };
+const SERVER_RUNTIME_VERSION: RuntimeVersionResponse = {
+  service: "clio-fs-server",
+  version: SERVER_PACKAGE_MANIFEST.version ?? "0.0.0",
+  channel: (SERVER_PACKAGE_MANIFEST.version ?? "").includes("-") ? "beta" : "stable"
+};
 
 const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
   const chunks: Buffer[] = [];
@@ -467,6 +478,11 @@ const routeRequest = async (
       summary: healthSummary({ workspaceCount: options.registry.list().length }),
       platform: serverPlatform
     });
+    return;
+  }
+
+  if (method === "GET" && pathname === "/version") {
+    json(response, 200, SERVER_RUNTIME_VERSION);
     return;
   }
 

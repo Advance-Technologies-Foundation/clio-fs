@@ -202,6 +202,21 @@ test("returns a public healthcheck payload", async () => {
   }
 });
 
+test("returns runtime version metadata", async () => {
+  const server = await startTestUi();
+
+  try {
+    const response = await fetch(`${server.baseUrl}/version`);
+    assert.equal(response.status, 200);
+    const payload = (await response.json()) as { service: string; version: string; channel: string };
+    assert.equal(payload.service, "clio-fs-client-ui");
+    assert.equal(payload.version, "0.1.0");
+    assert.equal(payload.channel, "stable");
+  } finally {
+    await server.close();
+  }
+});
+
 test("renders metrics and registry when sync targets exist", async () => {
   const targetStore = new InMemoryClientSyncTargetStore();
   targetStore.save(seedTarget({ enabled: false }));

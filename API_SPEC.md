@@ -165,6 +165,16 @@ Example:
 }
 ```
 
+### Runtime Version
+
+```json
+{
+  "service": "clio-fs-server",
+  "version": "1.2.3",
+  "channel": "stable"
+}
+```
+
 ## Authentication and Authorization
 
 Rules:
@@ -175,6 +185,36 @@ Rules:
 - `instanceId` is optional for local mirror clients, but required for server-side integrations if used
 
 ## Server Watch Settings
+
+## Runtime Metadata
+
+### GET /version
+
+Client UI runtime metadata endpoint.
+
+Response `200`:
+
+```json
+{
+  "service": "clio-fs-client-ui",
+  "version": "1.2.3",
+  "channel": "stable"
+}
+```
+
+### GET /api/version
+
+Server control-plane runtime metadata endpoint.
+
+Response `200`:
+
+```json
+{
+  "service": "clio-fs-server",
+  "version": "1.2.3",
+  "channel": "stable"
+}
+```
 
 ### GET /settings/watch
 

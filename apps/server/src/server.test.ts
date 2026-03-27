@@ -73,6 +73,22 @@ test("GET /health is public", async () => {
   }
 });
 
+test("GET /api/version exposes runtime version metadata", async () => {
+  const server = await startTestServer();
+
+  try {
+    const response = await fetch(`${server.apiBaseUrl}/version`);
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.service, "clio-fs-server");
+    assert.equal(body.version, "0.1.0");
+    assert.equal(body.channel, "stable");
+  } finally {
+    await server.close();
+  }
+});
+
 test("server ui login and dashboard work on the same server origin", async () => {
   const server = await startTestServer();
 

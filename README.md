@@ -331,6 +331,11 @@ If you prefer explicit config file locations instead of conventional `config/*.c
 
 For installer-based deployments, the same runtime rules apply, but `config/` is created under the install root and then linked into the active release through `current`.
 
+Runtime metadata endpoints:
+
+- server: `GET /api/version`
+- client UI: `GET /version`
+
 ## Current Implementation Status
 
 Phase 1 has started in `apps/server` with the operator UI served from the same listener under `/`.

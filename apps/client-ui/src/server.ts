@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { URL } from "node:url";
 import { appConfig } from "@clio-fs/config";
-import type { ApiErrorShape, WorkspaceDescriptor, WorkspaceListResponse } from "@clio-fs/contracts";
+import type { ApiErrorShape, RuntimeVersionResponse, WorkspaceDescriptor, WorkspaceListResponse } from "@clio-fs/contracts";
 import { escapeHtml, renderNotice, renderPage } from "@clio-fs/ui-kit";
 import { noopLogger, type Logger } from "./logger.js";
 
@@ -19,6 +19,15 @@ export interface ClientUiOptions {
   createMirrorClientImpl: (options: MirrorClientOptions) => MirrorClient;
   logger?: Logger;
 }
+
+const CLIENT_UI_PACKAGE_MANIFEST = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "../package.json"), "utf8")
+) as { version?: string };
+const CLIENT_UI_RUNTIME_VERSION: RuntimeVersionResponse = {
+  service: "clio-fs-client-ui",
+  version: CLIENT_UI_PACKAGE_MANIFEST.version ?? "0.0.0",
+  channel: (CLIENT_UI_PACKAGE_MANIFEST.version ?? "").includes("-") ? "beta" : "stable"
+};
 
 export interface ClientSyncTarget {
   targetId: string;
@@ -2128,6 +2137,11 @@ export const createClientUi = (options: ClientUiOptions) => {
           service: "clio-fs-client-ui",
           summary: `client-ui ready; targets=${targetStore.list().length}`
         });
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/version") {
+        writeJson(response, 200, CLIENT_UI_RUNTIME_VERSION);
         return;
       }
 

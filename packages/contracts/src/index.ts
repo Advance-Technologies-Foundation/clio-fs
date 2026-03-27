@@ -51,6 +51,12 @@ export interface ServerHealthResponse {
   platform: WorkspacePlatform;
 }
 
+export interface RuntimeVersionResponse {
+  service: string;
+  version: string;
+  channel: "stable" | "beta";
+}
+
 export interface ServerWatchSettings {
   settleDelayMs: number;
   /** Allow unauthenticated access from localhost (127.0.0.1 / ::1). */
