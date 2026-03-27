@@ -174,7 +174,7 @@ const renderLoginPage = (notice?: { tone: "error" | "success"; message: string }
       </section>
     `,
     {
-      topbarSubtitle: "Server Control Plane"
+      topbarSubtitle: "Server"
     }
   );
 
@@ -479,7 +479,7 @@ const renderDashboard = async (
 
   return renderPage("Clio FS Server", body, {
     topbarActions: renderServerTopbarActions(),
-    topbarSubtitle: "Server Control Plane",
+    topbarSubtitle: "Server",
     topbarStatus: getServerTopbarSeverity(health, workspaces),
     topbarStatusPollUrl: "/topbar-status",
     runtimeControls: renderServerRuntimeControls({
@@ -591,7 +591,7 @@ const renderWorkspaceDetail = (
     `,
     {
       topbarActions: renderServerTopbarActions(),
-      topbarSubtitle: "Server Control Plane",
+      topbarSubtitle: "Server",
       topbarStatus: workspace.status === "active" && !isStale ? "ok" : isStale ? "error" : "warning",
       topbarStatusPollUrl: "/topbar-status",
       runtimeControls: renderServerRuntimeControls({
@@ -638,7 +638,7 @@ const renderServerAboutPage = (
     `,
     {
       topbarActions: renderServerTopbarActions(),
-      topbarSubtitle: "Server Control Plane",
+      topbarSubtitle: "Server",
       topbarStatus: getServerTopbarSeverity(health, workspaces),
       topbarStatusPollUrl: "/topbar-status",
       runtimeControls: renderServerRuntimeControls({
@@ -935,7 +935,7 @@ const renderLogViewerPage = (
       </script>
     `,
     {
-      topbarSubtitle: "Server Control Plane",
+      topbarSubtitle: "Server",
       topbarActions: renderServerTopbarActions(),
       topbarStatusPollUrl: "/topbar-status",
       runtimeControls
@@ -1243,7 +1243,7 @@ const renderTokensPage = (
     `,
     {
       topbarActions: renderServerTopbarActions(),
-      topbarSubtitle: "Server Control Plane",
+      topbarSubtitle: "Server",
       topbarStatusPollUrl: "/topbar-status",
       runtimeControls
     }
@@ -1261,7 +1261,7 @@ const renderNotFound = () =>
     `
     ,
     {
-      topbarSubtitle: "Server Control Plane",
+      topbarSubtitle: "Server",
       topbarStatusPollUrl: "/topbar-status"
     }
   );
@@ -1278,7 +1278,7 @@ const renderError = (message: string) =>
     `
     ,
     {
-      topbarSubtitle: "Server Control Plane",
+      topbarSubtitle: "Server",
       topbarStatus: "error",
       topbarStatusPollUrl: "/topbar-status"
     }

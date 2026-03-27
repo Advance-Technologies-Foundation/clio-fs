@@ -1627,7 +1627,7 @@ const renderClientPage = (
       })();
     </script>`,
     {
-      topbarSubtitle: "Sync Client Control Plane",
+      topbarSubtitle: "Client",
       topbarActions: clientTopbarActions(),
       topbarStatus: getClientTopbarSeverity(status),
       topbarStatusPollUrl: "/topbar-status",
@@ -1691,7 +1691,7 @@ const renderTargetDetail = (target: ClientSyncTarget, status: ClientSyncManagerS
       ${renderConflictResolutionPanel(target, status)}
     `,
     {
-      topbarSubtitle: "Sync Client Control Plane",
+      topbarSubtitle: "Client",
       topbarActions: clientTopbarActions(),
       topbarStatus: getClientTopbarSeverity(status),
       topbarStatusPollUrl: "/topbar-status",
@@ -1950,7 +1950,7 @@ const renderLogViewerPage = () =>
       </script>
     `,
     {
-      topbarSubtitle: "Sync Client Control Plane",
+      topbarSubtitle: "Client",
       topbarActions: clientTopbarActions(),
       topbarStatusPollUrl: "/topbar-status",
       runtimeControls: renderClientRuntimeControls([], { running: false })
@@ -1985,7 +1985,7 @@ const renderClientAboutPage = (targets: ClientSyncTarget[], status: ClientSyncMa
       `
     }),
     {
-      topbarSubtitle: "Sync Client Control Plane",
+      topbarSubtitle: "Client",
       topbarActions: clientTopbarActions(),
       topbarStatus: getClientTopbarSeverity(status),
       topbarStatusPollUrl: "/topbar-status",

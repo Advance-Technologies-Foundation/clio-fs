@@ -392,11 +392,11 @@ export const renderPage = (
         font-weight: 600;
       }
       .topbar-subtitle {
-        color: rgba(255,255,255,0.40);
-        font-size: 0.75rem;
-        font-weight: 500;
-        padding-left: 0.75rem;
-        margin-left: 0.75rem;
+        color: var(--color-text-inverse);
+        font-size: 0.9375rem;
+        font-weight: 600;
+        padding-left: 1rem;
+        margin-left: 1rem;
         border-left: 1px solid rgba(255,255,255,0.15);
       }
       .topbar-brand .topbar-update-button {
