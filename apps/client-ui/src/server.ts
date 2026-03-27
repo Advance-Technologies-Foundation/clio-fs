@@ -1688,40 +1688,178 @@ const renderLogViewerPage = () =>
   renderPage(
     "Live Logs | Clio FS Client",
     `
-      <style>main.shell{max-width:none;padding:calc(56px + 2rem) 2rem 2rem;}</style>
-      <section style="display:flex;flex-direction:column;height:calc(100vh - 56px - 4rem);border-radius:10px;overflow:hidden;border:1px solid rgba(0,0,0,0.10);background:#0f172a;">
-        <div id="log-toolbar" style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 1rem;border-bottom:1px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.04);flex-shrink:0;">
-          <span id="log-status" style="font-size:0.8rem;color:#6b7280;">Connecting…</span>
-          <label style="display:flex;align-items:center;gap:0.375rem;font-size:0.8rem;color:#94a3b8;margin-left:auto;">
+      <style>
+        main.shell{max-width:none;padding:calc(56px + 2rem) 2rem 2rem;}
+        .log-shell{
+          display:flex;
+          flex-direction:column;
+          height:calc(100vh - 56px - 4rem);
+          border-radius:14px;
+          overflow:hidden;
+          border:1px solid rgba(148,163,184,0.24);
+          background:#ffffff;
+          box-shadow:0 24px 64px rgba(15,23,42,0.10);
+        }
+        .log-toolbar{
+          display:flex;
+          align-items:center;
+          flex-wrap:wrap;
+          gap:0.75rem;
+          padding:0.9rem 1rem;
+          border-bottom:1px solid rgba(148,163,184,0.18);
+          background:#f8fafc;
+          flex-shrink:0;
+        }
+        .log-toolbar label{
+          display:flex;
+          align-items:center;
+          gap:0.375rem;
+          font-size:0.95rem;
+          color:#1e293b;
+          font-weight:600;
+        }
+        .log-toolbar input[type="checkbox"]{
+          accent-color:#38bdf8;
+          width:1rem;
+          height:1rem;
+        }
+        .log-action{
+          font-size:0.95rem;
+          padding:0.55rem 0.9rem;
+          border-radius:8px;
+          border:1px solid rgba(148,163,184,0.22);
+          background:#ffffff;
+          cursor:pointer;
+          color:#0f172a;
+          font-weight:600;
+        }
+        .log-action:hover{
+          background:#eef2f7;
+        }
+        .log-action:focus-visible,
+        .log-toolbar input[type="checkbox"]:focus-visible{
+          outline:3px solid rgba(14,165,233,0.28);
+          outline-offset:2px;
+        }
+        .log-status-badge{
+          display:inline-flex;
+          align-items:center;
+          gap:0.55rem;
+          min-height:2.4rem;
+          padding:0.45rem 0.8rem;
+          border-radius:999px;
+          border:1px solid rgba(16,185,129,0.22);
+          background:#ecfdf5;
+          color:#166534;
+          font-size:1rem;
+          font-weight:700;
+        }
+        .log-status-dot{
+          width:0.7rem;
+          height:0.7rem;
+          border-radius:999px;
+          background:currentColor;
+          box-shadow:0 0 0 4px rgba(34,197,94,0.14);
+        }
+        .log-toolbar-spacer{
+          flex:1 1 auto;
+        }
+        .log-entries{
+          font-family:'Consolas','Courier New',monospace;
+          font-size:1rem;
+          line-height:1.7;
+          padding:1rem 1rem 1.15rem;
+          flex:1;
+          overflow-y:auto;
+          color:#0f172a;
+          background:
+            linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,1)),
+            repeating-linear-gradient(
+              180deg,
+              transparent 0,
+              transparent 31px,
+              rgba(148,163,184,0.06) 31px,
+              rgba(148,163,184,0.06) 32px
+            );
+        }
+        .log-row{
+          padding:0.28rem 0.5rem;
+          border-radius:6px;
+          border:1px solid transparent;
+          margin-bottom:0.08rem;
+          white-space:pre-wrap;
+          word-break:break-word;
+        }
+        .log-row:hover{
+          background:rgba(226,232,240,0.38);
+          border-color:rgba(148,163,184,0.18);
+        }
+        .log-row:focus-visible{
+          outline:3px solid rgba(14,165,233,0.24);
+          outline-offset:2px;
+        }
+        .log-empty{
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          min-height:100%;
+          color:#475569;
+          font-family:'Montserrat',sans-serif;
+          font-size:1rem;
+        }
+      </style>
+      <section class="log-shell">
+        <div class="log-toolbar">
+          <span id="log-status" class="log-status-badge" role="status" aria-live="polite">
+            <span class="log-status-dot" aria-hidden="true"></span>
+            <span id="log-status-text">Connecting…</span>
+          </span>
+          <div class="log-toolbar-spacer"></div>
+          <label>
             <input type="checkbox" id="log-audit-only" /> Audit only
           </label>
-          <button onclick="document.getElementById('log-entries').innerHTML=''" style="font-size:0.8rem;padding:0.2rem 0.65rem;border-radius:5px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);cursor:pointer;color:#94a3b8;">Clear</button>
-          <label style="display:flex;align-items:center;gap:0.375rem;font-size:0.8rem;color:#94a3b8;">
+          <button type="button" onclick="document.getElementById('log-entries').innerHTML=''; document.getElementById('log-empty').style.display = 'flex';" class="log-action" aria-controls="log-entries">Clear</button>
+          <label>
             <input type="checkbox" id="log-autoscroll" checked /> Autoscroll
           </label>
         </div>
-        <div id="log-entries" style="font-family:'Consolas','Courier New',monospace;font-size:0.78rem;line-height:1.6;padding:0.75rem 1rem;flex:1;overflow-y:auto;color:#94a3b8;"></div>
+        <div id="log-entries" class="log-entries" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false" tabindex="0">
+          <div id="log-empty" class="log-empty">Waiting for log events…</div>
+        </div>
       </section>
       <script>
         const entries = document.getElementById('log-entries');
         const status = document.getElementById('log-status');
+        const statusText = document.getElementById('log-status-text');
+        const emptyState = document.getElementById('log-empty');
         const auditOnly = document.getElementById('log-audit-only');
         const autoscroll = document.getElementById('log-autoscroll');
 
-        const LEVEL_COLORS = { debug: '#94a3b8', info: '#38bdf8', warn: '#fbbf24', error: '#f87171' };
-        const AUDIT_BG = 'rgba(56,189,248,0.08)';
+        const LEVEL_COLORS = { debug: '#475569', info: '#0369a1', warn: '#b45309', error: '#b91c1c' };
+        const LEVEL_BG = {
+          debug: 'rgba(148,163,184,0.16)',
+          info: 'rgba(14,165,233,0.14)',
+          warn: 'rgba(245,158,11,0.16)',
+          error: 'rgba(248,113,113,0.16)'
+        };
+        const AUDIT_BG = 'rgba(219,234,254,0.85)';
 
         function appendEntry(data) {
           if (auditOnly.checked && !data.audit) return;
+          emptyState.style.display = 'none';
           const row = document.createElement('div');
+          row.className = 'log-row';
+          row.tabIndex = 0;
           const isAudit = !!data.audit;
-          row.style.cssText = 'padding:2px 4px;border-radius:3px;' + (isAudit ? 'background:' + AUDIT_BG + ';' : '');
-          const color = LEVEL_COLORS[data.level] || '#94a3b8';
+          const color = LEVEL_COLORS[data.level] || '#0f172a';
+          const levelBg = LEVEL_BG[data.level] || 'rgba(148,163,184,0.10)';
+          row.style.background = isAudit ? AUDIT_BG : 'rgba(255,255,255,0.88)';
+          row.style.borderColor = isAudit ? 'rgba(96,165,250,0.30)' : 'rgba(148,163,184,0.14)';
           const ts = data.timestamp ? data.timestamp.replace('T', ' ').replace('Z', '') : '';
-          const badge = isAudit ? '<span style="color:#38bdf8;font-weight:700;">[AUDIT]</span> ' : '';
+          const badge = isAudit ? '<span style="display:inline-flex;align-items:center;padding:0.05rem 0.4rem;border-radius:999px;background:rgba(37,99,235,0.12);color:#1d4ed8;font-size:0.76rem;font-weight:700;letter-spacing:0.04em;">AUDIT</span> ' : '';
           const rest = Object.entries(data).filter(([k]) => !['timestamp','level','event','audit'].includes(k));
-          const fields = rest.length ? ' ' + rest.map(([k,v]) => '<span style="color:#94a3b8;">' + k + '=</span><span style="color:#e2e8f0;">' + JSON.stringify(v) + '</span>').join(' ') : '';
-          row.innerHTML = '<span style="color:#7c8fa1;">' + ts + '</span> <span style="color:' + color + ';font-weight:600;">' + data.level.toUpperCase() + '</span> ' + badge + '<span style="color:#f1f5f9;">' + (data.event || '') + '</span>' + fields;
+          const fields = rest.length ? ' ' + rest.map(([k,v]) => '<span style="color:#334155;font-weight:600;">' + k + '=</span><span style="color:#0f172a;">' + JSON.stringify(v) + '</span>').join(' ') : '';
+          row.innerHTML = '<span style="color:#64748b;">' + ts + '</span> <span style="display:inline-flex;align-items:center;padding:0.04rem 0.42rem;border-radius:999px;background:' + levelBg + ';color:' + color + ';font-size:0.8rem;font-weight:800;letter-spacing:0.04em;">' + data.level.toUpperCase() + '</span> ' + badge + '<span style="color:#0f172a;font-weight:700;">' + (data.event || '') + '</span>' + fields;
           entries.appendChild(row);
           if (autoscroll.checked) entries.scrollTop = entries.scrollHeight;
         }
@@ -1732,8 +1870,18 @@ const renderLogViewerPage = () =>
           .catch(() => {});
 
         const es = new EventSource('/logs/stream');
-        es.onopen = () => { status.textContent = 'Connected'; status.style.color = '#16a34a'; };
-        es.onerror = () => { status.textContent = 'Disconnected — retrying…'; status.style.color = '#dc2626'; };
+        es.onopen = () => {
+          statusText.textContent = 'Connected';
+          status.style.color = '#166534';
+          status.style.background = '#ecfdf5';
+          status.style.borderColor = 'rgba(16,185,129,0.22)';
+        };
+        es.onerror = () => {
+          statusText.textContent = 'Disconnected, retrying';
+          status.style.color = '#991b1b';
+          status.style.background = '#fef2f2';
+          status.style.borderColor = 'rgba(239,68,68,0.20)';
+        };
         es.onmessage = (e) => {
           try { appendEntry(JSON.parse(e.data)); } catch {}
         };
