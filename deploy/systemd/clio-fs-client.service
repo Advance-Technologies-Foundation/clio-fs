@@ -1,0 +1,18 @@
+[Unit]
+Description=Clio FS Client
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/clio-fs/client/current
+ExecStart=/opt/clio-fs/client/current/clio-fs-client
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+# Uncomment and adjust if the service should run as a dedicated account.
+# User=clio-fs
+# Group=clio-fs
+
+[Install]
+WantedBy=multi-user.target
