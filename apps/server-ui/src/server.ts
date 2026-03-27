@@ -550,18 +550,19 @@ const renderLogViewerPage = () =>
   renderPage(
     "Live Logs | Clio FS Server",
     `
-      <section class="panel stack" style="padding:0;overflow:hidden;">
-        <div id="log-toolbar" style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;border-bottom:1px solid rgba(0,0,0,0.08);background:rgba(0,0,0,0.03);">
+      <style>main.shell{max-width:none;padding:calc(56px + 2rem) 2rem 2rem;}</style>
+      <section style="display:flex;flex-direction:column;height:calc(100vh - 56px - 4rem);border-radius:10px;overflow:hidden;border:1px solid rgba(0,0,0,0.10);background:#0f172a;">
+        <div id="log-toolbar" style="display:flex;align-items:center;gap:0.75rem;padding:0.6rem 1rem;border-bottom:1px solid rgba(255,255,255,0.07);background:rgba(255,255,255,0.04);flex-shrink:0;">
           <span id="log-status" style="font-size:0.8rem;color:#6b7280;">Connecting…</span>
-          <label style="display:flex;align-items:center;gap:0.375rem;font-size:0.8rem;color:#374151;margin-left:auto;">
+          <label style="display:flex;align-items:center;gap:0.375rem;font-size:0.8rem;color:#94a3b8;margin-left:auto;">
             <input type="checkbox" id="log-audit-only" /> Audit only
           </label>
-          <button onclick="document.getElementById('log-entries').innerHTML=''" style="font-size:0.8rem;padding:0.25rem 0.75rem;border-radius:6px;border:1px solid #d1d5db;background:#fff;cursor:pointer;color:#374151;">Clear</button>
-          <label style="display:flex;align-items:center;gap:0.375rem;font-size:0.8rem;color:#374151;">
+          <button onclick="document.getElementById('log-entries').innerHTML=''" style="font-size:0.8rem;padding:0.2rem 0.65rem;border-radius:5px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.06);cursor:pointer;color:#94a3b8;">Clear</button>
+          <label style="display:flex;align-items:center;gap:0.375rem;font-size:0.8rem;color:#94a3b8;">
             <input type="checkbox" id="log-autoscroll" checked /> Autoscroll
           </label>
         </div>
-        <div id="log-entries" style="font-family:'Consolas','Courier New',monospace;font-size:0.78rem;line-height:1.6;padding:0.75rem 1rem;height:80vh;overflow-y:auto;background:#0f172a;color:#94a3b8;"></div>
+        <div id="log-entries" style="font-family:'Consolas','Courier New',monospace;font-size:0.78rem;line-height:1.6;padding:0.75rem 1rem;flex:1;overflow-y:auto;color:#94a3b8;"></div>
       </section>
       <script>
         const entries = document.getElementById('log-entries');
@@ -600,18 +601,16 @@ const renderLogViewerPage = () =>
         };
       </script>
     `,
-    { topbarSubtitle: "Server Control Plane" }
+    { topbarSubtitle: "Server Control Plane", topbarActions: `${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}` }
   );
 
 const renderTokensPage = (tokens: AuthTokenListItem[], notice?: { tone: "error" | "success"; message: string }) =>
   renderPage(
     "Token Management | Clio FS Server",
     `
-      <div class="nav"><a href="/">← Back to dashboard</a></div>
       <section class="hero">
         <div class="eyebrow">Administration</div>
         <h1>Access Tokens</h1>
-        <p class="lede">Manage server authentication tokens. Built-in tokens (from config) cannot be deleted here.</p>
       </section>
       ${notice ? `<div style="max-width:900px;margin:0 auto 1.5rem;">${renderNotice(notice.tone, notice.message)}</div>` : ""}
       <section class="panel stack" style="max-width:900px;margin:0 auto 2rem;">
