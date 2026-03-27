@@ -349,11 +349,31 @@ test("renders dashboard with workspace content", async () => {
     assert.match(html, /Server Settings/);
     assert.match(html, /Change Settle Delay \(ms\)/);
     assert.match(html, /value="1200"/);
-    assert.match(html, /Server release/);
-    assert.match(html, /Check for updates/);
+    assert.match(html, />About</);
+    assert.match(html, /What&#39;s new|What's new/);
+    assert.doesNotMatch(html, /Server release/);
     assert.doesNotMatch(html, /onsubmit="return confirm/);
     assert.doesNotMatch(html, /Platform is determined by the server/i);
     assert.doesNotMatch(html, /<label for="platformDisplay">Platform<\/label>/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("renders about page with server runtime information", async () => {
+  const server = await startTestServer();
+
+  try {
+    const { cookie } = await server.login();
+    const response = await fetch(`${server.baseUrl}/about`, {
+      headers: withCookie(cookie)
+    });
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /Server runtime overview/);
+    assert.match(html, /System snapshot/);
+    assert.match(html, /Check for updates/);
   } finally {
     await server.close();
   }

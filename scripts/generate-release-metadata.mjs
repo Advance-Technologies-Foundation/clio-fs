@@ -67,6 +67,12 @@ export const resolvePublishedAt = (env = process.env) => {
   return new Date(timestamp).toISOString();
 };
 
+export const resolveReleaseHighlights = (env = process.env) =>
+  (env.CLIO_FS_RELEASE_HIGHLIGHTS ?? "")
+    .split(/\r?\n|[;|]/u)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
 export const inferReleaseChannel = (version) => (version.includes("-") ? "beta" : "stable");
 
 export const sha256File = (filePath) =>
@@ -118,11 +124,18 @@ export const collectReleaseAssets = (assetsDir, releaseVersion) => {
 export const createSha256Sums = (assets) =>
   `${assets.map((asset) => `${asset.sha256}  ${asset.fileName}`).join("\n")}\n`;
 
-export const createReleaseManifest = ({ releaseVersion, repository, publishedAt, assets }) => ({
+export const createReleaseManifest = ({
+  releaseVersion,
+  repository,
+  publishedAt,
+  assets,
+  highlights = []
+}) => ({
   channel: inferReleaseChannel(releaseVersion),
   version: releaseVersion,
   publishedAt,
   notesUrl: `https://github.com/${repository}/releases/tag/v${releaseVersion}`,
+  ...(highlights.length > 0 ? { highlights } : {}),
   assets: Object.fromEntries(
     assets.map((asset) => [
       `bundle-${asset.platform}`,
@@ -146,6 +159,7 @@ export const main = ({ rootDir = process.cwd(), argv = process.argv.slice(2), en
   const assetsDir = resolveAssetsDir(rootDir, argv, env);
   const repository = env.CLIO_FS_GITHUB_REPOSITORY || "Advance-Technologies-Foundation/clio-fs";
   const publishedAt = resolvePublishedAt(env);
+  const highlights = resolveReleaseHighlights(env);
   const assets = collectReleaseAssets(assetsDir, releaseVersion).map((asset) => ({
     ...asset,
     sha256: sha256File(asset.filePath)
@@ -161,7 +175,8 @@ export const main = ({ rootDir = process.cwd(), argv = process.argv.slice(2), en
     releaseVersion,
     repository,
     publishedAt,
-    assets
+    assets,
+    highlights
   });
 
   writeFileSync(sha256SumsPath, createSha256Sums(assets), "utf8");

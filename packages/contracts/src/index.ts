@@ -70,6 +70,7 @@ export interface ReleaseManifest {
   version: string;
   publishedAt: string;
   notesUrl: string;
+  highlights?: string[];
   assets: Record<string, ReleaseBundleAsset>;
   compatibility: {
     minServerVersion: string;
@@ -86,7 +87,21 @@ export interface UpdateCheckResponse {
   manifestUrl: string;
   notesUrl: string;
   publishedAt: string;
+  highlights?: string[];
   asset?: ReleaseBundleAsset;
+}
+
+export interface UpdateApplyResponse {
+  service: string;
+  currentVersion: string;
+  targetVersion: string;
+  updateApplied: boolean;
+  restartRequired: boolean;
+  message: string;
+  notesUrl: string;
+  publishedAt: string;
+  highlights?: string[];
+  stagedAt?: string;
 }
 
 export interface ServerWatchSettings {

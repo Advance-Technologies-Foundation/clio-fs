@@ -138,6 +138,8 @@ const isReleaseManifest = (value: unknown): value is ReleaseManifest => {
     typeof record.version === "string" &&
     typeof record.publishedAt === "string" &&
     typeof record.notesUrl === "string" &&
+    (record.highlights === undefined ||
+      (Array.isArray(record.highlights) && record.highlights.every((item) => typeof item === "string"))) &&
     typeof record.assets === "object" &&
     record.assets !== null &&
     Object.values(record.assets).every(isReleaseBundleAsset)
@@ -183,6 +185,7 @@ export const checkForRuntimeUpdate = async ({
     manifestUrl,
     notesUrl: manifest.notesUrl,
     publishedAt: manifest.publishedAt,
+    highlights: manifest.highlights,
     asset
   };
 };

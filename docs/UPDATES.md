@@ -12,10 +12,12 @@ It covers:
 
 Implemented update-discovery surfaces:
 
-- server UI dashboard widget
-- client UI dashboard widget
+- server UI `About` page and header `Update` action
+- client UI `About` page and header `Update` action
 - `GET /api/update/check`
 - `GET /update/check`
+- `POST /api/update/apply`
+- `POST /update/apply`
 - release `manifest.json`
 
 The current implementation supports:
@@ -23,13 +25,15 @@ The current implementation supports:
 - reading the current runtime version from the running app
 - fetching the latest published release manifest
 - comparing `currentVersion` with `manifest.version`
-- showing `Up to date`, `Update available`, or `Check failed`
+- showing `Up to date`, `Update available`, or `Check failed` inside `About`
+- surfacing a bright header `Update` button when a newer release is detected
+- opening a `What's new` modal with release highlights and release notes link
 - exposing the platform-specific bundle URL and checksum for the current runtime platform
+- downloading and checksum-verifying the release bundle into a staging directory after explicit user confirmation
 
 The current implementation does **not** yet support:
 
-- downloading or installing updates
-- switching the active release
+- switching the active release automatically after staging
 - restart orchestration
 - rollback
 - compatibility enforcement between server and client versions
@@ -42,11 +46,15 @@ Server UI and client UI follow the same runtime flow:
 2. Call the local update-check endpoint.
 3. The update-check endpoint fetches the configured release `manifest.json`.
 4. The endpoint compares the running version with `manifest.version`.
-5. The UI renders one of these states:
+5. The `About` page renders one of these states:
    - `Up to date`
    - `Update available`
    - `Check failed`
-6. The operator may press `Check for updates` again at any time.
+6. When `Update available` is detected, the header shows an amber `Update` button next to the control-plane subtitle.
+7. The `Update` button opens a `What's new` modal with release highlights and manual confirmation.
+8. After the operator confirms, the runtime calls the local `.../update/apply` endpoint.
+9. The apply endpoint downloads the platform bundle into a staging directory and verifies its checksum.
+10. The operator may press `Check for updates` again at any time.
 
 Automatic behavior that is allowed:
 
@@ -56,10 +64,15 @@ Automatic behavior that is allowed:
 
 Automatic behavior that is not allowed:
 
-- downloading a release bundle
 - switching versions
 - restarting the runtime
 - applying an update without explicit user action
+
+Manual apply behavior that is now allowed:
+
+- downloading the release bundle after the operator presses `Start update`
+- staging the release archive for later activation
+- showing release highlights and notes before confirmation
 
 ## Configured Manifest URLs
 
@@ -94,10 +107,11 @@ That automatic gating is planned later under Phase 4.
 
 ## Operator Guidance
 
-Until manual install/apply flows are implemented:
+Until version switching and restart orchestration are implemented:
 
-- treat `Update available` as informational
-- use `Release notes` to review the release
+- use `About` for system and release inspection
+- use the header `Update` button only when you are ready to stage the new bundle
+- use `Release notes` to review the release before confirmation
 - plan server and client upgrades together
 - prefer updating both sides to the same release tag
 - do not assume mixed-version operation is supported unless explicitly documented for that release

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { URL } from "node:url";
 import { healthSummary } from "@clio-fs/sync-core";
-import { checkForRuntimeUpdate } from "@clio-fs/sync-core";
+import { checkForRuntimeUpdate, stageRuntimeUpdate } from "@clio-fs/sync-core";
 import { createServerUiRequestHandler } from "../../server-ui/dist/server.js";
 import {
   type ApiErrorShape,
@@ -19,6 +19,7 @@ import {
   type GitStatusRequest,
   type GitStatusResponse,
   type RegisterWorkspaceInput,
+  type UpdateApplyResponse,
   type RuntimeVersionResponse,
   type ServerDiagnosticsSummaryResponse,
   type ServerWatchSettings,
@@ -169,6 +170,19 @@ const normalizeAuthTokens = (options: Pick<WorkspaceServerOptions, "authToken" |
 
   return ["dev-token"];
 };
+
+const checkRuntimeUpdate = (
+  options: Pick<WorkspaceServerOptions, "fetchImpl" | "updateManifestUrl" | "serverPlatform">
+) =>
+  checkForRuntimeUpdate({
+    service: SERVER_RUNTIME_VERSION.service,
+    currentVersion: SERVER_RUNTIME_VERSION.version,
+    manifestUrl:
+      options.updateManifestUrl ??
+      "https://github.com/Advance-Technologies-Foundation/clio-fs/releases/latest/download/manifest.json",
+    platform: options.serverPlatform ?? detectServerPlatform(),
+    fetchImpl: options.fetchImpl
+  });
 
 const isLocalhost = (request: IncomingMessage): boolean => {
   const addr = request.socket?.remoteAddress ?? "";
@@ -491,15 +505,7 @@ const routeRequest = async (
 
   if (method === "GET" && pathname === "/update/check") {
     try {
-      const body = await checkForRuntimeUpdate({
-        service: SERVER_RUNTIME_VERSION.service,
-        currentVersion: SERVER_RUNTIME_VERSION.version,
-        manifestUrl:
-          options.updateManifestUrl ??
-          "https://github.com/Advance-Technologies-Foundation/clio-fs/releases/latest/download/manifest.json",
-        platform: options.serverPlatform ?? detectServerPlatform(),
-        fetchImpl: options.fetchImpl
-      });
+      const body = await checkRuntimeUpdate(options);
       json(response, 200, body);
       return;
     } catch (error) {
@@ -508,6 +514,65 @@ const routeRequest = async (
         502,
         "update_check_failed",
         error instanceof Error ? error.message : "Unable to check for updates"
+      );
+      return;
+    }
+  }
+
+  if (method === "POST" && pathname === "/update/apply") {
+    if (!isAuthorized(request, authTokens, url, options.tokenStore, options.watchSettingsStore)) {
+      writeError(response, 401, "unauthorized", "Missing or invalid bearer token");
+      return;
+    }
+
+    try {
+      const update = await checkRuntimeUpdate(options);
+
+      if (!update.updateAvailable || !update.asset) {
+        const body: UpdateApplyResponse = {
+          service: update.service,
+          currentVersion: update.currentVersion,
+          targetVersion: update.latestVersion,
+          updateApplied: false,
+          restartRequired: false,
+          message: "This server is already on the latest published release.",
+          notesUrl: update.notesUrl,
+          publishedAt: update.publishedAt,
+          highlights: update.highlights
+        };
+        json(response, 200, body);
+        return;
+      }
+
+      const staged = await stageRuntimeUpdate({
+        service: update.service,
+        currentVersion: update.currentVersion,
+        targetVersion: update.latestVersion,
+        asset: update.asset,
+        stagingRoot: resolve(process.cwd(), ".clio-fs/server/updates"),
+        fetchImpl: options.fetchImpl
+      });
+
+      const body: UpdateApplyResponse = {
+        service: update.service,
+        currentVersion: update.currentVersion,
+        targetVersion: update.latestVersion,
+        updateApplied: true,
+        restartRequired: true,
+        message: `Release ${update.latestVersion} was downloaded and staged. Restart the installed server runtime to switch to the new bundle.`,
+        notesUrl: update.notesUrl,
+        publishedAt: update.publishedAt,
+        highlights: update.highlights,
+        stagedAt: staged.downloadedAt
+      };
+      json(response, 200, body);
+      return;
+    } catch (error) {
+      writeError(
+        response,
+        502,
+        "update_apply_failed",
+        error instanceof Error ? error.message : "Unable to stage the update"
       );
       return;
     }

@@ -177,6 +177,45 @@ export const renderUpdateWidget = (options: {
   </section>
 `;
 
+export const renderRuntimeAboutSection = (options: {
+  title?: string;
+  description?: string;
+  detailsHtml?: string;
+}) => `
+  <section class="panel stack" style="max-width:960px;">
+    <div class="hero" style="margin-bottom:0;">
+      <div class="eyebrow">About</div>
+      <h1>${escapeHtml(options.title ?? "System information")}</h1>
+      <p class="lede">${escapeHtml(options.description ?? "Review runtime, release, and operating details for this installation.")}</p>
+    </div>
+    <section class="runtime-summary-panel">
+      <span class="runtime-state-badge" data-runtime-about-status data-state="">Checking…</span>
+      <div>
+        <strong data-runtime-summary-headline>Checking release metadata…</strong>
+        <p data-runtime-summary-copy>Release discovery is in progress.</p>
+      </div>
+    </section>
+    <dl class="runtime-info-list">
+      <dt>Current version</dt>
+      <dd data-runtime-current-version>—</dd>
+      <dt>Latest version</dt>
+      <dd data-runtime-latest-version>—</dd>
+      <dt>Channel</dt>
+      <dd data-runtime-channel>—</dd>
+      <dt>Published</dt>
+      <dd data-runtime-published-at>—</dd>
+      <dt>Manifest</dt>
+      <dd><a data-runtime-manifest-url href="#" target="_blank" rel="noreferrer noopener">Open manifest</a></dd>
+    </dl>
+    ${options.detailsHtml ?? ""}
+    <div class="runtime-aux-actions">
+      <button type="button" class="secondary-button" data-check-runtime-updates>Check for updates</button>
+      <a href="#" class="secondary-button" data-runtime-release-notes hidden target="_blank" rel="noreferrer noopener">Release notes</a>
+    </div>
+    <div class="modal-inline-error" data-runtime-about-feedback hidden></div>
+  </section>
+`;
+
 export const renderPage = (
   title: string,
   body: string,
@@ -185,6 +224,11 @@ export const renderPage = (
     topbarSubtitle?: string;
     topbarStatus?: "ok" | "warning" | "error";
     topbarStatusPollUrl?: string;
+    runtimeControls?: {
+      versionUrl: string;
+      updateCheckUrl: string;
+      updateApplyUrl?: string;
+    };
   }
 ) => `<!doctype html>
 <html lang="en">
@@ -268,6 +312,7 @@ export const renderPage = (
         z-index: 100;
       }
       .topbar-brand { display: flex; align-items: center; gap: 0.75rem; }
+      .topbar-brand-copy { display:flex; align-items:center; gap:0.75rem; }
       .topbar-inner {
         width: 100%;
         display: flex;
@@ -279,6 +324,47 @@ export const renderPage = (
         display: inline-flex;
         align-items: center;
         gap: 0.75rem;
+      }
+      .topbar-button {
+        display:inline-flex;
+        align-items:center;
+        gap:0.4rem;
+        padding:0.375rem 0.875rem;
+        border-radius:8px;
+        border:1px solid rgba(255,255,255,0.10);
+        background:rgba(255,255,255,0.08);
+        color:rgba(255,255,255,0.84);
+        font-size:0.8125rem;
+        font-weight:600;
+        text-decoration:none;
+        cursor:pointer;
+        transition:background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+      }
+      .topbar-button:hover:not(:disabled) {
+        background:rgba(255,255,255,0.16);
+        border-color:rgba(255,255,255,0.18);
+        color:#FFFFFF;
+        text-decoration:none;
+      }
+      .topbar-button:focus-visible {
+        outline:2px solid rgba(255,255,255,0.42);
+        outline-offset:2px;
+      }
+      .topbar-update-button {
+        border-color:rgba(251,191,36,0.42);
+        background:linear-gradient(180deg, #FBBF24 0%, #F59E0B 100%);
+        color:#3B2200;
+        font-weight:700;
+        box-shadow:0 8px 18px rgba(245,158,11,0.26);
+      }
+      .topbar-update-button:hover:not(:disabled) {
+        background:linear-gradient(180deg, #FCD34D 0%, #F59E0B 100%);
+        border-color:rgba(252,211,77,0.56);
+        color:#2E1700;
+        transform:translateY(-1px);
+      }
+      .topbar-update-button[hidden] {
+        display:none;
       }
       .topbar-dot {
         width: 8px; height: 8px;
@@ -311,6 +397,9 @@ export const renderPage = (
         padding-left: 0.75rem;
         margin-left: 0.75rem;
         border-left: 1px solid rgba(255,255,255,0.15);
+      }
+      .topbar-brand .topbar-update-button {
+        margin-left: 0.25rem;
       }
       /* --- Shell --- */
       .shell {
@@ -437,6 +526,107 @@ export const renderPage = (
         align-items:center;
         gap:0.75rem;
         flex-wrap:wrap;
+      }
+      .runtime-summary-panel {
+        display:grid;
+        gap:0.875rem;
+        padding:1rem 1.1rem;
+        border:1px solid rgba(20,99,200,0.10);
+        border-radius:var(--radius-lg);
+        background:linear-gradient(180deg, rgba(255,255,255,0.98), rgba(244,248,255,0.96));
+      }
+      .runtime-summary-panel strong {
+        display:block;
+        font-size:1.15rem;
+        line-height:1.35;
+        color:var(--color-text-primary);
+      }
+      .runtime-summary-panel p {
+        margin:0;
+        color:var(--color-text-secondary);
+      }
+      .runtime-state-badge {
+        display:inline-flex;
+        align-items:center;
+        padding:0.25rem 0.65rem;
+        border-radius:999px;
+        background:#E5E7EB;
+        color:#374151;
+        font-size:0.75rem;
+        font-weight:700;
+        letter-spacing:0.04em;
+        text-transform:uppercase;
+        width:max-content;
+      }
+      .runtime-state-badge[data-state="ok"] {
+        background:rgba(27,139,75,0.10);
+        color:#166534;
+      }
+      .runtime-state-badge[data-state="warning"] {
+        background:rgba(180,83,9,0.10);
+        color:#92400E;
+      }
+      .runtime-state-badge[data-state="error"] {
+        background:rgba(196,28,28,0.10);
+        color:#991B1B;
+      }
+      .runtime-info-list {
+        display:grid;
+        grid-template-columns:max-content minmax(0,1fr);
+        gap:0.75rem 1rem;
+        margin:0;
+      }
+      .runtime-info-list dt {
+        color:var(--color-text-secondary);
+        font-size:0.8125rem;
+        font-weight:700;
+        letter-spacing:0.04em;
+        text-transform:uppercase;
+      }
+      .runtime-info-list dd {
+        margin:0;
+        color:var(--color-text-primary);
+        font-weight:500;
+        word-break:break-word;
+      }
+      .runtime-highlights {
+        margin:0;
+        padding-left:1.25rem;
+        display:grid;
+        gap:0.5rem;
+        color:var(--color-text-primary);
+      }
+      .runtime-highlights[hidden] {
+        display:none;
+      }
+      .runtime-aux-actions {
+        display:flex;
+        align-items:center;
+        gap:0.75rem;
+        flex-wrap:wrap;
+      }
+      .ember-button {
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        gap:0.5rem;
+        border:none;
+        border-radius:var(--radius-md);
+        background:linear-gradient(180deg, #FBBF24 0%, #F59E0B 100%);
+        color:#3B2200;
+        font-weight:700;
+        font-size:0.9375rem;
+        padding:0.8125rem 1.25rem;
+        cursor:pointer;
+        box-shadow:0 10px 24px rgba(245,158,11,0.22);
+      }
+      .ember-button:hover:not(:disabled) {
+        background:linear-gradient(180deg, #FCD34D 0%, #F59E0B 100%);
+      }
+      .ember-button:disabled {
+        opacity:0.5;
+        cursor:not-allowed;
+        box-shadow:none;
       }
       .dashboard-hero-summary {
         margin-bottom: 0;
@@ -956,14 +1146,66 @@ export const renderPage = (
     <header class="topbar">
       <div class="topbar-inner">
         <div class="topbar-brand">
-          <span class="topbar-dot" data-topbar-status-dot data-status="${options?.topbarStatus ?? ""}" aria-label="Sync status"></span>
-          <span class="topbar-title">Clio FS</span>
-          <span class="topbar-subtitle">${escapeHtml(options?.topbarSubtitle ?? "Control Plane")}</span>
+          <div class="topbar-brand-copy">
+            <span class="topbar-dot" data-topbar-status-dot data-status="${options?.topbarStatus ?? ""}" aria-label="Sync status"></span>
+            <span class="topbar-title">Clio FS</span>
+            <span class="topbar-subtitle">${escapeHtml(options?.topbarSubtitle ?? "Control Plane")}</span>
+          </div>
+          ${
+            options?.runtimeControls
+              ? `<button type="button" class="topbar-button topbar-update-button" data-open-runtime-update hidden>Update</button>`
+              : ""
+          }
         </div>
-        <div class="topbar-actions">${options?.topbarActions ?? ""}</div>
+        <div class="topbar-actions">
+          ${options?.topbarActions ?? ""}
+        </div>
       </div>
     </header>
     <main class="shell">${body}</main>
+    ${
+      options?.runtimeControls
+        ? `
+          <div
+            data-runtime-controls
+            data-version-url="${escapeHtml(options.runtimeControls.versionUrl)}"
+            data-update-check-url="${escapeHtml(options.runtimeControls.updateCheckUrl)}"
+            data-update-apply-url="${escapeHtml(options.runtimeControls.updateApplyUrl ?? "")}"
+          ></div>
+          <dialog class="dialog" data-runtime-update-dialog>
+            <div class="modal-card">
+              <div class="modal-header">
+                <div>
+                  <p class="table-card-label" style="margin-bottom:0.35rem;">Release Update</p>
+                  <h2 class="modal-title">What's new</h2>
+                </div>
+                <button class="modal-close" type="button" data-close-runtime-update aria-label="Close update dialog">×</button>
+              </div>
+              <div class="modal-body">
+                <div class="stack">
+                  <section class="runtime-summary-panel">
+                    <span class="runtime-state-badge" data-runtime-update-status data-state="">Update available</span>
+                    <div>
+                      <strong data-runtime-update-headline>No newer release detected yet.</strong>
+                      <p data-runtime-update-copy>Run a release check from About to refresh the available update metadata.</p>
+                    </div>
+                  </section>
+                  <ul class="runtime-highlights" data-runtime-highlights hidden></ul>
+                  <div class="runtime-aux-actions">
+                    <a href="#" class="secondary-button" data-runtime-update-notes hidden target="_blank" rel="noreferrer noopener">Read release notes</a>
+                  </div>
+                  <div class="modal-inline-error" data-runtime-update-feedback hidden></div>
+                </div>
+              </div>
+              <div class="modal-actions">
+                <button type="button" class="secondary-button" data-close-runtime-update>Cancel</button>
+                <button type="button" class="ember-button" data-apply-runtime-update>Start update</button>
+              </div>
+            </div>
+          </dialog>
+        `
+        : ""
+    }
     <script>
       (() => {
         const topbarDot = document.querySelector("[data-topbar-status-dot]");
@@ -1155,6 +1397,418 @@ export const renderPage = (
         };
 
         bindUpdateWidgets();
+
+        const runtimeControlsRoot = document.querySelector("[data-runtime-controls]");
+
+        const bindRuntimeControls = () => {
+          if (!(runtimeControlsRoot instanceof HTMLElement) || runtimeControlsRoot.dataset.bound === "true") {
+            return;
+          }
+
+          runtimeControlsRoot.dataset.bound = "true";
+
+          const versionUrl = runtimeControlsRoot.dataset.versionUrl ?? "";
+          const updateCheckUrl = runtimeControlsRoot.dataset.updateCheckUrl ?? "";
+          const updateApplyUrl = runtimeControlsRoot.dataset.updateApplyUrl ?? "";
+          const updateDialog = document.querySelector("[data-runtime-update-dialog]");
+          const headerUpdateButton = document.querySelector("[data-open-runtime-update]");
+          const updateCloseButtons = document.querySelectorAll("[data-close-runtime-update]");
+          const aboutFeedback = document.querySelector("[data-runtime-about-feedback]");
+          const updateFeedback = document.querySelector("[data-runtime-update-feedback]");
+          const aboutStatus = document.querySelector("[data-runtime-about-status]");
+          const updateStatus = document.querySelector("[data-runtime-update-status]");
+          const currentVersionNode = document.querySelector("[data-runtime-current-version]");
+          const latestVersionNode = document.querySelector("[data-runtime-latest-version]");
+          const channelNode = document.querySelector("[data-runtime-channel]");
+          const publishedAtNode = document.querySelector("[data-runtime-published-at]");
+          const manifestLink = document.querySelector("[data-runtime-manifest-url]");
+          const notesLinks = document.querySelectorAll("[data-runtime-release-notes], [data-runtime-update-notes]");
+          const summaryHeadline = document.querySelector("[data-runtime-summary-headline]");
+          const summaryCopy = document.querySelector("[data-runtime-summary-copy]");
+          const updateHeadline = document.querySelector("[data-runtime-update-headline]");
+          const updateCopy = document.querySelector("[data-runtime-update-copy]");
+          const highlightsNode = document.querySelector("[data-runtime-highlights]");
+          const checkUpdatesButton = document.querySelector("[data-check-runtime-updates]");
+          const applyUpdateButton = document.querySelector("[data-apply-runtime-update]");
+
+          const runtimeState = {
+            currentVersion: "—",
+            latestVersion: "—",
+            channel: "stable",
+            manifestUrl: updateCheckUrl,
+            notesUrl: "",
+            publishedAt: "",
+            message: "",
+            updateAvailable: false,
+            highlights: []
+          };
+
+          const setDialogState = (node, state, text) => {
+            if (!(node instanceof HTMLElement)) {
+              return;
+            }
+
+            node.textContent = text;
+            if (state) {
+              node.setAttribute("data-state", state);
+            } else {
+              node.removeAttribute("data-state");
+            }
+          };
+
+          const setFeedback = (node, message, tone = "error") => {
+            if (!(node instanceof HTMLElement)) {
+              return;
+            }
+
+            if (!message) {
+              node.hidden = true;
+              node.textContent = "";
+              return;
+            }
+
+            node.hidden = false;
+            node.textContent = message;
+            node.style.borderColor = tone === "success" ? "rgba(22,101,52,0.18)" : "rgba(196,28,28,0.20)";
+            node.style.background = tone === "success" ? "rgba(27,139,75,0.10)" : "var(--color-danger-soft)";
+            node.style.color = tone === "success" ? "var(--color-success-text)" : "var(--color-danger-text)";
+          };
+
+          const formatPublishedAt = (value) => {
+            if (typeof value !== "string" || value.length === 0) {
+              return "—";
+            }
+
+            const timestamp = Date.parse(value);
+            if (Number.isNaN(timestamp)) {
+              return value;
+            }
+
+            return new Date(timestamp).toLocaleString();
+          };
+
+          const openDialog = (dialog) => {
+            if (dialog instanceof HTMLDialogElement && !dialog.open) {
+              dialog.showModal();
+            }
+          };
+
+          const closeDialog = (dialog) => {
+            if (dialog instanceof HTMLDialogElement && dialog.open) {
+              dialog.close();
+            }
+          };
+
+          const bindBackdropClose = (dialog) => {
+            if (!(dialog instanceof HTMLDialogElement) || dialog.dataset.backdropBound === "true") {
+              return;
+            }
+
+            dialog.dataset.backdropBound = "true";
+            dialog.addEventListener("click", (event) => {
+              const rect = dialog.getBoundingClientRect();
+              const withinDialog =
+                event.clientX >= rect.left &&
+                event.clientX <= rect.right &&
+                event.clientY >= rect.top &&
+                event.clientY <= rect.bottom;
+
+              if (!withinDialog) {
+                dialog.close();
+              }
+            });
+          };
+
+          const renderHighlights = (items) => {
+            if (!(highlightsNode instanceof HTMLElement)) {
+              return;
+            }
+
+            if (!Array.isArray(items) || items.length === 0) {
+              highlightsNode.hidden = true;
+              highlightsNode.innerHTML = "";
+              return;
+            }
+
+            highlightsNode.hidden = false;
+            highlightsNode.innerHTML = items
+              .map((item) => '<li>' + String(item)
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;') + '</li>')
+              .join("");
+          };
+
+          const applyRuntimePayload = (payload, isError = false) => {
+            if (typeof payload.currentVersion === "string") {
+              runtimeState.currentVersion = payload.currentVersion;
+            }
+            if (typeof payload.latestVersion === "string") {
+              runtimeState.latestVersion = payload.latestVersion;
+            }
+            if (typeof payload.channel === "string") {
+              runtimeState.channel = payload.channel;
+            }
+            if (typeof payload.manifestUrl === "string" && payload.manifestUrl.length > 0) {
+              runtimeState.manifestUrl = payload.manifestUrl;
+            }
+            if (typeof payload.notesUrl === "string") {
+              runtimeState.notesUrl = payload.notesUrl;
+            }
+            if (typeof payload.publishedAt === "string") {
+              runtimeState.publishedAt = payload.publishedAt;
+            }
+            if (typeof payload.message === "string") {
+              runtimeState.message = payload.message;
+            }
+            runtimeState.updateAvailable = payload.updateAvailable === true;
+            runtimeState.highlights = Array.isArray(payload.highlights) ? payload.highlights : [];
+
+            if (currentVersionNode instanceof HTMLElement) {
+              currentVersionNode.textContent = runtimeState.currentVersion;
+            }
+            if (latestVersionNode instanceof HTMLElement) {
+              latestVersionNode.textContent = runtimeState.latestVersion;
+            }
+            if (channelNode instanceof HTMLElement) {
+              channelNode.textContent = runtimeState.channel;
+            }
+            if (publishedAtNode instanceof HTMLElement) {
+              publishedAtNode.textContent = formatPublishedAt(runtimeState.publishedAt);
+            }
+            if (manifestLink instanceof HTMLAnchorElement) {
+              manifestLink.href = runtimeState.manifestUrl || "#";
+              manifestLink.textContent = runtimeState.manifestUrl || "Open manifest";
+            }
+
+            for (const notesLink of notesLinks) {
+              if (!(notesLink instanceof HTMLAnchorElement)) {
+                continue;
+              }
+
+              if (!isError && runtimeState.notesUrl.length > 0) {
+                notesLink.hidden = false;
+                notesLink.href = runtimeState.notesUrl;
+              } else {
+                notesLink.hidden = true;
+                notesLink.removeAttribute("href");
+              }
+            }
+
+            if (isError) {
+              setDialogState(aboutStatus, "error", "Check failed");
+              setDialogState(updateStatus, "error", "Update unavailable");
+              if (summaryHeadline instanceof HTMLElement) {
+                summaryHeadline.textContent = "Unable to load release metadata.";
+              }
+              if (summaryCopy instanceof HTMLElement) {
+                summaryCopy.textContent = runtimeState.message || "Release discovery is temporarily unavailable.";
+              }
+              if (updateHeadline instanceof HTMLElement) {
+                updateHeadline.textContent = "Release metadata is unavailable.";
+              }
+              if (updateCopy instanceof HTMLElement) {
+                updateCopy.textContent = runtimeState.message || "Check again later.";
+              }
+              if (headerUpdateButton instanceof HTMLElement) {
+                headerUpdateButton.hidden = true;
+              }
+              if (applyUpdateButton instanceof HTMLButtonElement) {
+                applyUpdateButton.disabled = true;
+              }
+              renderHighlights([]);
+              return;
+            }
+
+            if (runtimeState.updateAvailable) {
+              setDialogState(aboutStatus, "warning", "Update available");
+              setDialogState(updateStatus, "warning", "Update available");
+              if (summaryHeadline instanceof HTMLElement) {
+                summaryHeadline.textContent = "A newer release is ready for manual installation.";
+              }
+              if (summaryCopy instanceof HTMLElement) {
+                summaryCopy.textContent = "The header Update button will stay visible until you install or dismiss the release.";
+              }
+              if (updateHeadline instanceof HTMLElement) {
+                updateHeadline.textContent = "Version " + runtimeState.latestVersion + " is available.";
+              }
+              if (updateCopy instanceof HTMLElement) {
+                updateCopy.textContent = runtimeState.highlights.length > 0
+                  ? "Review the release highlights before starting the manual update."
+                  : "Release notes are available for this version. Installation remains manual.";
+              }
+              if (headerUpdateButton instanceof HTMLElement) {
+                headerUpdateButton.hidden = false;
+              }
+              if (applyUpdateButton instanceof HTMLButtonElement) {
+                applyUpdateButton.disabled = updateApplyUrl.length === 0;
+              }
+              renderHighlights(runtimeState.highlights);
+              return;
+            }
+
+            setDialogState(aboutStatus, "ok", "Up to date");
+            setDialogState(updateStatus, "ok", "No update pending");
+            if (summaryHeadline instanceof HTMLElement) {
+              summaryHeadline.textContent = "This runtime already matches the latest published release.";
+            }
+            if (summaryCopy instanceof HTMLElement) {
+              summaryCopy.textContent = "No installation action is required right now.";
+            }
+            if (updateHeadline instanceof HTMLElement) {
+              updateHeadline.textContent = "No newer release is currently available.";
+            }
+            if (updateCopy instanceof HTMLElement) {
+              updateCopy.textContent = "Use About to run another manual release check whenever needed.";
+            }
+            if (headerUpdateButton instanceof HTMLElement) {
+              headerUpdateButton.hidden = true;
+            }
+            if (applyUpdateButton instanceof HTMLButtonElement) {
+              applyUpdateButton.disabled = true;
+            }
+            renderHighlights([]);
+          };
+
+          const loadRuntimeVersion = async () => {
+            if (versionUrl.length === 0) {
+              return;
+            }
+
+            const response = await fetch(versionUrl, {
+              headers: { "x-clio-ui-request": "1" }
+            });
+
+            if (!response.ok) {
+              return;
+            }
+
+            const payload = await response.json().catch(() => null);
+            if (payload && typeof payload.version === "string") {
+              applyRuntimePayload({
+                currentVersion: payload.version,
+                latestVersion: payload.version,
+                channel: payload.channel ?? "stable",
+                updateAvailable: false
+              });
+            }
+          };
+
+          const checkRuntimeUpdates = async ({ reportErrors = true } = {}) => {
+            if (updateCheckUrl.length === 0) {
+              return;
+            }
+
+            if (checkUpdatesButton instanceof HTMLButtonElement) {
+              checkUpdatesButton.disabled = true;
+              checkUpdatesButton.textContent = "Checking…";
+            }
+
+            setFeedback(aboutFeedback, "");
+            setFeedback(updateFeedback, "");
+
+            try {
+              const response = await fetch(updateCheckUrl, {
+                headers: { "x-clio-ui-request": "1" }
+              });
+              const payload = await response.json().catch(() => null);
+
+              if (!response.ok || !payload) {
+                throw new Error(payload?.error?.message ?? "Unable to check for updates.");
+              }
+
+              applyRuntimePayload(payload);
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "Unable to check for updates.";
+              applyRuntimePayload({ message }, true);
+
+              if (reportErrors) {
+                setFeedback(aboutFeedback, message);
+              }
+            } finally {
+              if (checkUpdatesButton instanceof HTMLButtonElement) {
+                checkUpdatesButton.disabled = false;
+                checkUpdatesButton.textContent = "Check for updates";
+              }
+            }
+          };
+
+          const applyRuntimeUpdate = async () => {
+            if (updateApplyUrl.length === 0 || !(applyUpdateButton instanceof HTMLButtonElement)) {
+              return;
+            }
+
+            applyUpdateButton.disabled = true;
+            applyUpdateButton.textContent = "Updating…";
+            setFeedback(updateFeedback, "");
+
+            try {
+              const response = await fetch(updateApplyUrl, {
+                method: "POST",
+                headers: { "x-clio-ui-request": "1" }
+              });
+              const payload = await response.json().catch(() => null);
+
+              if (!response.ok || !payload) {
+                throw new Error(payload?.error?.message ?? "Unable to start the update.");
+              }
+
+              const successMessage =
+                typeof payload.message === "string" && payload.message.length > 0
+                  ? payload.message
+                  : "Update package downloaded successfully.";
+
+              setFeedback(updateFeedback, successMessage, "success");
+              if (typeof payload.targetVersion === "string") {
+                runtimeState.latestVersion = payload.targetVersion;
+              }
+              if (typeof payload.notesUrl === "string") {
+                runtimeState.notesUrl = payload.notesUrl;
+              }
+              if (Array.isArray(payload.highlights)) {
+                runtimeState.highlights = payload.highlights;
+                renderHighlights(runtimeState.highlights);
+              }
+            } catch (error) {
+              setFeedback(
+                updateFeedback,
+                error instanceof Error ? error.message : "Unable to start the update."
+              );
+            } finally {
+              applyUpdateButton.disabled = runtimeState.updateAvailable === false;
+              applyUpdateButton.textContent = "Start update";
+            }
+          };
+
+          bindBackdropClose(updateDialog);
+
+          if (headerUpdateButton instanceof HTMLButtonElement) {
+            headerUpdateButton.addEventListener("click", () => {
+              openDialog(updateDialog);
+            });
+          }
+
+          for (const button of updateCloseButtons) {
+            button.addEventListener("click", () => closeDialog(updateDialog));
+          }
+
+          if (checkUpdatesButton instanceof HTMLButtonElement) {
+            checkUpdatesButton.addEventListener("click", () => {
+              void checkRuntimeUpdates().catch(() => {});
+            });
+          }
+
+          if (applyUpdateButton instanceof HTMLButtonElement) {
+            applyUpdateButton.addEventListener("click", () => {
+              void applyRuntimeUpdate().catch(() => {});
+            });
+          }
+
+          void loadRuntimeVersion().catch(() => {});
+          void checkRuntimeUpdates({ reportErrors: false }).catch(() => {});
+        };
+
+        bindRuntimeControls();
 
         const inferFolderName = (selectedPath) => {
           const normalized = selectedPath.replace(/[\\\\/]+$/, "");

@@ -232,6 +232,10 @@ Response `200`:
   "manifestUrl": "https://github.com/<org>/<repo>/releases/latest/download/manifest.json",
   "notesUrl": "https://github.com/<org>/<repo>/releases/tag/v1.3.0",
   "publishedAt": "2026-03-27T12:00:00Z",
+  "highlights": [
+    "About now carries expanded runtime metadata",
+    "Header shows a manual Update button when a release is available"
+  ],
   "asset": {
     "fileName": "clio-fs-v1.3.0-linux.tar.gz",
     "platform": "linux",
@@ -239,6 +243,38 @@ Response `200`:
     "url": "https://github.com/<org>/<repo>/releases/download/v1.3.0/clio-fs-v1.3.0-linux.tar.gz",
     "sha256": "..."
   }
+}
+```
+
+### POST /update/apply
+
+Client UI manual staged-update endpoint.
+
+Behavior:
+
+- re-checks the configured release manifest
+- downloads the platform-specific bundle only after an explicit UI action
+- verifies the bundle checksum
+- stores the verified bundle in the client staging directory
+- does not switch the active runtime yet
+
+Response `200`:
+
+```json
+{
+  "service": "clio-fs-client-ui",
+  "currentVersion": "1.2.3",
+  "targetVersion": "1.3.0",
+  "updateApplied": true,
+  "restartRequired": true,
+  "message": "Release 1.3.0 was downloaded and staged. Restart the installed client runtime to switch to the new bundle.",
+  "notesUrl": "https://github.com/<org>/<repo>/releases/tag/v1.3.0",
+  "publishedAt": "2026-03-27T12:00:00Z",
+  "highlights": [
+    "About now carries expanded runtime metadata",
+    "Header shows a manual Update button when a release is available"
+  ],
+  "stagedAt": "2026-03-27T12:05:00Z"
 }
 ```
 
@@ -258,6 +294,12 @@ Failure response `502`:
 Server control-plane manual update-check endpoint.
 
 Response shape matches `GET /update/check`, with `service` set to `clio-fs-server`.
+
+### POST /api/update/apply
+
+Server control-plane manual staged-update endpoint.
+
+Behavior matches `POST /update/apply`, but the request must be authenticated with a bearer token.
 
 ### GET /settings/watch
 

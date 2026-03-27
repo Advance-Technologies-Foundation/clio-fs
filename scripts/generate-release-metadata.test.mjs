@@ -73,6 +73,7 @@ test("createReleaseManifest emits manual-update metadata for combined bundles", 
     releaseVersion: "1.2.3",
     repository: "example/clio-fs",
     publishedAt: "2026-03-27T12:00:00.000Z",
+    highlights: ["About modal now carries release details"],
     assets: [
       {
         fileName: "clio-fs-v1.2.3-linux.tar.gz",
@@ -86,6 +87,7 @@ test("createReleaseManifest emits manual-update metadata for combined bundles", 
   assert.equal(manifest.channel, "stable");
   assert.equal(manifest.version, "1.2.3");
   assert.equal(manifest.notesUrl, "https://github.com/example/clio-fs/releases/tag/v1.2.3");
+  assert.deepEqual(manifest.highlights, ["About modal now carries release details"]);
   assert.deepEqual(manifest.assets["bundle-linux"], {
     fileName: "clio-fs-v1.2.3-linux.tar.gz",
     platform: "linux",

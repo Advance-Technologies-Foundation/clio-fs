@@ -102,6 +102,7 @@ test("GET /api/update/check exposes update metadata for the current platform bun
           version: "0.2.0",
           publishedAt: "2026-03-27T12:00:00Z",
           notesUrl: "https://example.test/releases/v0.2.0",
+          highlights: ["Improved release discovery UI"],
           assets: {
             "bundle-linux": {
               fileName: "clio-fs-v0.2.0-linux.tar.gz",
@@ -133,7 +134,77 @@ test("GET /api/update/check exposes update metadata for the current platform bun
     assert.equal(body.currentVersion, "0.1.0");
     assert.equal(body.latestVersion, "0.2.0");
     assert.equal(body.updateAvailable, true);
+    assert.deepEqual(body.highlights, ["Improved release discovery UI"]);
     assert.equal(body.asset?.platform, "linux");
+  } finally {
+    await server.close();
+  }
+});
+
+test("POST /api/update/apply stages the latest server bundle when authorized", async () => {
+  const assetBytes = Buffer.from("server-release-asset\n", "utf8");
+  const assetSha256 = "0702f51333d8d3856e64ed180ad0df75839161b43bed8f0ec1b12c32519421d2";
+  const requests: string[] = [];
+  const server = await startTestServer({
+    fetchImpl: (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requests.push(url);
+
+      if (url === "https://releases.example.test/manifest.json") {
+        return new Response(
+          JSON.stringify({
+            channel: "stable",
+            version: "0.2.0",
+            publishedAt: "2026-03-27T12:00:00Z",
+            notesUrl: "https://example.test/releases/v0.2.0",
+            highlights: ["Updated About and Update modals"],
+            assets: {
+              "bundle-linux": {
+                fileName: "clio-fs-v0.2.0-linux.tar.gz",
+                platform: "linux",
+                format: "tar.gz",
+                url: "https://example.test/clio-fs-v0.2.0-linux.tar.gz",
+                sha256: assetSha256
+              }
+            },
+            compatibility: {
+              minServerVersion: "0.2.0",
+              minClientVersion: "0.2.0"
+            }
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        );
+      }
+
+      if (url === "https://example.test/clio-fs-v0.2.0-linux.tar.gz") {
+        return new Response(assetBytes, { status: 200 });
+      }
+
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch
+  });
+
+  try {
+    const response = await fetch(`${server.apiBaseUrl}/update/apply`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`
+      }
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.updateApplied, true);
+    assert.equal(body.restartRequired, true);
+    assert.equal(body.targetVersion, "0.2.0");
+    assert.deepEqual(body.highlights, ["Updated About and Update modals"]);
+    assert.deepEqual(requests, [
+      "https://releases.example.test/manifest.json",
+      "https://example.test/clio-fs-v0.2.0-linux.tar.gz"
+    ]);
   } finally {
     await server.close();
   }

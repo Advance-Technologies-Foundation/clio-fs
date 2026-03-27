@@ -29,9 +29,9 @@ import {
   renderPage,
   renderServerSettingsButton,
   renderServerSettingsModal,
+  renderRuntimeAboutSection,
   renderWorkspaceRegistrationModal,
   renderStatusBadge,
-  renderUpdateWidget,
   renderWorkspaceTable,
   escapeHtml
 } from "@clio-fs/ui-kit";
@@ -478,10 +478,15 @@ const renderDashboard = async (
   });
 
   return renderPage("Clio FS Server", body, {
-    topbarActions: `${renderHomeLink()}${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
+    topbarActions: renderServerTopbarActions(),
     topbarSubtitle: "Server Control Plane",
     topbarStatus: getServerTopbarSeverity(health, workspaces),
-    topbarStatusPollUrl: "/topbar-status"
+    topbarStatusPollUrl: "/topbar-status",
+    runtimeControls: renderServerRuntimeControls({
+      health,
+      workspaceCount: workspaces.length,
+      watchSettings
+    })
   });
 };
 
@@ -525,12 +530,6 @@ const renderDashboardBody = (
             ${renderMetricCard("Workspaces", String(workspaces.length), workspaces.length > 0 ? "ok" : "info")}
           </div>
         </div>
-        ${renderUpdateWidget({
-          versionUrl: "/api/version",
-          updateCheckUrl: "/api/update/check",
-          title: "Server release",
-          compact: true
-        })}
       </section>
       ${
         state?.notice ? renderNotice(state.notice.tone, state.notice.message) : ""
@@ -591,24 +590,117 @@ const renderWorkspaceDetail = (
       </section>
     `,
     {
-      topbarActions: `${renderHomeLink()}${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
+      topbarActions: renderServerTopbarActions(),
       topbarSubtitle: "Server Control Plane",
       topbarStatus: workspace.status === "active" && !isStale ? "ok" : isStale ? "error" : "warning",
-      topbarStatusPollUrl: "/topbar-status"
+      topbarStatusPollUrl: "/topbar-status",
+      runtimeControls: renderServerRuntimeControls({
+        workspaceCount: 1,
+        watchSettings
+      })
     }
   );
 };
 
+const renderServerAboutPage = (
+  health: ServerHealthResponse,
+  workspaces: WorkspaceRecord[],
+  watchSettings: ServerWatchSettings
+) =>
+  renderPage(
+    "About | Clio FS Server",
+    `
+      ${renderServerSettingsModal(watchSettings)}
+      ${renderRuntimeAboutSection({
+        title: "Server runtime overview",
+        description:
+          "This page centralizes release discovery and the current operating state of the server control plane.",
+        detailsHtml: `
+          <section class="stack">
+            <div class="eyebrow">System snapshot</div>
+            <dl class="runtime-info-list">
+              <dt>Service</dt>
+              <dd>${escapeHtml(health.service)}</dd>
+              <dt>Platform</dt>
+              <dd>${escapeHtml(health.platform)}</dd>
+              <dt>Health</dt>
+              <dd>${escapeHtml(health.status)}</dd>
+              <dt>Workspaces</dt>
+              <dd>${String(workspaces.length)}</dd>
+              <dt>Watch settle delay</dt>
+              <dd>${String(watchSettings.settleDelayMs)} ms</dd>
+              <dt>Local bypass</dt>
+              <dd>${String(Boolean(watchSettings.localBypass))}</dd>
+            </dl>
+          </section>
+        `
+      })}
+    `,
+    {
+      topbarActions: renderServerTopbarActions(),
+      topbarSubtitle: "Server Control Plane",
+      topbarStatus: getServerTopbarSeverity(health, workspaces),
+      topbarStatusPollUrl: "/topbar-status",
+      runtimeControls: renderServerRuntimeControls({
+        health,
+        workspaceCount: workspaces.length,
+        watchSettings
+      })
+    }
+  );
+
+const renderServerRuntimeControls = (input: {
+  health?: ServerHealthResponse;
+  workspaceCount: number;
+  watchSettings: ServerWatchSettings;
+}) => ({
+  aboutLabel: "About",
+  aboutTitle: "About this server",
+  aboutDescription:
+    "Review control plane runtime details, release metadata, and manually trigger a staged update when a newer release is available.",
+  aboutDetailsHtml: `
+    <section class="stack">
+      <div class="eyebrow">System snapshot</div>
+      <dl class="runtime-info-list">
+        <dt>Service</dt>
+        <dd>${escapeHtml(input.health?.service ?? "clio-fs-server")}</dd>
+        <dt>Platform</dt>
+        <dd>${escapeHtml(input.health?.platform ?? process.platform)}</dd>
+        <dt>Health</dt>
+        <dd>${escapeHtml(input.health?.status ?? "unknown")}</dd>
+        <dt>Workspaces</dt>
+        <dd>${String(input.workspaceCount)}</dd>
+        <dt>Watch settle delay</dt>
+        <dd>${String(input.watchSettings.settleDelayMs)} ms</dd>
+        <dt>Local bypass</dt>
+        <dd>${String(Boolean(input.watchSettings.localBypass))}</dd>
+      </dl>
+    </section>
+  `,
+  versionUrl: "/api/version",
+  updateCheckUrl: "/api/update/check",
+  updateApplyUrl: "/api/update/apply"
+});
+
+const renderServerTopbarActions = () =>
+  `${renderHomeLink()}${renderAdminLink()}${renderLogsLink()}${renderAboutLink()}${renderServerSettingsButton()}${renderLogoutButton()}`;
+
 const renderHomeLink = () =>
-  `<a href="/" style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.375rem 0.875rem;border-radius:8px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.80);font-size:0.8125rem;font-weight:500;text-decoration:none;" onmouseover="this.style.background='rgba(255,255,255,0.14)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'">Home</a>`;
+  `<a href="/" class="topbar-button">Home</a>`;
 
 const renderLogsLink = () =>
-  `<a href="/logs" style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.375rem 0.875rem;border-radius:8px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.80);font-size:0.8125rem;font-weight:500;text-decoration:none;" onmouseover="this.style.background='rgba(255,255,255,0.14)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'">Logs</a>`;
+  `<a href="/logs" class="topbar-button">Logs</a>`;
 
 const renderAdminLink = () =>
-  `<a href="/admin/tokens" style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.375rem 0.875rem;border-radius:8px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.80);font-size:0.8125rem;font-weight:500;text-decoration:none;" onmouseover="this.style.background='rgba(255,255,255,0.14)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'">Admin</a>`;
+  `<a href="/admin/tokens" class="topbar-button">Admin</a>`;
 
-const renderLogViewerPage = (watchSettings: ServerWatchSettings) =>
+const renderAboutLink = () =>
+  `<a href="/about" class="topbar-button">About</a>`;
+
+const renderLogViewerPage = (
+  watchSettings: ServerWatchSettings,
+  runtimeControls: ReturnType<typeof renderServerRuntimeControls>
+) =>
   renderPage(
     "Live Logs | Clio FS Server",
     `
@@ -844,12 +936,18 @@ const renderLogViewerPage = (watchSettings: ServerWatchSettings) =>
     `,
     {
       topbarSubtitle: "Server Control Plane",
-      topbarActions: `${renderHomeLink()}${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
-      topbarStatusPollUrl: "/topbar-status"
+      topbarActions: renderServerTopbarActions(),
+      topbarStatusPollUrl: "/topbar-status",
+      runtimeControls
     }
   );
 
-const renderTokensPage = (tokens: AuthTokenListItem[], watchSettings: ServerWatchSettings, notice?: { tone: "error" | "success"; message: string }) =>
+const renderTokensPage = (
+  tokens: AuthTokenListItem[],
+  watchSettings: ServerWatchSettings,
+  runtimeControls: ReturnType<typeof renderServerRuntimeControls>,
+  notice?: { tone: "error" | "success"; message: string }
+) =>
   renderPage(
     "Token Management | Clio FS Server",
     `
@@ -1144,9 +1242,10 @@ const renderTokensPage = (tokens: AuthTokenListItem[], watchSettings: ServerWatc
       </script>
     `,
     {
-      topbarActions: `${renderHomeLink()}${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
+      topbarActions: renderServerTopbarActions(),
       topbarSubtitle: "Server Control Plane",
-      topbarStatusPollUrl: "/topbar-status"
+      topbarStatusPollUrl: "/topbar-status",
+      runtimeControls
     }
   );
 
@@ -1344,6 +1443,16 @@ export const createServerUiRequestHandler = (options: ServerUiOptions) => {
 
       if (method === "GET" && url.pathname === "/") {
         writeHtml(response, 200, await renderDashboard(client, authenticatedToken));
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/about") {
+        const [health, workspaces, watchSettings] = await Promise.all([
+          client.getHealth(),
+          client.listWorkspaces(authenticatedToken),
+          client.getWatchSettings(authenticatedToken)
+        ]);
+        writeHtml(response, 200, renderServerAboutPage(health, workspaces, watchSettings));
         return;
       }
 
@@ -1581,8 +1690,23 @@ export const createServerUiRequestHandler = (options: ServerUiOptions) => {
       }
 
       if (method === "GET" && url.pathname === "/logs") {
-        const watchSettings = await client.getWatchSettings(authenticatedToken);
-        writeHtml(response, 200, renderLogViewerPage(watchSettings));
+        const [health, workspaces, watchSettings] = await Promise.all([
+          client.getHealth(),
+          client.listWorkspaces(authenticatedToken),
+          client.getWatchSettings(authenticatedToken)
+        ]);
+        writeHtml(
+          response,
+          200,
+          renderLogViewerPage(
+            watchSettings,
+            renderServerRuntimeControls({
+              health,
+              workspaceCount: workspaces.length,
+              watchSettings
+            })
+          )
+        );
         return;
       }
 
@@ -1626,11 +1750,25 @@ export const createServerUiRequestHandler = (options: ServerUiOptions) => {
       }
 
       if (method === "GET" && url.pathname === "/admin/tokens") {
-        const [tokens, watchSettings] = await Promise.all([
+        const [tokens, health, workspaces, watchSettings] = await Promise.all([
           client.listTokens(authenticatedToken),
+          client.getHealth(),
+          client.listWorkspaces(authenticatedToken),
           client.getWatchSettings(authenticatedToken)
         ]);
-        writeHtml(response, 200, renderTokensPage(tokens.items, watchSettings));
+        writeHtml(
+          response,
+          200,
+          renderTokensPage(
+            tokens.items,
+            watchSettings,
+            renderServerRuntimeControls({
+              health,
+              workspaceCount: workspaces.length,
+              watchSettings
+            })
+          )
+        );
         return;
       }
 
@@ -1643,21 +1781,51 @@ export const createServerUiRequestHandler = (options: ServerUiOptions) => {
             label,
             token: tokenValue.length > 0 ? tokenValue : undefined
           });
-          const [tokens, watchSettings] = await Promise.all([
+          const [tokens, health, workspaces, watchSettings] = await Promise.all([
             client.listTokens(authenticatedToken),
+            client.getHealth(),
+            client.listWorkspaces(authenticatedToken),
             client.getWatchSettings(authenticatedToken)
           ]);
-          writeHtml(response, 201, renderTokensPage(tokens.items, watchSettings, {
-            tone: "success",
-            message: `Token "${created.label}" created. Value: ${created.token}`
-          }));
+          writeHtml(
+            response,
+            201,
+            renderTokensPage(
+              tokens.items,
+              watchSettings,
+              renderServerRuntimeControls({
+                health,
+                workspaceCount: workspaces.length,
+                watchSettings
+              }),
+              {
+                tone: "success",
+                message: `Token "${created.label}" created. Value: ${created.token}`
+              }
+            )
+          );
         } catch (error) {
           const message = error instanceof Error ? error.message : "Failed to create token";
-          const [tokens, watchSettings] = await Promise.all([
+          const [tokens, health, workspaces, watchSettings] = await Promise.all([
             client.listTokens(authenticatedToken),
+            client.getHealth(),
+            client.listWorkspaces(authenticatedToken),
             client.getWatchSettings(authenticatedToken)
           ]);
-          writeHtml(response, 400, renderTokensPage(tokens.items, watchSettings, { tone: "error", message }));
+          writeHtml(
+            response,
+            400,
+            renderTokensPage(
+              tokens.items,
+              watchSettings,
+              renderServerRuntimeControls({
+                health,
+                workspaceCount: workspaces.length,
+                watchSettings
+              }),
+              { tone: "error", message }
+            )
+          );
         }
         return;
       }
@@ -1671,11 +1839,26 @@ export const createServerUiRequestHandler = (options: ServerUiOptions) => {
           redirect(response, "/admin/tokens");
         } catch (error) {
           const message = error instanceof Error ? error.message : "Failed to rename token";
-          const [tokens, watchSettings] = await Promise.all([
+          const [tokens, health, workspaces, watchSettings] = await Promise.all([
             client.listTokens(authenticatedToken),
+            client.getHealth(),
+            client.listWorkspaces(authenticatedToken),
             client.getWatchSettings(authenticatedToken)
           ]);
-          writeHtml(response, 400, renderTokensPage(tokens.items, watchSettings, { tone: "error", message }));
+          writeHtml(
+            response,
+            400,
+            renderTokensPage(
+              tokens.items,
+              watchSettings,
+              renderServerRuntimeControls({
+                health,
+                workspaceCount: workspaces.length,
+                watchSettings
+              }),
+              { tone: "error", message }
+            )
+          );
         }
         return;
       }
@@ -1687,11 +1870,26 @@ export const createServerUiRequestHandler = (options: ServerUiOptions) => {
           redirect(response, "/admin/tokens");
         } catch (error) {
           const message = error instanceof Error ? error.message : "Failed to delete token";
-          const [tokens, watchSettings] = await Promise.all([
+          const [tokens, health, workspaces, watchSettings] = await Promise.all([
             client.listTokens(authenticatedToken),
+            client.getHealth(),
+            client.listWorkspaces(authenticatedToken),
             client.getWatchSettings(authenticatedToken)
           ]);
-          writeHtml(response, 400, renderTokensPage(tokens.items, watchSettings, { tone: "error", message }));
+          writeHtml(
+            response,
+            400,
+            renderTokensPage(
+              tokens.items,
+              watchSettings,
+              renderServerRuntimeControls({
+                health,
+                workspaceCount: workspaces.length,
+                watchSettings
+              }),
+              { tone: "error", message }
+            )
+          );
         }
         return;
       }
@@ -1705,11 +1903,26 @@ export const createServerUiRequestHandler = (options: ServerUiOptions) => {
           redirect(response, "/admin/tokens");
         } catch (error) {
           const message = error instanceof Error ? error.message : "Failed to update token";
-          const [tokens, watchSettings] = await Promise.all([
+          const [tokens, health, workspaces, watchSettings] = await Promise.all([
             client.listTokens(authenticatedToken),
+            client.getHealth(),
+            client.listWorkspaces(authenticatedToken),
             client.getWatchSettings(authenticatedToken)
           ]);
-          writeHtml(response, 400, renderTokensPage(tokens.items, watchSettings, { tone: "error", message }));
+          writeHtml(
+            response,
+            400,
+            renderTokensPage(
+              tokens.items,
+              watchSettings,
+              renderServerRuntimeControls({
+                health,
+                workspaceCount: workspaces.length,
+                watchSettings
+              }),
+              { tone: "error", message }
+            )
+          );
         }
         return;
       }

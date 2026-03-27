@@ -229,6 +229,7 @@ test("returns update-check metadata for the current runtime", async () => {
             version: "0.2.0",
             publishedAt: "2026-03-27T12:00:00Z",
             notesUrl: "https://example.test/releases/v0.2.0",
+            highlights: ["Improved client update header action"],
             assets: {
               "bundle-macos": {
                 fileName: "clio-fs-v0.2.0-macos.tar.gz",
@@ -276,13 +277,78 @@ test("returns update-check metadata for the current runtime", async () => {
       currentVersion: string;
       latestVersion: string;
       updateAvailable: boolean;
+      highlights?: string[];
       asset?: { platform: string };
     };
     assert.equal(payload.service, "clio-fs-client-ui");
     assert.equal(payload.currentVersion, "0.1.0");
     assert.equal(payload.latestVersion, "0.2.0");
     assert.equal(payload.updateAvailable, true);
+    assert.deepEqual(payload.highlights, ["Improved client update header action"]);
     assert.equal(typeof payload.asset?.platform, "string");
+  } finally {
+    await server.close();
+  }
+});
+
+test("stages a client update when /update/apply is called", async () => {
+  const assetBytes = Buffer.from("client-release-asset\n", "utf8");
+  const assetSha256 = "de2dd6e2ea3b642efc264dd09e756ae8763d63d207d6cb37cc15b6badae871b8";
+  const platform = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux";
+  const format = platform === "windows" ? "zip" : "tar.gz";
+  const fileName = `clio-fs-v0.2.0-${platform}.${format}`;
+  const server = await startTestUi({
+    fetchImpl: (async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+
+      if (url.href === "https://github.com/Advance-Technologies-Foundation/clio-fs/releases/latest/download/manifest.json") {
+        return new Response(
+          JSON.stringify({
+            channel: "stable",
+            version: "0.2.0",
+            publishedAt: "2026-03-27T12:00:00Z",
+            notesUrl: "https://example.test/releases/v0.2.0",
+            highlights: ["Manual staged client update"],
+            assets: {
+              [`bundle-${platform}`]: {
+                fileName,
+                platform,
+                format,
+                url: `https://example.test/${fileName}`,
+                sha256: assetSha256
+              }
+            },
+            compatibility: {
+              minServerVersion: "0.2.0",
+              minClientVersion: "0.2.0"
+            }
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }
+        );
+      }
+
+      if (url.href === `https://example.test/${fileName}`) {
+        return new Response(assetBytes, { status: 200 });
+      }
+
+      return createFetchStub()(input);
+    }) as typeof fetch
+  });
+
+  try {
+    const response = await fetch(`${server.baseUrl}/update/apply`, {
+      method: "POST"
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.updateApplied, true);
+    assert.equal(payload.restartRequired, true);
+    assert.equal(payload.targetVersion, "0.2.0");
+    assert.deepEqual(payload.highlights, ["Manual staged client update"]);
   } finally {
     await server.close();
   }
@@ -316,12 +382,31 @@ test("renders metrics and registry when sync targets exist", async () => {
     assert.match(html, /Sync Targets/);
     assert.match(html, /From Server/);
     assert.match(html, /From Local/);
-    assert.match(html, /Client release/);
-    assert.match(html, /Check for updates/);
+    assert.match(html, />About</);
+    assert.match(html, /What&#39;s new|What's new/);
+    assert.doesNotMatch(html, /Client release/);
     assert.match(html, /data-open-edit-target/);
     assert.match(html, /Details/);
     assert.match(html, /Delete demo-main/);
     assert.match(html, /Targets/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("renders about page with client runtime information", async () => {
+  const targetStore = new InMemoryClientSyncTargetStore();
+  targetStore.save(seedTarget({ enabled: false }));
+  const server = await startTestUi({ targetStore });
+
+  try {
+    const response = await fetch(`${server.baseUrl}/about`);
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /Client runtime overview/);
+    assert.match(html, /System snapshot/);
+    assert.match(html, /Check for updates/);
   } finally {
     await server.close();
   }

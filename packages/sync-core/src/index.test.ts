@@ -37,6 +37,7 @@ test("checkForRuntimeUpdate returns update metadata for the current platform bun
           version: "0.2.0",
           publishedAt: "2026-03-27T12:00:00Z",
           notesUrl: "https://example.test/releases/v0.2.0",
+          highlights: ["Manual updates stay user-driven"],
           assets: {
             "bundle-linux": {
               fileName: "clio-fs-v0.2.0-linux.tar.gz",
@@ -62,6 +63,7 @@ test("checkForRuntimeUpdate returns update metadata for the current platform bun
   assert.equal(payload.currentVersion, "0.1.0");
   assert.equal(payload.latestVersion, "0.2.0");
   assert.equal(payload.updateAvailable, true);
+  assert.deepEqual(payload.highlights, ["Manual updates stay user-driven"]);
   assert.equal(payload.asset?.platform, "linux");
 });
 

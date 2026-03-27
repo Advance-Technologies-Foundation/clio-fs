@@ -8,12 +8,13 @@ import { URL } from "node:url";
 import { appConfig } from "@clio-fs/config";
 import type {
   ApiErrorShape,
+  UpdateApplyResponse,
   RuntimeVersionResponse,
   WorkspaceDescriptor,
   WorkspaceListResponse
 } from "@clio-fs/contracts";
-import { checkForRuntimeUpdate } from "@clio-fs/sync-core";
-import { escapeHtml, renderNotice, renderPage, renderUpdateWidget } from "@clio-fs/ui-kit";
+import { checkForRuntimeUpdate, stageRuntimeUpdate } from "@clio-fs/sync-core";
+import { escapeHtml, renderNotice, renderPage, renderRuntimeAboutSection } from "@clio-fs/ui-kit";
 import { noopLogger, type Logger } from "./logger.js";
 
 export interface ClientUiOptions {
@@ -819,12 +820,6 @@ const renderDashboardBody = (
             ${renderLiveMetricCard("Last Revision", typeof status.lastAppliedRevision === "number" ? String(status.lastAppliedRevision) : "n/a", "lastRevision")}
           </div>
         </div>
-        ${renderUpdateWidget({
-          versionUrl: "/version",
-          updateCheckUrl: "/update/check",
-          title: "Client release",
-          compact: true
-        })}
       </section>
       ${notice ? renderNotice(notice.tone, notice.message) : ""}
       ${renderTargetTable(targets, status)}
@@ -1635,7 +1630,8 @@ const renderClientPage = (
       topbarSubtitle: "Sync Client Control Plane",
       topbarActions: clientTopbarActions(),
       topbarStatus: getClientTopbarSeverity(status),
-      topbarStatusPollUrl: "/topbar-status"
+      topbarStatusPollUrl: "/topbar-status",
+      runtimeControls: renderClientRuntimeControls(targets, status)
     }
   );
 
@@ -1698,7 +1694,8 @@ const renderTargetDetail = (target: ClientSyncTarget, status: ClientSyncManagerS
       topbarSubtitle: "Sync Client Control Plane",
       topbarActions: clientTopbarActions(),
       topbarStatus: getClientTopbarSeverity(status),
-      topbarStatusPollUrl: "/topbar-status"
+      topbarStatusPollUrl: "/topbar-status",
+      runtimeControls: renderClientRuntimeControls([target], status)
     }
   );
 
@@ -1715,10 +1712,39 @@ const deriveStatusFromClientState = (
 });
 
 const topbarBtn = (href: string, label: string) =>
-  `<a href="${href}" style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.375rem 0.875rem;border-radius:8px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.80);font-size:0.8125rem;font-weight:500;text-decoration:none;" onmouseover="this.style.background='rgba(255,255,255,0.14)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'">${label}</a>`;
+  `<a href="${href}" class="topbar-button">${label}</a>`;
 
 const clientTopbarActions = () =>
-  `${topbarBtn("/", "Home")}${topbarBtn("/logs", "Logs")}`;
+  `${topbarBtn("/", "Home")}${topbarBtn("/logs", "Logs")}${topbarBtn("/about", "About")}`;
+
+const renderClientRuntimeControls = (targets: ClientSyncTarget[], status: ClientSyncManagerStatus) => ({
+  aboutLabel: "About",
+  aboutTitle: "About this client",
+  aboutDescription:
+    "Review client runtime details, registry state, and release metadata. Updates are discovered automatically but only start after manual confirmation.",
+  aboutDetailsHtml: `
+    <section class="stack">
+      <div class="eyebrow">System snapshot</div>
+      <dl class="runtime-info-list">
+        <dt>Service</dt>
+        <dd>${escapeHtml(CLIENT_UI_RUNTIME_VERSION.service)}</dd>
+        <dt>Platform</dt>
+        <dd>${escapeHtml(process.platform)}</dd>
+        <dt>Registered targets</dt>
+        <dd>${String(targets.length)}</dd>
+        <dt>Running workspace</dt>
+        <dd>${escapeHtml(status.workspaceId ?? "None")}</dd>
+        <dt>Sync state</dt>
+        <dd>${escapeHtml(status.lastError ? "Error" : status.running ? "Running" : "Idle")}</dd>
+        <dt>Manifest URL</dt>
+        <dd>${escapeHtml(appConfig.client.updateManifestUrl)}</dd>
+      </dl>
+    </section>
+  `,
+  versionUrl: "/version",
+  updateCheckUrl: "/update/check",
+  updateApplyUrl: "/update/apply"
+});
 
 const renderLogViewerPage = () =>
   renderPage(
@@ -1926,7 +1952,44 @@ const renderLogViewerPage = () =>
     {
       topbarSubtitle: "Sync Client Control Plane",
       topbarActions: clientTopbarActions(),
-      topbarStatusPollUrl: "/topbar-status"
+      topbarStatusPollUrl: "/topbar-status",
+      runtimeControls: renderClientRuntimeControls([], { running: false })
+    }
+  );
+
+const renderClientAboutPage = (targets: ClientSyncTarget[], status: ClientSyncManagerStatus) =>
+  renderPage(
+    "About | Clio FS Client",
+    renderRuntimeAboutSection({
+      title: "Client runtime overview",
+      description:
+        "This page centralizes release discovery and the current operating state of the local sync client.",
+      detailsHtml: `
+        <section class="stack">
+          <div class="eyebrow">System snapshot</div>
+          <dl class="runtime-info-list">
+            <dt>Service</dt>
+            <dd>${escapeHtml(CLIENT_UI_RUNTIME_VERSION.service)}</dd>
+            <dt>Platform</dt>
+            <dd>${escapeHtml(process.platform)}</dd>
+            <dt>Registered targets</dt>
+            <dd>${String(targets.length)}</dd>
+            <dt>Running workspace</dt>
+            <dd>${escapeHtml(status.workspaceId ?? "None")}</dd>
+            <dt>Sync state</dt>
+            <dd>${escapeHtml(status.lastError ? "Error" : status.running ? "Running" : "Idle")}</dd>
+            <dt>Unsynced objects</dt>
+            <dd>${String(status.unsyncedObjectCount ?? 0)}</dd>
+          </dl>
+        </section>
+      `
+    }),
+    {
+      topbarSubtitle: "Sync Client Control Plane",
+      topbarActions: clientTopbarActions(),
+      topbarStatus: getClientTopbarSeverity(status),
+      topbarStatusPollUrl: "/topbar-status",
+      runtimeControls: renderClientRuntimeControls(targets, status)
     }
   );
 
@@ -2123,6 +2186,57 @@ export const createClientUi = (options: ClientUiOptions) => {
   const enabledTarget = targetStore.list().find((target) => target.enabled);
   void syncManager.restore(enabledTarget);
 
+  const checkRuntimeUpdate = () =>
+    checkForRuntimeUpdate({
+      service: CLIENT_UI_RUNTIME_VERSION.service,
+      currentVersion: CLIENT_UI_RUNTIME_VERSION.version,
+      manifestUrl:
+        options.updateManifestUrl ??
+        appConfig.client.updateManifestUrl,
+      platform: process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux",
+      fetchImpl: options.fetchImpl
+    });
+
+  const applyRuntimeUpdate = async (): Promise<UpdateApplyResponse> => {
+    const update = await checkRuntimeUpdate();
+
+    if (!update.updateAvailable || !update.asset) {
+      return {
+        service: update.service,
+        currentVersion: update.currentVersion,
+        targetVersion: update.latestVersion,
+        updateApplied: false,
+        restartRequired: false,
+        message: "This client is already on the latest published release.",
+        notesUrl: update.notesUrl,
+        publishedAt: update.publishedAt,
+        highlights: update.highlights
+      };
+    }
+
+    const staged = await stageRuntimeUpdate({
+      service: update.service,
+      currentVersion: update.currentVersion,
+      targetVersion: update.latestVersion,
+      asset: update.asset,
+      stagingRoot: resolve(dirname(appConfig.client.syncConfigFilePath), "updates"),
+      fetchImpl
+    });
+
+    return {
+      service: update.service,
+      currentVersion: update.currentVersion,
+      targetVersion: update.latestVersion,
+      updateApplied: true,
+      restartRequired: true,
+      message: `Release ${update.latestVersion} was downloaded and staged. Restart the installed client runtime to switch to the new bundle.`,
+      notesUrl: update.notesUrl,
+      publishedAt: update.publishedAt,
+      highlights: update.highlights,
+      stagedAt: staged.downloadedAt
+    };
+  };
+
   const loadRemoteWorkspaces = async (serverBaseUrl: string, authToken: string) => {
     if (!serverBaseUrl || !authToken) {
       return [];
@@ -2144,6 +2258,11 @@ export const createClientUi = (options: ClientUiOptions) => {
         return;
       }
 
+      if (method === "GET" && url.pathname === "/about") {
+        writeHtml(response, 200, renderClientAboutPage(targetStore.list(), syncManager.getStatus()));
+        return;
+      }
+
       if (method === "GET" && url.pathname === "/health") {
         writeJson(response, 200, {
           status: "ok",
@@ -2160,15 +2279,7 @@ export const createClientUi = (options: ClientUiOptions) => {
 
       if (method === "GET" && url.pathname === "/update/check") {
         try {
-          const payload = await checkForRuntimeUpdate({
-            service: CLIENT_UI_RUNTIME_VERSION.service,
-            currentVersion: CLIENT_UI_RUNTIME_VERSION.version,
-            manifestUrl:
-              options.updateManifestUrl ??
-              appConfig.client.updateManifestUrl,
-            platform: process.platform === "win32" ? "windows" : process.platform === "darwin" ? "macos" : "linux",
-            fetchImpl: options.fetchImpl
-          });
+          const payload = await checkRuntimeUpdate();
           writeJson(response, 200, payload);
           return;
         } catch (error) {
@@ -2176,6 +2287,22 @@ export const createClientUi = (options: ClientUiOptions) => {
             error: {
               code: "update_check_failed",
               message: error instanceof Error ? error.message : "Unable to check for updates"
+            }
+          });
+          return;
+        }
+      }
+
+      if (method === "POST" && url.pathname === "/update/apply") {
+        try {
+          const payload = await applyRuntimeUpdate();
+          writeJson(response, 200, payload);
+          return;
+        } catch (error) {
+          writeJson(response, 502, {
+            error: {
+              code: "update_apply_failed",
+              message: error instanceof Error ? error.message : "Unable to stage the update"
             }
           });
           return;
