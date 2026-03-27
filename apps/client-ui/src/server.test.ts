@@ -426,8 +426,9 @@ test("renders sync target detail page", async () => {
     const html = await response.text();
 
     assert.equal(response.status, 200);
-    assert.match(html, /Sync Target Detail/);
     assert.match(html, /demo-main/);
+    assert.doesNotMatch(html, /Sync Target Detail/);
+    assert.doesNotMatch(html, /Back to dashboard/);
     assert.match(html, /http:\/\/127\.0\.0\.1:4020/);
     assert.match(html, /Resync From Server/);
     assert.match(html, /Resync From Local/);

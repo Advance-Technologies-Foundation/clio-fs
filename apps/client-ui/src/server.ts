@@ -1604,12 +1604,6 @@ const renderTargetDetail = (target: ClientSyncTarget, status: ClientSyncManagerS
   renderPage(
     `${escapeHtml(formatTargetLabel(target))} | Clio FS Client`,
     `
-      <div class="nav"><a href="/">← Back to dashboard</a></div>
-      <section class="hero">
-        <div class="eyebrow">Sync Target Detail</div>
-        <h1>${escapeHtml(formatTargetLabel(target))}</h1>
-        <p class="lede">Inspect the configured server, workspace, and local mirror path for this client sync target.</p>
-      </section>
       <section class="grid">
         ${renderMetricCard("Status", status.running && status.targetId === target.targetId ? "Running" : target.enabled ? "Ready" : "Paused")}
         ${renderMetricCard("Revision", status.running && status.targetId === target.targetId ? String(status.lastAppliedRevision ?? "n/a") : "n/a")}
