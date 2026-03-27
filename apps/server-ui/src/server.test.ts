@@ -164,6 +164,9 @@ test("renders dashboard with workspace content", async () => {
     assert.match(html, /The underlying project folder is not deleted/i);
     assert.match(html, /Add Workspace/);
     assert.match(html, /Close add workspace dialog/);
+    assert.match(html, /class="dashboard-hero"/);
+    assert.match(html, /class="dashboard-hero-visual"/);
+    assert.match(html, /class="dashboard-hero-grid"/);
     assert.match(html, /aria-label="Open server settings"/);
     assert.match(html, /Server Settings/);
     assert.match(html, /Change Settle Delay \(ms\)/);

@@ -12,6 +12,7 @@ import type {
 } from "@clio-fs/contracts";
 import {
   formatWorkspaceLabel,
+  renderControlPlaneHeroVisual,
   renderMetricCard,
   renderNotice,
   renderEmptyWorkspaceState,
@@ -288,24 +289,29 @@ const renderDashboardBody = (
   }
 
   return `
-    <section class="hero">
-      <div class="eyebrow">Operations Console</div>
-      <h1>Manage workspace sync from a single control plane.</h1>
-      <p class="lede">Monitor service health, register workspaces, and inspect runtime state from one operator console built for day-to-day control of Clio FS.</p>
-    </section>
-    <section class="grid">
-      ${renderMetricCard("Service", health.service)}
-      ${renderMetricCard("Health", health.status)}
-      ${renderMetricCard("Platform", health.platform)}
-      ${renderMetricCard("Workspaces", String(workspaces.length))}
+    <section class="dashboard-hero">
+      ${renderControlPlaneHeroVisual()}
+      <div class="dashboard-hero-content">
+        <div class="dashboard-hero-copy">
+          <div class="eyebrow">Operations Console</div>
+          <h1>Manage workspace sync from a single control plane.</h1>
+          <p class="lede">Monitor service health, register workspaces, and inspect runtime state from one operator console built for day-to-day control of Clio FS.</p>
+        </div>
+        <div class="dashboard-hero-grid">
+          ${renderMetricCard("Service", health.service)}
+          ${renderMetricCard("Health", health.status)}
+          ${renderMetricCard("Platform", health.platform)}
+          ${renderMetricCard("Workspaces", String(workspaces.length))}
+        </div>
+        <section class="panel dashboard-hero-summary">
+          <div class="metric">Runtime Summary</div>
+          <p>${escapeHtml(health.summary)}</p>
+        </section>
+      </div>
     </section>
     ${
       state?.notice ? renderNotice(state.notice.tone, state.notice.message) : ""
     }
-    <section class="panel">
-      <div class="metric">Runtime Summary</div>
-      <p style="margin:0.5rem 0 0;font-size:0.875rem;color:var(--color-text-secondary);line-height:1.6;">${escapeHtml(health.summary)}</p>
-    </section>
     ${renderWorkspaceTable(workspaces)}
     ${renderWorkspaceRegistrationModal(state?.formValues, {
       openOnLoad: Boolean(state?.notice || state?.formValues)
