@@ -852,8 +852,7 @@ const routeRequest = async (
         workspaceId,
         path,
         origin: input.origin,
-        revision: putResult.workspaceRevision,
-        sizeBytes: putResult.contentHash ? undefined : undefined
+        revision: putResult.workspaceRevision
       });
       json(response, 200, putResult);
       options.workspaceWatcher?.resyncWorkspace(workspaceId);

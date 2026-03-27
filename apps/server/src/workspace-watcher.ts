@@ -3,6 +3,7 @@ import type { ChangeOrigin, ServerWatchSettings, WorkspaceRecord } from "@clio-f
 import type { ChangeJournal, WorkspaceRegistry } from "@clio-fs/database";
 import type { FileSystemAdapter } from "./filesystem.js";
 import { hashBytes } from "./file-content.js";
+import { type Logger, noopLogger } from "./logger.js";
 
 interface FileSnapshot {
   contentHash: string;
@@ -46,6 +47,7 @@ export interface WorkspaceChangeWatcherOptions {
   journal: ChangeJournal;
   filesystem: FileSystemAdapter;
   getWatchSettings: () => ServerWatchSettings;
+  logger?: Logger;
   pollIntervalMs?: number;
   origin?: ChangeOrigin;
 }
@@ -233,6 +235,7 @@ export class PollingWorkspaceChangeWatcher implements WorkspaceChangeWatcher {
   readonly #journal: ChangeJournal;
   readonly #filesystem: FileSystemAdapter;
   readonly #getWatchSettings: () => ServerWatchSettings;
+  readonly #logger: Logger;
   readonly #pollIntervalMs: number;
   readonly #origin: ChangeOrigin;
   readonly #states = new Map<string, WorkspaceScanState>();
@@ -243,6 +246,7 @@ export class PollingWorkspaceChangeWatcher implements WorkspaceChangeWatcher {
     this.#journal = options.journal;
     this.#filesystem = options.filesystem;
     this.#getWatchSettings = options.getWatchSettings;
+    this.#logger = options.logger ?? noopLogger;
     this.#pollIntervalMs = options.pollIntervalMs ?? 250;
     this.#origin = options.origin ?? "unknown";
   }
@@ -471,6 +475,24 @@ export class PollingWorkspaceChangeWatcher implements WorkspaceChangeWatcher {
   }
 
   #appendEvent(workspaceId: string, event: WorkspaceWatcherEvent) {
+    const fields: Record<string, unknown> = {
+      workspaceId,
+      operation: event.type,
+      path: event.path,
+      origin: this.#origin
+    };
+
+    if (event.type === "path_moved") {
+      fields.oldPath = event.oldPath;
+    }
+
+    if (event.type === "file_created" || event.type === "file_updated") {
+      fields.sizeBytes = event.size;
+      fields.contentHash = event.contentHash;
+    }
+
+    this.#logger.info("change_detected", fields);
+
     this.#journal.append({
       workspaceId,
       operation:

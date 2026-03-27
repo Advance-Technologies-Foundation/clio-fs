@@ -8,12 +8,14 @@ import {
   createFileWorkspaceRegistry
 } from "@clio-fs/database";
 import { nodeFileSystem } from "./filesystem.js";
+import { createLogger } from "./logger.js";
 import { startWorkspaceServer } from "./server.js";
 import { detectServerPlatform } from "./workspace.js";
 import { createPollingWorkspaceChangeWatcher } from "./workspace-watcher.js";
 
 export const startDefaultWorkspaceServer = () => {
   const workspaceRoot = process.env.INIT_CWD ?? process.cwd();
+  const logger = createLogger();
   const registry = createFileWorkspaceRegistry(
     resolve(workspaceRoot, appConfig.server.workspaceRegistryFilePath)
   );
@@ -28,6 +30,7 @@ export const startDefaultWorkspaceServer = () => {
     registry,
     journal,
     filesystem: nodeFileSystem,
+    logger,
     getWatchSettings: () => watchSettingsStore.get()
   });
 
@@ -39,6 +42,7 @@ export const startDefaultWorkspaceServer = () => {
     journal,
     watchSettingsStore,
     workspaceWatcher,
+    logger,
     serverPlatform: detectServerPlatform()
   });
 };
