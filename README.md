@@ -216,12 +216,16 @@ Server commands from the extracted bundle:
 - `./clio-fs-server` on macOS or Linux
 - `clio-fs-server.cmd` on Windows Command Prompt
 - `.\clio-fs-server.ps1` on Windows PowerShell
+- `./clio-fs-server version`
+- `./clio-fs-server healthcheck`
 
 Client commands from the extracted bundle:
 
 - `./clio-fs-client` on macOS or Linux
 - `clio-fs-client.cmd` on Windows Command Prompt
 - `.\clio-fs-client.ps1` on Windows PowerShell
+- `./clio-fs-client version`
+- `./clio-fs-client healthcheck`
 
 Key runtime environment variables:
 

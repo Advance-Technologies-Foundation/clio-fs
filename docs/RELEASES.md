@@ -97,6 +97,7 @@ Bundle rules:
 - `config/*.conf.example` files must be present in the bundle
 - built `dist/` output and internal workspace dependencies must be vendored into the bundle
 - no production install flow may depend on `pnpm install`
+- runtime launchers must support `version` and `healthcheck`
 
 ## Installed Layout
 

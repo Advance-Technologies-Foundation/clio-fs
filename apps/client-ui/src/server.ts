@@ -2122,6 +2122,15 @@ export const createClientUi = (options: ClientUiOptions) => {
         return;
       }
 
+      if (method === "GET" && url.pathname === "/health") {
+        writeJson(response, 200, {
+          status: "ok",
+          service: "clio-fs-client-ui",
+          summary: `client-ui ready; targets=${targetStore.list().length}`
+        });
+        return;
+      }
+
       if (method === "GET" && url.pathname === "/dashboard-fragment") {
         writeJson(response, 200, {
           html: renderDashboardBody(targetStore.list(), syncManager.getStatus(), [])

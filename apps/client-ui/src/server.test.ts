@@ -187,6 +187,21 @@ test("renders blank slate when no sync targets are configured", async () => {
   }
 });
 
+test("returns a public healthcheck payload", async () => {
+  const server = await startTestUi();
+
+  try {
+    const response = await fetch(`${server.baseUrl}/health`);
+    assert.equal(response.status, 200);
+    const payload = (await response.json()) as { status: string; service: string; summary: string };
+    assert.equal(payload.status, "ok");
+    assert.equal(payload.service, "clio-fs-client-ui");
+    assert.match(payload.summary, /client-ui ready/i);
+  } finally {
+    await server.close();
+  }
+});
+
 test("renders metrics and registry when sync targets exist", async () => {
   const targetStore = new InMemoryClientSyncTargetStore();
   targetStore.save(seedTarget({ enabled: false }));
