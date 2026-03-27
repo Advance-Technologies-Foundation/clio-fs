@@ -14,7 +14,7 @@ Update policy for this plan:
 Goal: make release artifacts installable and operable without requiring source checkout.
 
 - [x] Item 1. Freeze and document the release contract, bundle layout, and manual-update operating model.
-- [ ] Item 2. Add install scripts for server and client on macOS/Linux and Windows.
+- [x] Item 2. Add install scripts for server and client on macOS/Linux and Windows.
 - [ ] Item 3. Add Linux service units for server and client runtime installation.
 - [ ] Item 4. Add `version` and `healthcheck` runtime commands for server and client.
 - [ ] Item 5. Update root and operational docs to describe one-command installation from release bundles.
@@ -55,4 +55,3 @@ Goal: polish packaging and service integration for desktop/server platforms.
 - [ ] Item 1. Add Windows service installation support.
 - [ ] Item 2. Add macOS service or launch-agent packaging guidance.
 - [ ] Item 3. Evaluate native installers (`.msi`, `.pkg`) as optional packaging on top of release bundles.
-

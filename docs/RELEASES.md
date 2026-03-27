@@ -207,5 +207,5 @@ At the time this document was introduced:
 - the release workflow already builds runnable server and client bundles
 - release artifacts are created by [scripts/build-release-artifacts.mjs](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/scripts/build-release-artifacts.mjs)
 - the GitHub Release workflow is defined in [.github/workflows/release.yml](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/.github/workflows/release.yml)
-- install scripts, service units, manifest publication, and manual-update endpoints are still pending implementation
-
+- install scripts now live under [install/server/install-server.sh](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/server/install-server.sh), [install/server/install-server.ps1](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/server/install-server.ps1), [install/client/install-client.sh](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/client/install-client.sh), and [install/client/install-client.ps1](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/client/install-client.ps1)
+- service units, manifest publication, and manual-update endpoints are still pending implementation

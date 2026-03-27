@@ -135,6 +135,13 @@ Root-level commands:
 - `corepack pnpm build`
 - `corepack pnpm run release:artifacts`
 
+Installer entrypoints for release bundles:
+
+- [install/server/install-server.sh](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/server/install-server.sh)
+- [install/server/install-server.ps1](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/server/install-server.ps1)
+- [install/client/install-client.sh](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/client/install-client.sh)
+- [install/client/install-client.ps1](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/client/install-client.ps1)
+
 ## Configuration
 
 `clio-fs` supports both environment variables and `.conf` files.
