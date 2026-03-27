@@ -154,7 +154,12 @@ const renderLoginPage = (notice?: { tone: "error" | "success"; message: string }
           <form action="/login" method="post" class="stack" style="max-width:420px;margin:0 auto;">
             <div class="form-field" style="text-align:left;">
               <label for="authToken">Access Token</label>
-              <input id="authToken" name="authToken" type="password" autocomplete="current-password" required autofocus />
+              <div style="position:relative;">
+                <input id="authToken" name="authToken" type="password" autocomplete="current-password" required autofocus style="padding-right:2.5rem;width:100%;box-sizing:border-box;" />
+                <button type="button" onclick="const i=document.getElementById('authToken');i.type=i.type==='password'?'text':'password';this.querySelector('svg').style.opacity=i.type==='text'?'1':'0.4';" tabindex="-1" style="position:absolute;right:0.6rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;padding:0.25rem;display:flex;align-items:center;color:#6b7280;" aria-label="Toggle token visibility">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.4;transition:opacity 0.15s;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+              </div>
             </div>
             <div style="display:flex;justify-content:center;">
               <button type="submit" class="primary-button">Login</button>
