@@ -16,6 +16,7 @@ import {
 import {
   createFileClientStateStore,
   type ClientBindState,
+  type ClientPendingOperation,
   type ClientPathConflict,
   type ClientStateStore
 } from "./state.js";
@@ -43,6 +44,10 @@ export interface MirrorClient {
   createDirectory: (path: string) => Promise<ClientBindState>;
   movePath: (oldPath: string, newPath: string) => Promise<ClientBindState>;
   deleteFile: (path: string, options?: { baseFileRevision?: number }) => Promise<ClientBindState>;
+  resolveConflict: (
+    path: string,
+    resolution?: "accept_server" | "accept_local"
+  ) => Promise<ClientBindState>;
   startLocalWatchLoop: () => Promise<void>;
   stopLocalWatchLoop: () => void;
   getState: () => ClientBindState | undefined;
@@ -52,6 +57,8 @@ const isFileEntry = (entry: SnapshotEntry) => entry.kind === "file";
 
 const hashText = (content: string) =>
   `sha256:${createHash("sha256").update(content, "utf8").digest("hex")}`;
+
+const RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
 
 const collectFilePaths = (
   filesystem: ClientFileSystemAdapter,
@@ -94,11 +101,13 @@ const ensureHydratedMirror = async (
   }
 
   const filePaths = snapshot.items.filter(isFileEntry).map((item) => item.path);
+  let materializedFiles: Array<{ path: string; fileRevision: number; content: string }> = [];
 
   if (filePaths.length > 0) {
     const materialized = await controlPlane.materialize(workspaceId, { paths: filePaths });
+    materializedFiles = materialized.files;
 
-    for (const file of materialized.files) {
+    for (const file of materializedFiles) {
       filesystem.writeFileText(join(mirrorRoot, file.path), file.content);
     }
   }
@@ -107,12 +116,63 @@ const ensureHydratedMirror = async (
     workspaceId,
     mirrorRoot,
     lastAppliedRevision: snapshot.currentRevision,
-    hydrated: true
+    hydrated: true,
+    trackedFiles: materializedFileRecords({ files: materializedFiles })
   };
 
   stateStore.save(state);
   return state;
 };
+
+const materializedFileRecords = (materialized: { files: Array<{ path: string; fileRevision: number; content: string }> }) =>
+  materialized.files
+    .map((file) => ({
+      path: file.path,
+      fileRevision: file.fileRevision,
+      contentHash: hashText(file.content)
+    }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+
+const upsertTrackedFile = (
+  state: ClientBindState,
+  record: { path: string; fileRevision: number; contentHash?: string }
+) => ({
+  ...state,
+  trackedFiles: [
+    ...(state.trackedFiles ?? []).filter((file) => file.path !== record.path),
+    record
+  ].sort((left, right) => left.path.localeCompare(right.path))
+});
+
+const removeTrackedPath = (state: ClientBindState, path: string) => ({
+  ...state,
+  trackedFiles: (state.trackedFiles ?? []).filter(
+    (file) => file.path !== path && !file.path.startsWith(`${path}/`)
+  )
+});
+
+const moveTrackedPaths = (state: ClientBindState, oldPath: string, newPath: string) => ({
+  ...state,
+  trackedFiles: (state.trackedFiles ?? [])
+    .map((file) => {
+      if (file.path === oldPath) {
+        return { ...file, path: newPath };
+      }
+
+      if (file.path.startsWith(`${oldPath}/`)) {
+        return {
+          ...file,
+          path: `${newPath}/${file.path.slice(oldPath.length + 1)}`
+        };
+      }
+
+      return file;
+    })
+    .sort((left, right) => left.path.localeCompare(right.path))
+});
+
+const getTrackedFile = (state: ClientBindState, path: string) =>
+  state.trackedFiles?.find((file) => file.path === path);
 
 const applyMaterializedFiles = async (
   controlPlane: ClientControlPlane,
@@ -124,7 +184,7 @@ const applyMaterializedFiles = async (
   const uniquePaths = [...new Set(paths)].sort((left, right) => left.localeCompare(right));
 
   if (uniquePaths.length === 0) {
-    return;
+    return [];
   }
 
   const materialized = await controlPlane.materialize(workspaceId, { paths: uniquePaths });
@@ -132,6 +192,8 @@ const applyMaterializedFiles = async (
   for (const file of materialized.files) {
     filesystem.writeFileText(join(mirrorRoot, file.path), file.content);
   }
+
+  return materializedFileRecords(materialized);
 };
 
 const applyChanges = async (
@@ -162,7 +224,7 @@ const applyChanges = async (
       }
 
       filesystem.removePath(join(state.mirrorRoot, change.path));
-      nextState = { ...nextState, lastAppliedRevision: change.revision };
+      nextState = removeTrackedPath({ ...nextState, lastAppliedRevision: change.revision }, change.path);
       continue;
     }
 
@@ -172,10 +234,13 @@ const applyChanges = async (
         continue;
       }
 
-      await applyMaterializedFiles(controlPlane, filesystem, state.workspaceId, state.mirrorRoot, [
+      const materializedFiles = await applyMaterializedFiles(controlPlane, filesystem, state.workspaceId, state.mirrorRoot, [
         change.path
       ]);
       nextState = { ...nextState, lastAppliedRevision: change.revision };
+      for (const file of materializedFiles) {
+        nextState = upsertTrackedFile(nextState, file);
+      }
       continue;
     }
 
@@ -204,7 +269,11 @@ const applyChanges = async (
         join(state.mirrorRoot, change.oldPath),
         join(state.mirrorRoot, change.path)
       );
-      nextState = { ...nextState, lastAppliedRevision: change.revision };
+      nextState = moveTrackedPaths(
+        { ...nextState, lastAppliedRevision: change.revision },
+        change.oldPath,
+        change.path
+      );
     }
   }
 
@@ -233,6 +302,18 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
   const getMoveSignature = (oldPath: string, newPath: string) => `${oldPath}->${newPath}`;
   const isConflictBlocked = (path: string, state?: ClientBindState) =>
     Boolean(state?.conflicts?.some((conflict) => conflict.path === path));
+  const nowIso = () => new Date().toISOString();
+  const retryDelayMs = (attemptCount: number) => Math.min(30_000, 500 * 2 ** Math.max(0, attemptCount - 1));
+  const shouldQueueRetry = (error: unknown) =>
+    !(error instanceof ControlPlaneRequestError) || RETRYABLE_STATUS_CODES.has(error.status);
+
+  const readLocalFileIfPresent = (absolutePath: string) => {
+    try {
+      return filesystem.readFileText(absolutePath);
+    } catch {
+      return undefined;
+    }
+  };
 
   const saveConflict = (
     state: ClientBindState,
@@ -269,6 +350,53 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
     return nextState;
   };
 
+  const savePendingOperation = (state: ClientBindState, operation: Omit<ClientPendingOperation, "attemptCount" | "enqueuedAt" | "nextRetryAt" | "lastError">, error: unknown) => {
+    const existing = state.pendingOperations?.find((pending) => pending.id === operation.id);
+    const attemptCount = (existing?.attemptCount ?? 0) + 1;
+    const nextRetryAt = new Date(Date.now() + retryDelayMs(attemptCount)).toISOString();
+    const nextOperation: ClientPendingOperation = {
+      ...operation,
+      attemptCount,
+      enqueuedAt: existing?.enqueuedAt ?? nowIso(),
+      nextRetryAt,
+      lastError: error instanceof Error ? error.message : String(error)
+    };
+    const nextState: ClientBindState = {
+      ...state,
+      pendingOperations: [
+        ...(state.pendingOperations ?? []).filter((pending) => pending.id !== operation.id),
+        nextOperation
+      ].sort((left, right) => left.id.localeCompare(right.id))
+    };
+
+    stateStore.save(nextState);
+    return nextState;
+  };
+
+  const clearPendingOperation = (state: ClientBindState, operationId: string, nextRevision?: number) => {
+    if (!state.pendingOperations?.some((pending) => pending.id === operationId)) {
+      return state;
+    }
+
+    const nextState: ClientBindState = {
+      ...state,
+      lastAppliedRevision:
+        typeof nextRevision === "number" ? Math.max(state.lastAppliedRevision, nextRevision) : state.lastAppliedRevision,
+      pendingOperations: state.pendingOperations.filter((pending) => pending.id !== operationId)
+    };
+
+    stateStore.save(nextState);
+    return nextState;
+  };
+
+  const enqueueRetry = (state: ClientBindState, operation: Omit<ClientPendingOperation, "attemptCount" | "enqueuedAt" | "nextRetryAt" | "lastError">, error: unknown) => {
+    if (!shouldQueueRetry(error)) {
+      return state;
+    }
+
+    return savePendingOperation(state, operation, error);
+  };
+
   const suppressPath = (path: string, content: string) => {
     suppressedHashes.set(path, hashText(content));
   };
@@ -280,6 +408,135 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
   };
 
   let client!: MirrorClient;
+
+  const replayPendingOperations = async (state: ClientBindState) => {
+    let nextState = state;
+    const dueOperations = (state.pendingOperations ?? []).filter(
+      (operation) => Date.parse(operation.nextRetryAt) <= Date.now()
+    );
+
+    for (const operation of dueOperations) {
+      try {
+        if (operation.kind === "put_file" && typeof operation.content === "string") {
+          const trackedFile = getTrackedFile(nextState, operation.path);
+          const result = await controlPlane.putFile(nextState.workspaceId, operation.path, {
+            baseFileRevision: operation.baseFileRevision ?? trackedFile?.fileRevision ?? 0,
+            content: operation.content,
+            origin: "local-client"
+          });
+          nextState = clearPendingOperation(
+            clearConflict(
+              upsertTrackedFile(
+                {
+                  ...nextState,
+                  lastAppliedRevision: result.workspaceRevision
+                },
+                {
+                  path: operation.path,
+                  fileRevision: result.fileRevision,
+                  contentHash: result.contentHash
+                }
+              ),
+              operation.path,
+              result.workspaceRevision
+            ),
+            operation.id,
+            result.workspaceRevision
+          );
+          continue;
+        }
+
+        if (operation.kind === "delete_path") {
+          const trackedFile = getTrackedFile(nextState, operation.path);
+          const result = await controlPlane.deleteFile(nextState.workspaceId, operation.path, {
+            baseFileRevision: operation.baseFileRevision ?? trackedFile?.fileRevision ?? 0,
+            origin: "local-client"
+          });
+          nextState = clearPendingOperation(
+            clearConflict(
+              removeTrackedPath(
+                {
+                  ...nextState,
+                  lastAppliedRevision: result.workspaceRevision
+                },
+                operation.path
+              ),
+              operation.path,
+              result.workspaceRevision
+            ),
+            operation.id,
+            result.workspaceRevision
+          );
+          continue;
+        }
+
+        if (operation.kind === "create_directory") {
+          const result = await controlPlane.createDirectory(nextState.workspaceId, operation.path, {
+            origin: "local-client"
+          });
+          nextState = clearPendingOperation(
+            clearConflict(
+              {
+                ...nextState,
+                lastAppliedRevision: result.workspaceRevision
+              },
+              operation.path,
+              result.workspaceRevision
+            ),
+            operation.id,
+            result.workspaceRevision
+          );
+          continue;
+        }
+
+        if (operation.kind === "move_path" && typeof operation.oldPath === "string") {
+          const result = await controlPlane.movePath(nextState.workspaceId, {
+            oldPath: operation.oldPath,
+            newPath: operation.path,
+            origin: "local-client"
+          });
+          nextState = clearPendingOperation(
+            clearConflict(
+              moveTrackedPaths(
+                {
+                  ...nextState,
+                  lastAppliedRevision: result.workspaceRevision
+                },
+                operation.oldPath,
+                operation.path
+              ),
+              operation.oldPath,
+              result.workspaceRevision
+            ),
+            operation.id,
+            result.workspaceRevision
+          );
+        }
+      } catch (error) {
+        if (error instanceof ControlPlaneRequestError && error.code === "conflict") {
+          const conflictPath = operation.kind === "move_path" && operation.oldPath ? operation.oldPath : operation.path;
+          nextState = await captureConflict(nextState, conflictPath, error);
+          nextState = clearPendingOperation(nextState, operation.id);
+          continue;
+        }
+
+        nextState = enqueueRetry(
+          nextState,
+          {
+            id: operation.id,
+            kind: operation.kind,
+            path: operation.path,
+            oldPath: operation.oldPath,
+            content: operation.content,
+            baseFileRevision: operation.baseFileRevision
+          },
+          error
+        );
+      }
+    }
+
+    return nextState;
+  };
 
   const captureConflict = async (
     state: ClientBindState,
@@ -445,10 +702,14 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
         origin: "local-client"
       });
     const nextState = clearConflict(
-      {
-        ...bound,
-        lastAppliedRevision: result.workspaceRevision
-      },
+      moveTrackedPaths(
+        {
+          ...bound,
+          lastAppliedRevision: result.workspaceRevision
+        },
+        oldPath,
+        newPath
+      ),
       oldPath,
       result.workspaceRevision
     );
@@ -484,10 +745,11 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       }
 
       const changes = await controlPlane.getChanges(options.workspaceId, {
-        since: bound.lastAppliedRevision,
+        since: (await replayPendingOperations(bound)).lastAppliedRevision,
         limit: options.pollLimit
       });
-      const nextState = await applyChanges(controlPlane, filesystem, stateStore, bound, changes.items);
+      const replayedState = stateStore.load(options.workspaceId) ?? bound;
+      const nextState = await applyChanges(controlPlane, filesystem, stateStore, replayedState, changes.items);
 
       for (const change of changes.items) {
         if (
@@ -527,16 +789,24 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       filesystem.writeFileText(join(bound.mirrorRoot, path), content);
 
       try {
+        const trackedFile = getTrackedFile(bound, path);
         const result = await controlPlane.putFile(bound.workspaceId, path, {
-          baseFileRevision: pushOptions?.baseFileRevision ?? bound.lastAppliedRevision,
+          baseFileRevision: pushOptions?.baseFileRevision ?? trackedFile?.fileRevision ?? 0,
           content,
           origin: "local-client"
         });
         const nextState = clearConflict(
-          {
-            ...bound,
-            lastAppliedRevision: result.workspaceRevision
-          },
+          upsertTrackedFile(
+            {
+              ...bound,
+              lastAppliedRevision: result.workspaceRevision
+            },
+            {
+              path,
+              fileRevision: result.fileRevision,
+              contentHash: result.contentHash
+            }
+          ),
           path,
           result.workspaceRevision
         );
@@ -546,9 +816,20 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       } catch (error) {
         if (error instanceof ControlPlaneRequestError && error.code === "conflict") {
           await captureConflict(bound, path, error);
+          throw error;
         }
 
-        throw error;
+        return enqueueRetry(
+          bound,
+          {
+            id: `put:${path}`,
+            kind: "put_file",
+            path,
+            content,
+            baseFileRevision: pushOptions?.baseFileRevision ?? bound.lastAppliedRevision
+          },
+          error
+        );
       }
     },
     async createDirectory(path) {
@@ -565,47 +846,8 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       suppressedDirectories.add(path);
       filesystem.ensureDirectory(join(bound.mirrorRoot, path));
 
-      const result = await controlPlane.createDirectory(bound.workspaceId, path, {
-        origin: "local-client"
-      });
-      const nextState = clearConflict(
-        {
-          ...bound,
-          lastAppliedRevision: result.workspaceRevision
-        },
-        path,
-        result.workspaceRevision
-      );
-
-      stateStore.save(nextState);
-      return nextState;
-    },
-    async movePath(oldPath, newPath) {
-      const bound = (await client.bind()) ?? stateStore.load(options.workspaceId);
-
-      if (!bound) {
-        throw new Error(`Workspace is not bound: ${options.workspaceId}`);
-      }
-
-      if (isConflictBlocked(oldPath, bound) || isConflictBlocked(newPath, bound)) {
-        throw new Error(`Path move is conflict-blocked and requires resolution: ${oldPath}`);
-      }
-
-      return submitMove(oldPath, newPath, { applyLocal: true });
-    },
-    async deleteFile(path, deleteOptions) {
-      const bound = (await client.bind()) ?? stateStore.load(options.workspaceId);
-
-      if (!bound) {
-        throw new Error(`Workspace is not bound: ${options.workspaceId}`);
-      }
-
-      suppressedDeletes.add(path);
-      filesystem.removePath(join(bound.mirrorRoot, path));
-
       try {
-        const result = await controlPlane.deleteFile(bound.workspaceId, path, {
-          baseFileRevision: deleteOptions?.baseFileRevision ?? bound.lastAppliedRevision,
+        const result = await controlPlane.createDirectory(bound.workspaceId, path, {
           origin: "local-client"
         });
         const nextState = clearConflict(
@@ -620,12 +862,222 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
         stateStore.save(nextState);
         return nextState;
       } catch (error) {
+        return enqueueRetry(
+          bound,
+          {
+            id: `mkdir:${path}`,
+            kind: "create_directory",
+            path
+          },
+          error
+        );
+      }
+    },
+    async movePath(oldPath, newPath) {
+      const bound = (await client.bind()) ?? stateStore.load(options.workspaceId);
+
+      if (!bound) {
+        throw new Error(`Workspace is not bound: ${options.workspaceId}`);
+      }
+
+      if (isConflictBlocked(oldPath, bound) || isConflictBlocked(newPath, bound)) {
+        throw new Error(`Path move is conflict-blocked and requires resolution: ${oldPath}`);
+      }
+
+      try {
+        return await submitMove(oldPath, newPath, { applyLocal: true });
+      } catch (error) {
         if (error instanceof ControlPlaneRequestError && error.code === "conflict") {
-          await captureConflict(bound, path, error);
+          await captureConflict(bound, oldPath, error);
+          throw error;
         }
 
-        throw error;
+        return enqueueRetry(
+          bound,
+          {
+            id: `move:${oldPath}->${newPath}`,
+            kind: "move_path",
+            oldPath,
+            path: newPath
+          },
+          error
+        );
       }
+    },
+    async deleteFile(path, deleteOptions) {
+      const bound = (await client.bind()) ?? stateStore.load(options.workspaceId);
+
+      if (!bound) {
+        throw new Error(`Workspace is not bound: ${options.workspaceId}`);
+      }
+
+      suppressedDeletes.add(path);
+      filesystem.removePath(join(bound.mirrorRoot, path));
+
+      try {
+        const trackedFile = getTrackedFile(bound, path);
+        const result = await controlPlane.deleteFile(bound.workspaceId, path, {
+          baseFileRevision: deleteOptions?.baseFileRevision ?? trackedFile?.fileRevision ?? 0,
+          origin: "local-client"
+        });
+        const nextState = clearConflict(
+          removeTrackedPath(
+            {
+              ...bound,
+              lastAppliedRevision: result.workspaceRevision
+            },
+            path
+          ),
+          path,
+          result.workspaceRevision
+        );
+
+        stateStore.save(nextState);
+        return nextState;
+      } catch (error) {
+        if (error instanceof ControlPlaneRequestError && error.code === "conflict") {
+          await captureConflict(bound, path, error);
+          throw error;
+        }
+
+        return enqueueRetry(
+          bound,
+          {
+            id: `delete:${path}`,
+            kind: "delete_path",
+            path,
+            baseFileRevision: deleteOptions?.baseFileRevision ?? bound.lastAppliedRevision
+          },
+          error
+        );
+      }
+    },
+    async resolveConflict(path, resolution = "accept_server") {
+      const bound = (await client.bind()) ?? stateStore.load(options.workspaceId);
+
+      if (!bound) {
+        throw new Error(`Workspace is not bound: ${options.workspaceId}`);
+      }
+
+      if (!isConflictBlocked(path, bound)) {
+        return bound;
+      }
+
+      const result = await controlPlane.resolveConflict(bound.workspaceId, {
+        path,
+        resolution,
+        origin: "local-client"
+      });
+
+      if (resolution === "accept_local") {
+        const absolutePath = join(bound.mirrorRoot, path);
+        const localContent = readLocalFileIfPresent(absolutePath);
+
+        if (typeof localContent === "string") {
+          const pushResult = await controlPlane.putFile(bound.workspaceId, path, {
+            baseFileRevision: result.existsOnServer ? result.fileRevision ?? result.workspaceRevision : 0,
+            baseContentHash: result.existsOnServer ? result.contentHash ?? undefined : undefined,
+            content: localContent,
+            origin: "local-client"
+          });
+
+          suppressPath(path, localContent);
+          const nextState = clearConflict(
+            clearPendingOperation(
+              upsertTrackedFile(
+                {
+                  ...bound,
+                  lastAppliedRevision: Math.max(bound.lastAppliedRevision, pushResult.workspaceRevision)
+                },
+                {
+                  path,
+                  fileRevision: pushResult.fileRevision,
+                  contentHash: pushResult.contentHash
+                }
+              ),
+              `put:${path}`,
+              pushResult.workspaceRevision
+            ),
+            path,
+            pushResult.workspaceRevision
+          );
+          stateStore.save(nextState);
+          return nextState;
+        }
+
+        if (result.existsOnServer) {
+          const deleteResult = await controlPlane.deleteFile(bound.workspaceId, path, {
+            baseFileRevision: result.fileRevision ?? result.workspaceRevision,
+            baseContentHash: result.contentHash ?? undefined,
+            origin: "local-client"
+          });
+          suppressedDeletes.add(path);
+          filesystem.removePath(absolutePath);
+          const nextState = clearConflict(
+            clearPendingOperation(
+              removeTrackedPath(
+                {
+                  ...bound,
+                  lastAppliedRevision: Math.max(bound.lastAppliedRevision, deleteResult.workspaceRevision)
+                },
+                path
+              ),
+              `delete:${path}`,
+              deleteResult.workspaceRevision
+            ),
+            path,
+            deleteResult.workspaceRevision
+          );
+          stateStore.save(nextState);
+          return nextState;
+        }
+      }
+
+      if (result.existsOnServer) {
+        const materialized = await controlPlane.materialize(bound.workspaceId, { paths: [path] });
+        const file = materialized.files.find((entry) => entry.path === path);
+
+        if (!file) {
+          throw new Error(`Resolved server file could not be materialized: ${path}`);
+        }
+
+        suppressPath(path, file.content);
+        filesystem.writeFileText(join(bound.mirrorRoot, path), file.content);
+      } else {
+        suppressedDeletes.add(path);
+        filesystem.removePath(join(bound.mirrorRoot, path));
+      }
+
+      const nextState = clearConflict(
+        clearPendingOperation(
+          result.existsOnServer
+            ? upsertTrackedFile(
+                {
+                  ...bound,
+                  lastAppliedRevision: Math.max(bound.lastAppliedRevision, result.workspaceRevision)
+                },
+                {
+                  path,
+                  fileRevision: result.fileRevision ?? result.workspaceRevision,
+                  contentHash: result.contentHash ?? undefined
+                }
+              )
+            : removeTrackedPath(
+                {
+                  ...bound,
+                  lastAppliedRevision: Math.max(bound.lastAppliedRevision, result.workspaceRevision)
+                },
+                path
+              ),
+          `put:${path}`,
+          result.workspaceRevision
+        ),
+        path,
+        result.workspaceRevision
+      );
+
+      stateStore.save(nextState);
+      return nextState;
     },
     async startLocalWatchLoop() {
       await client.bind();

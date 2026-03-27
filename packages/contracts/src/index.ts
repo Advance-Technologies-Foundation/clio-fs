@@ -146,6 +146,22 @@ export interface DeleteWorkspaceFileResponse {
   deleted: true;
 }
 
+export interface ResolveWorkspaceConflictRequest {
+  path: string;
+  resolution: "accept_server" | "accept_local";
+  origin: ChangeOrigin;
+}
+
+export interface ResolveWorkspaceConflictResponse {
+  workspaceId: WorkspaceId;
+  path: string;
+  resolution: "accept_server" | "accept_local";
+  workspaceRevision: Revision;
+  existsOnServer: boolean;
+  fileRevision?: Revision;
+  contentHash?: string | null;
+}
+
 export interface ChangeEvent {
   workspaceId: WorkspaceId;
   revision: Revision;

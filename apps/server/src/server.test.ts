@@ -1010,3 +1010,56 @@ test("rejects conflicting file deletes with 409", async () => {
     await server.close();
   }
 });
+
+test("resolves a file conflict by accepting canonical server state", async () => {
+  const mockFileSystem = createMockFileSystem();
+  mockFileSystem.addDirectory("/mock/resolve-main");
+  mockFileSystem.addFile("/mock/resolve-main/root.txt", { content: "server-v2\n" });
+  const server = await startTestServer({ filesystem: mockFileSystem });
+
+  try {
+    await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "resolve-main",
+        rootPath: "/mock/resolve-main"
+      })
+    });
+
+    server.journal.append({
+      workspaceId: "resolve-main",
+      operation: "file_updated",
+      path: "root.txt",
+      origin: "server-tool",
+      size: 10,
+      contentHash: "sha256:server-v2"
+    });
+
+    const resolveResponse = await fetch(`${server.baseUrl}/workspaces/resolve-main/conflicts/resolve`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        path: "root.txt",
+        resolution: "accept_server",
+        origin: "local-client"
+      })
+    });
+    const resolveBody = await resolveResponse.json();
+
+    assert.equal(resolveResponse.status, 200);
+    assert.equal(resolveBody.path, "root.txt");
+    assert.equal(resolveBody.resolution, "accept_server");
+    assert.equal(resolveBody.existsOnServer, true);
+    assert.equal(resolveBody.workspaceRevision, 1);
+    assert.equal(resolveBody.fileRevision, 1);
+  } finally {
+    await server.close();
+  }
+});

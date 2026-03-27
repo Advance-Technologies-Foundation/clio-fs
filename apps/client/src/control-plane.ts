@@ -8,6 +8,8 @@ import type {
   MoveWorkspacePathResponse,
   PutWorkspaceFileRequest,
   PutWorkspaceFileResponse,
+  ResolveWorkspaceConflictRequest,
+  ResolveWorkspaceConflictResponse,
   ServerWatchSettingsResponse,
   SnapshotMaterializeRequest,
   SnapshotMaterializeResponse,
@@ -154,6 +156,22 @@ export class ClientControlPlane {
     }
 
     return this.#request<WorkspaceChangesResponse>(url);
+  }
+
+  async resolveConflict(
+    workspaceId: string,
+    input: ResolveWorkspaceConflictRequest
+  ): Promise<ResolveWorkspaceConflictResponse> {
+    return this.#request<ResolveWorkspaceConflictResponse>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/conflicts/resolve`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(input)
+      }
+    );
   }
 
   async #request<T>(pathOrUrl: string | URL, init?: RequestInit): Promise<T> {

@@ -27,8 +27,11 @@ import {
   parseDeleteWorkspaceFileRequest,
   parseMoveWorkspacePathRequest,
   parsePutWorkspaceFileRequest,
+  parseResolveWorkspaceConflictRequest,
   moveWorkspacePath,
   putWorkspaceFile
+  ,
+  resolveWorkspaceConflict
 } from "./file-write.js";
 import { createWorkspaceSnapshot, materializeWorkspaceFiles } from "./snapshot.js";
 import type { WorkspaceChangeWatcher } from "./workspace-watcher.js";
@@ -361,6 +364,40 @@ const routeRequest = async (
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid move request";
+      writeError(response, 400, "invalid_request", message, { workspaceId });
+      return;
+    }
+  }
+
+  if (
+    method === "POST" &&
+    url.pathname.startsWith("/workspaces/") &&
+    url.pathname.endsWith("/conflicts/resolve")
+  ) {
+    const [, , workspaceId] = url.pathname.split("/");
+
+    if (!workspaceId) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    const workspace = options.registry.get(workspaceId);
+
+    if (!workspace) {
+      writeError(response, 404, "not_found", "Workspace not found", { workspaceId });
+      return;
+    }
+
+    try {
+      const input = parseResolveWorkspaceConflictRequest(await readJsonBody(request));
+      json(
+        response,
+        200,
+        resolveWorkspaceConflict(workspace, input, options.filesystem ?? nodeFileSystem, options.journal!)
+      );
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid conflict resolution request";
       writeError(response, 400, "invalid_request", message, { workspaceId });
       return;
     }

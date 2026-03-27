@@ -22,6 +22,26 @@ test("file client state store persists bind state to disk", () => {
         serverArtifactPath: "/tmp/persisted-client-main/packages/Alpha/readme.txt.conflict-server-2026-03-27T00-00-00.000Z",
         message: "File has changed since the provided base revision"
       }
+    ],
+    pendingOperations: [
+      {
+        id: "put:packages/Alpha/readme.txt",
+        kind: "put_file",
+        path: "packages/Alpha/readme.txt",
+        content: "local-version\n",
+        baseFileRevision: 7,
+        attemptCount: 1,
+        enqueuedAt: "2026-03-27T00:00:00.000Z",
+        nextRetryAt: "2026-03-27T00:00:02.000Z",
+        lastError: "Service unavailable"
+      }
+    ],
+    trackedFiles: [
+      {
+        path: "packages/Alpha/readme.txt",
+        fileRevision: 7,
+        contentHash: "sha256:abc"
+      }
     ]
   });
 
@@ -46,6 +66,26 @@ test("file client state store persists bind state to disk", () => {
         detectedAt: "2026-03-27T00:00:00.000Z",
         serverArtifactPath: "/tmp/persisted-client-main/packages/Alpha/readme.txt.conflict-server-2026-03-27T00-00-00.000Z",
         message: "File has changed since the provided base revision"
+      }
+    ],
+    pendingOperations: [
+      {
+        id: "put:packages/Alpha/readme.txt",
+        kind: "put_file",
+        path: "packages/Alpha/readme.txt",
+        content: "local-version\n",
+        baseFileRevision: 7,
+        attemptCount: 1,
+        enqueuedAt: "2026-03-27T00:00:00.000Z",
+        nextRetryAt: "2026-03-27T00:00:02.000Z",
+        lastError: "Service unavailable"
+      }
+    ],
+    trackedFiles: [
+      {
+        path: "packages/Alpha/readme.txt",
+        fileRevision: 7,
+        contentHash: "sha256:abc"
       }
     ]
   });

@@ -745,6 +745,42 @@ Current implementation note:
 - local watcher-driven file rename propagation is implemented on the client side
 - local watcher-driven directory subtree move propagation is implemented on the client side
 
+### POST /workspaces/{workspaceId}/conflicts/resolve
+
+Resolves a client-side blocked conflict path by accepting the current canonical server state.
+
+Request:
+
+```json
+{
+  "path": "packages/MyPkg/descriptor.json",
+  "resolution": "accept_server",
+  "origin": "local-client"
+}
+```
+
+Response `200`:
+
+```json
+{
+  "workspaceId": "crm-prod-main",
+  "path": "packages/MyPkg/descriptor.json",
+  "resolution": "accept_server",
+  "workspaceRevision": 18446,
+  "existsOnServer": true,
+  "fileRevision": 18015,
+  "contentHash": "sha256:44ddef..."
+}
+```
+
+Current implementation note:
+
+- `accept_server` and `accept_local` are currently implemented
+- the endpoint does not mutate server content; it confirms the current canonical server state for the path
+- if the path no longer exists on the server, the response returns `existsOnServer: false`
+- the client uses this endpoint before unblocking the path locally
+- for `accept_local`, the client resolves against current server metadata and then replays the local file or delete using fresh base revision/hash values
+
 ## Change Feed API
 
 ### GET /workspaces/{workspaceId}/changes
@@ -913,6 +949,9 @@ Current implementation note:
 - the client now persists conflict-blocked paths in local state
 - the client writes sibling `*.conflict-server-*` artifacts for stale file writes and deletes when canonical server content can be materialized
 - conflict-blocked paths are skipped by outbound watcher writes until explicitly resolved
+- the explicit resolution flows are:
+  - `accept_server`: client restores canonical server state locally, then unblocks the path
+  - `accept_local`: client fetches current server metadata, retries the local version against that metadata, then unblocks the path on success
 
 Recommended local conflict file naming:
 

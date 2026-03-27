@@ -10,15 +10,13 @@ By default, the scenario should run against mocked filesystem adapters rather th
 
 ## Current Status
 
-This scenario is **specified now** so implementation can follow a stable contract.
+This scenario is implemented and runnable.
 
 At the time of writing:
 
-- `apps/server` exists and is runnable
-- `apps/client` is still a scaffold
-- the command entrypoint exists for explicit invocation, but full automated sync verification is not implemented yet
-
-Do not report this scenario as passing until the real client sync implementation exists.
+- default mode runs against mocked filesystem adapters and in-memory persistence
+- optional `--mode=real` runs against temp directories under `os.tmpdir()`
+- both modes exercise a real server/client sync loop and verify convergence
 
 ## Explicit Invocation
 
@@ -28,7 +26,19 @@ Cross-platform command:
 corepack pnpm run scenario:local-sync
 ```
 
-This command is intentionally separate from:
+Default invocation:
+
+```bash
+corepack pnpm run scenario:local-sync
+```
+
+Real-filesystem invocation:
+
+```bash
+node scripts/run-local-sync-scenario.mjs --mode=real
+```
+
+The command is intentionally separate from:
 
 - `corepack pnpm test`
 - `corepack pnpm build`
@@ -255,7 +265,7 @@ Final assertions:
 
 ## Minimum Assertions To Implement
 
-The automated runner should eventually verify:
+The automated runner verifies:
 
 - file existence parity
 - file content parity
