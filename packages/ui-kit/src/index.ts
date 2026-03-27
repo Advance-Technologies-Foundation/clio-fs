@@ -550,6 +550,7 @@ export const renderPage = (
       input[type="password"],
       input[type="search"],
       input[type="url"],
+      select,
       input:not([type]) {
         width: 100%;
         padding: 9px 12px;
@@ -563,6 +564,10 @@ export const renderPage = (
         transition: border-color 0.15s, box-shadow 0.15s;
       }
       input:focus {
+        border-color: var(--color-primary);
+        box-shadow: 0 0 0 3px var(--color-primary-soft);
+      }
+      select:focus {
         border-color: var(--color-primary);
         box-shadow: 0 0 0 3px var(--color-primary-soft);
       }
