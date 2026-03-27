@@ -1,5 +1,19 @@
+import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type {
   ReleaseBundleAsset,
@@ -212,6 +226,26 @@ export interface StagedRuntimeUpdate {
   verified: true;
 }
 
+export interface InstallStagedRuntimeUpdateInput {
+  staged: StagedRuntimeUpdate;
+  installRoot: string;
+  packageDirectoryPrefix: string;
+  configExampleFiles: string[];
+}
+
+export interface InstalledRuntimeUpdate {
+  service: string;
+  currentVersion: string;
+  targetVersion: string;
+  installRoot: string;
+  releaseRoot: string;
+  currentLink: string;
+  previousLink: string;
+  sharedConfigDir: string;
+  sharedStateDir: string;
+  appliedAt: string;
+}
+
 const sanitizeStageSegment = (value: string) =>
   value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
 
@@ -300,4 +334,114 @@ export const readStagedRuntimeUpdate = (metadataPath: string): StagedRuntimeUpda
   }
 
   return payload;
+};
+
+const createDirectoryLink = (targetPath: string, linkPath: string) => {
+  symlinkSync(targetPath, linkPath, process.platform === "win32" ? "junction" : "dir");
+};
+
+const copyIfMissing = (sourcePath: string, destinationPath: string) => {
+  if (existsSync(sourcePath) && !existsSync(destinationPath)) {
+    cpSync(sourcePath, destinationPath);
+  }
+};
+
+const extractArchive = (archivePath: string, format: ReleaseBundleAsset["format"], destinationDir: string) => {
+  mkdirSync(destinationDir, { recursive: true });
+
+  if (format === "tar.gz") {
+    execFileSync("tar", ["-xzf", archivePath, "-C", destinationDir]);
+    return;
+  }
+
+  if (process.platform === "win32") {
+    execFileSync("powershell.exe", [
+      "-NoProfile",
+      "-Command",
+      `Expand-Archive -LiteralPath '${archivePath.replace(/'/g, "''")}' -DestinationPath '${destinationDir.replace(/'/g, "''")}' -Force`
+    ]);
+    return;
+  }
+
+  execFileSync("unzip", ["-qq", archivePath, "-d", destinationDir]);
+};
+
+const findPackageDirectory = (extractRoot: string, packageDirectoryPrefix: string) => {
+  const entry = readdirSync(extractRoot, { withFileTypes: true }).find(
+    (candidate) => candidate.isDirectory() && candidate.name.startsWith(packageDirectoryPrefix)
+  );
+
+  if (!entry) {
+    throw new Error(
+      `Release archive did not contain a package directory starting with ${packageDirectoryPrefix}.`
+    );
+  }
+
+  return join(extractRoot, entry.name);
+};
+
+export const installStagedRuntimeUpdate = ({
+  staged,
+  installRoot,
+  packageDirectoryPrefix,
+  configExampleFiles
+}: InstallStagedRuntimeUpdateInput): InstalledRuntimeUpdate => {
+  const extractionRoot = mkdtempSync(join(tmpdir(), `${sanitizeStageSegment(staged.service) || "runtime"}-extract-`));
+  const releaseRoot = resolve(installRoot, "releases", staged.targetVersion);
+  const currentLink = resolve(installRoot, "current");
+  const previousLink = resolve(installRoot, "previous");
+  const sharedConfigDir = resolve(installRoot, "config");
+  const sharedStateDir = resolve(installRoot, "data", ".clio-fs");
+
+  try {
+    if (existsSync(releaseRoot)) {
+      throw new Error(`Install target already exists: ${releaseRoot}`);
+    }
+
+    extractArchive(staged.archivePath, staged.asset.format, extractionRoot);
+    const packageDirectory = findPackageDirectory(extractionRoot, packageDirectoryPrefix);
+    const packageConfigDir = join(packageDirectory, "config");
+
+    mkdirSync(resolve(installRoot, "releases"), { recursive: true });
+    mkdirSync(sharedConfigDir, { recursive: true });
+    mkdirSync(sharedStateDir, { recursive: true });
+
+    cpSync(packageDirectory, releaseRoot, { recursive: true });
+
+    for (const fileName of configExampleFiles) {
+      copyIfMissing(join(packageConfigDir, fileName), join(sharedConfigDir, fileName.replace(".example", "")));
+    }
+
+    rmSync(join(releaseRoot, "config"), { recursive: true, force: true });
+    rmSync(join(releaseRoot, ".clio-fs"), { recursive: true, force: true });
+    createDirectoryLink(sharedConfigDir, join(releaseRoot, "config"));
+    createDirectoryLink(sharedStateDir, join(releaseRoot, ".clio-fs"));
+
+    const nextCurrentLink = `${currentLink}.next-${randomUUID()}`;
+    createDirectoryLink(releaseRoot, nextCurrentLink);
+
+    rmSync(previousLink, { recursive: true, force: true });
+    if (existsSync(currentLink)) {
+      renameSync(currentLink, previousLink);
+    }
+    renameSync(nextCurrentLink, currentLink);
+
+    return {
+      service: staged.service,
+      currentVersion: staged.currentVersion,
+      targetVersion: staged.targetVersion,
+      installRoot,
+      releaseRoot,
+      currentLink,
+      previousLink,
+      sharedConfigDir,
+      sharedStateDir,
+      appliedAt: new Date().toISOString()
+    };
+  } catch (error) {
+    rmSync(releaseRoot, { recursive: true, force: true });
+    throw error;
+  } finally {
+    rmSync(extractionRoot, { recursive: true, force: true });
+  }
 };

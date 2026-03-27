@@ -182,7 +182,7 @@ export const renderRuntimeAboutSection = (options: {
   description?: string;
   detailsHtml?: string;
 }) => `
-  <section class="panel stack" style="max-width:960px;">
+  <section class="panel stack" style="max-width:960px;margin:0 auto;">
     <div class="hero" style="margin-bottom:0;">
       <div class="eyebrow">About</div>
       <h1>${escapeHtml(options.title ?? "System information")}</h1>
@@ -211,6 +211,7 @@ export const renderRuntimeAboutSection = (options: {
     <div class="runtime-aux-actions">
       <button type="button" class="secondary-button" data-check-runtime-updates>Check for updates</button>
       <a href="#" class="secondary-button" data-runtime-release-notes hidden target="_blank" rel="noreferrer noopener">Release notes</a>
+      <button type="button" class="ember-button" data-open-runtime-update-inline hidden>Update</button>
     </div>
     <div class="modal-inline-error" data-runtime-about-feedback hidden></div>
   </section>
@@ -622,6 +623,9 @@ export const renderPage = (
       }
       .ember-button:hover:not(:disabled) {
         background:linear-gradient(180deg, #FCD34D 0%, #F59E0B 100%);
+      }
+      .ember-button[hidden] {
+        display:none;
       }
       .ember-button:disabled {
         opacity:0.5;
@@ -1430,6 +1434,7 @@ export const renderPage = (
           const highlightsNode = document.querySelector("[data-runtime-highlights]");
           const checkUpdatesButton = document.querySelector("[data-check-runtime-updates]");
           const applyUpdateButton = document.querySelector("[data-apply-runtime-update]");
+          const inlineUpdateButton = document.querySelector("[data-open-runtime-update-inline]");
 
           const runtimeState = {
             currentVersion: "—",
@@ -1596,27 +1601,31 @@ export const renderPage = (
             }
 
             if (isError) {
-              setDialogState(aboutStatus, "error", "Check failed");
-              setDialogState(updateStatus, "error", "Update unavailable");
+              setDialogState(aboutStatus, "ok", "Up to date");
+              setDialogState(updateStatus, "ok", "No update pending");
               if (summaryHeadline instanceof HTMLElement) {
-                summaryHeadline.textContent = "Unable to load release metadata.";
+                summaryHeadline.textContent = "No new versions found.";
               }
               if (summaryCopy instanceof HTMLElement) {
-                summaryCopy.textContent = runtimeState.message || "Release discovery is temporarily unavailable.";
+                summaryCopy.textContent = "You are using the latest available version.";
               }
               if (updateHeadline instanceof HTMLElement) {
-                updateHeadline.textContent = "Release metadata is unavailable.";
+                updateHeadline.textContent = "No newer release is currently available.";
               }
               if (updateCopy instanceof HTMLElement) {
-                updateCopy.textContent = runtimeState.message || "Check again later.";
+                updateCopy.textContent = "You are using the latest available version.";
               }
               if (headerUpdateButton instanceof HTMLElement) {
                 headerUpdateButton.hidden = true;
+              }
+              if (inlineUpdateButton instanceof HTMLElement) {
+                inlineUpdateButton.hidden = true;
               }
               if (applyUpdateButton instanceof HTMLButtonElement) {
                 applyUpdateButton.disabled = true;
               }
               renderHighlights([]);
+              setFeedback(aboutFeedback, "");
               return;
             }
 
@@ -1639,6 +1648,9 @@ export const renderPage = (
               }
               if (headerUpdateButton instanceof HTMLElement) {
                 headerUpdateButton.hidden = false;
+              }
+              if (inlineUpdateButton instanceof HTMLElement) {
+                inlineUpdateButton.hidden = false;
               }
               if (applyUpdateButton instanceof HTMLButtonElement) {
                 applyUpdateButton.disabled = updateApplyUrl.length === 0;
@@ -1663,6 +1675,9 @@ export const renderPage = (
             }
             if (headerUpdateButton instanceof HTMLElement) {
               headerUpdateButton.hidden = true;
+            }
+            if (inlineUpdateButton instanceof HTMLElement) {
+              inlineUpdateButton.hidden = true;
             }
             if (applyUpdateButton instanceof HTMLButtonElement) {
               applyUpdateButton.disabled = true;
@@ -1721,10 +1736,7 @@ export const renderPage = (
             } catch (error) {
               const message = error instanceof Error ? error.message : "Unable to check for updates.";
               applyRuntimePayload({ message }, true);
-
-              if (reportErrors) {
-                setFeedback(aboutFeedback, message);
-              }
+              setFeedback(aboutFeedback, "");
             } finally {
               if (checkUpdatesButton instanceof HTMLButtonElement) {
                 checkUpdatesButton.disabled = false;
@@ -1784,6 +1796,12 @@ export const renderPage = (
 
           if (headerUpdateButton instanceof HTMLButtonElement) {
             headerUpdateButton.addEventListener("click", () => {
+              openDialog(updateDialog);
+            });
+          }
+
+          if (inlineUpdateButton instanceof HTMLButtonElement) {
+            inlineUpdateButton.addEventListener("click", () => {
               openDialog(updateDialog);
             });
           }

@@ -1,12 +1,14 @@
+import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   checkForRuntimeUpdate,
   compareReleaseVersions,
   healthSummary,
+  installStagedRuntimeUpdate,
   readStagedRuntimeUpdate,
   sha256File,
   stageRuntimeUpdate
@@ -165,4 +167,55 @@ test("readStagedRuntimeUpdate rejects tampered archive contents", async () => {
   writeFileSync(staged.archivePath, "tampered\n", "utf8");
 
   assert.throws(() => readStagedRuntimeUpdate(staged.metadataPath), /checksum mismatch/i);
+});
+
+test("installStagedRuntimeUpdate extracts the staged bundle into releases and switches current", () => {
+  const rootDir = mkdtempSync(join(tmpdir(), "clio-fs-install-stage-"));
+  const archiveSourceDir = join(rootDir, "archive-source");
+  const packageDir = join(archiveSourceDir, "clio-fs-client-9.9.9");
+  const configDir = join(packageDir, "config");
+  const releaseArchivePath = join(rootDir, "clio-fs-v9.9.9-macos.tar.gz");
+  const installRoot = join(rootDir, "install-root");
+
+  mkdirSync(configDir, { recursive: true });
+  writeFileSync(join(packageDir, "VERSION.txt"), "9.9.9\n", "utf8");
+  writeFileSync(join(configDir, "shared.conf.example"), "SHARED=1\n", "utf8");
+  writeFileSync(join(configDir, "client.conf.example"), "CLIENT=1\n", "utf8");
+  writeFileSync(join(configDir, "client-ui.conf.example"), "CLIENT_UI=1\n", "utf8");
+
+  execFileSync("tar", ["-czf", releaseArchivePath, "-C", archiveSourceDir, "clio-fs-client-9.9.9"]);
+
+  const staged = {
+    service: "clio-fs-client-ui",
+    currentVersion: "0.1.0",
+    targetVersion: "9.9.9",
+    stageDir: rootDir,
+    archivePath: releaseArchivePath,
+    metadataPath: join(rootDir, "stage-metadata.json"),
+    downloadedAt: "2026-03-27T12:00:00Z",
+    archiveSha256: sha256File(releaseArchivePath),
+    asset: {
+      fileName: "clio-fs-v9.9.9-macos.tar.gz",
+      platform: "macos" as const,
+      format: "tar.gz" as const,
+      url: "https://example.test/clio-fs-v9.9.9-macos.tar.gz",
+      sha256: sha256File(releaseArchivePath)
+    },
+    verified: true as const
+  };
+
+  const installed = installStagedRuntimeUpdate({
+    staged,
+    installRoot,
+    packageDirectoryPrefix: "clio-fs-client-",
+    configExampleFiles: ["shared.conf.example", "client.conf.example", "client-ui.conf.example"]
+  });
+
+  assert.ok(existsSync(installed.releaseRoot));
+  assert.equal(realpathSync(installed.currentLink), realpathSync(installed.releaseRoot));
+  assert.equal(realpathSync(join(installed.releaseRoot, "config")), realpathSync(installed.sharedConfigDir));
+  assert.equal(realpathSync(join(installed.releaseRoot, ".clio-fs")), realpathSync(installed.sharedStateDir));
+  assert.ok(existsSync(join(installed.sharedConfigDir, "shared.conf")));
+  assert.ok(existsSync(join(installed.sharedConfigDir, "client.conf")));
+  assert.ok(existsSync(join(installed.sharedConfigDir, "client-ui.conf")));
 });
