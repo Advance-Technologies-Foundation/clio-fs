@@ -43,7 +43,6 @@ const defaultControlPlaneBaseUrl = (host: string, port: number) =>
 const CONVENTIONAL_CONFIG_FILES = [
   "config/shared.conf",
   "config/server.conf",
-  "config/server-ui.conf",
   "config/client.conf",
   "config/client-ui.conf"
 ] as const;
@@ -51,7 +50,6 @@ const CONVENTIONAL_CONFIG_FILES = [
 const EXPLICIT_CONFIG_FILE_ENV_NAMES = [
   "CLIO_FS_CONFIG_FILE",
   "CLIO_FS_SERVER_CONFIG_FILE",
-  "CLIO_FS_SERVER_UI_CONFIG_FILE",
   "CLIO_FS_CLIENT_CONFIG_FILE",
   "CLIO_FS_CLIENT_UI_CONFIG_FILE"
 ] as const;
@@ -146,7 +144,6 @@ export interface AppConfig {
   serverUi: {
     host: string;
     port: number;
-    controlPlaneBaseUrl: string;
     controlPlaneAuthToken: string;
   };
   client: {
@@ -171,9 +168,7 @@ export const readAppConfig = (
 ): AppConfig => {
   const runtimeEnv = resolveRuntimeEnv(env, options.cwd ?? process.cwd());
   const serverHost = readString(runtimeEnv, "CLIO_FS_SERVER_HOST", "127.0.0.1");
-  const serverPort = readInteger(runtimeEnv, "CLIO_FS_SERVER_PORT", 4010);
-  const serverUiHost = readString(runtimeEnv, "CLIO_FS_SERVER_UI_HOST", "127.0.0.1");
-  const serverUiPort = readInteger(runtimeEnv, "CLIO_FS_SERVER_UI_PORT", 4020);
+  const serverPort = readInteger(runtimeEnv, "CLIO_FS_SERVER_PORT", 4020);
   const explicitServerAuthToken = readOptionalString(runtimeEnv, "CLIO_FS_SERVER_AUTH_TOKEN");
   const configuredServerAuthTokens = parseTokenList(runtimeEnv.CLIO_FS_SERVER_AUTH_TOKENS);
   const serverAuthTokens =
@@ -213,16 +208,15 @@ export const readAppConfig = (
       )
     },
     serverUi: {
-      host: serverUiHost,
-      port: serverUiPort,
-      controlPlaneBaseUrl: defaultControlPlaneBaseUrl(serverHost, serverPort),
+      host: serverHost,
+      port: serverPort,
       controlPlaneAuthToken: serverAuthToken
     },
     client: {
       controlPlaneBaseUrl: readString(
         runtimeEnv,
         "CLIO_FS_CLIENT_CONTROL_PLANE_BASE_URL",
-        defaultControlPlaneBaseUrl(serverUiHost, serverUiPort)
+        defaultControlPlaneBaseUrl(serverHost, serverPort)
       ),
       controlPlaneAuthToken: readString(
         runtimeEnv,

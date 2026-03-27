@@ -12,7 +12,7 @@
 Example:
 
 ```conf
-CLIO_FS_SERVER_PORT=4010
+CLIO_FS_SERVER_PORT=4020
 CLIO_FS_SERVER_AUTH_TOKEN="change-me"
 ```
 
@@ -22,7 +22,6 @@ When a process starts, it automatically reads these files from the current worki
 
 - `config/shared.conf`
 - `config/server.conf`
-- `config/server-ui.conf`
 - `config/client.conf`
 - `config/client-ui.conf`
 
@@ -34,7 +33,6 @@ If you want to keep config files somewhere else, point the process at them with 
 
 - `CLIO_FS_CONFIG_FILE`
 - `CLIO_FS_SERVER_CONFIG_FILE`
-- `CLIO_FS_SERVER_UI_CONFIG_FILE`
 - `CLIO_FS_CLIENT_CONFIG_FILE`
 - `CLIO_FS_CLIENT_UI_CONFIG_FILE`
 
@@ -53,8 +51,6 @@ Typical settings:
 - `CLIO_FS_SERVER_WORKSPACE_REGISTRY_FILE`
 - `CLIO_FS_SERVER_WATCH_SETTINGS_FILE`
 - `CLIO_FS_SERVER_CHANGE_JOURNAL_FILE`
-- `CLIO_FS_SERVER_UI_HOST`
-- `CLIO_FS_SERVER_UI_PORT`
 
 ## Client Configuration
 
@@ -72,7 +68,7 @@ Typical settings:
 - `CLIO_FS_CLIENT_UI_HOST`
 - `CLIO_FS_CLIENT_UI_PORT`
 
-`CLIO_FS_CLIENT_CONTROL_PLANE_BASE_URL` can point either to the direct API origin or to the public server UI origin. When the configured path is empty, the runtime automatically resolves API calls through `/api` on the same origin.
+`CLIO_FS_CLIENT_CONTROL_PLANE_BASE_URL` must point to the public server origin. The runtime resolves API calls through `/api` on that same origin.
 
 ## Recommended Pattern
 

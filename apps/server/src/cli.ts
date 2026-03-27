@@ -2,31 +2,23 @@
 import { pathToFileURL } from "node:url";
 import { startDefaultWorkspaceServer } from "./index.js";
 
-export type ServerCliMode = "all" | "api" | "ui";
-
 export const parseServerCliArgs = (argv: string[]) => {
   const [firstArg] = argv;
 
   if (!firstArg) {
-    return { mode: "all" as ServerCliMode };
+    return { start: true as const };
   }
 
   if (firstArg === "--help" || firstArg === "-h") {
     return { help: true as const };
   }
 
-  if (firstArg === "all" || firstArg === "api" || firstArg === "ui") {
-    return { mode: firstArg };
-  }
-
   throw new Error(`Unsupported clio-fs-server command: ${firstArg}`);
 };
 
 const printHelp = () => {
-  console.log("Usage: clio-fs-server [all|api|ui]");
-  console.log("  all  Start the control plane and operator UI (default)");
-  console.log("  api  Start only the control-plane API");
-  console.log("  ui   Start only the operator UI");
+  console.log("Usage: clio-fs-server");
+  console.log("Starts the single clio-fs server listener with the operator UI on / and the API under /api.");
 };
 
 const main = async () => {
@@ -37,28 +29,12 @@ const main = async () => {
     return;
   }
 
-  const started: Array<{ close: () => Promise<void> }> = [];
-
-  if (parsed.mode === "all" || parsed.mode === "api") {
-    started.push(await startDefaultWorkspaceServer());
-  }
-
-  if (parsed.mode === "all" || parsed.mode === "ui") {
-    const serverUiModuleUrl = new URL("../../server-ui/dist/index.js", import.meta.url);
-    const { startDefaultServerUi } = (await import(serverUiModuleUrl.href)) as {
-      startDefaultServerUi: () => Promise<{ close: () => Promise<void> }>;
-    };
-    started.push(await startDefaultServerUi());
-  }
+  const started = await startDefaultWorkspaceServer();
 
   const shutdown = async () => {
-    await Promise.allSettled(
-      started.map((service) =>
-        service.close().catch((error) => {
-          console.error("[server] failed to stop cleanly:", error);
-        })
-      )
-    );
+    await started.close().catch((error) => {
+      console.error("[server] failed to stop cleanly:", error);
+    });
   };
 
   process.on("SIGINT", () => {

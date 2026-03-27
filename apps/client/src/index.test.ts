@@ -322,7 +322,7 @@ test("bind hydrates the local mirror from snapshot and materialize", async () =>
     filesystem,
     stateStore,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: createFetchStub() as typeof fetch
     }
@@ -348,7 +348,7 @@ test("pollOnce applies server-originated changes and advances bind state", async
     filesystem,
     stateStore,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: createFetchStub() as typeof fetch
     }
@@ -456,7 +456,7 @@ test("pollOnce applies server-originated path moves without full rehydrate", asy
     filesystem,
     stateStore,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: fetchImpl as typeof fetch
     }
@@ -493,7 +493,7 @@ test("bind rehydrates when persisted hydrated state exists but local mirror file
     workspaceId: "demo-workspace",
     mirrorRoot: "/tmp/demo-main",
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "dev-token",
       fetchImpl: fetchStub as typeof fetch
     },
@@ -518,7 +518,7 @@ test("pushFile sends a conditional write and advances local bind state", async (
     filesystem,
     stateStore,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: createFetchStub() as typeof fetch
     }
@@ -545,7 +545,7 @@ test("pushFile surfaces server conflict errors", async () => {
     filesystem,
     stateStore,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: createFetchStub() as typeof fetch
     }
@@ -582,7 +582,7 @@ test("resolveConflict restores canonical server content and clears the blocked p
     filesystem,
     stateStore,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: fetchStub as unknown as typeof fetch
     }
@@ -622,7 +622,7 @@ test("resolveConflict with accept_local reapplies local content to the server an
     filesystem,
     stateStore,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: fetchStub as unknown as typeof fetch
     }
@@ -750,7 +750,7 @@ test("pollOnce retries queued pending operations and clears them on success", as
     filesystem,
     stateStore,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: fetchImpl as typeof fetch
     }
@@ -778,7 +778,7 @@ test("createDirectory sends a directory create request and advances local bind s
     filesystem,
     stateStore,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: fetchStub as unknown as typeof fetch
     }
@@ -806,7 +806,7 @@ test("movePath sends a move request and advances local bind state", async () => 
     filesystem,
     stateStore,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: fetchStub as unknown as typeof fetch
     }
@@ -839,7 +839,7 @@ test("deleteFile sends a conditional delete and advances local bind state", asyn
     filesystem,
     stateStore,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: fetchStub as unknown as typeof fetch
     }
@@ -872,7 +872,7 @@ test("local watch loop pushes changed files through the control plane", async ()
     stateStore,
     watcher,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: fetchStub as unknown as typeof fetch
     }
@@ -914,7 +914,7 @@ test("local watch loop pushes deleted files through the control plane", async ()
     stateStore,
     watcher,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: fetchStub as unknown as typeof fetch
     }
@@ -953,7 +953,7 @@ test("local watch loop pushes empty directory creates through the control plane"
     stateStore,
     watcher,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: fetchStub as unknown as typeof fetch
     }
@@ -991,7 +991,7 @@ test("local watch loop pushes empty directory deletes through the control plane"
     stateStore,
     watcher,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: fetchStub as unknown as typeof fetch
     }
@@ -1031,7 +1031,7 @@ test("local watch loop pushes moved files through the control plane", async () =
     stateStore,
     watcher,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: fetchStub as unknown as typeof fetch
     }
@@ -1078,7 +1078,7 @@ test("local watch loop pushes moved directory subtrees through the control plane
     stateStore,
     watcher,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: fetchStub as unknown as typeof fetch
     }
@@ -1124,7 +1124,7 @@ test("default local watch loop loads server watch settings and settles rapid wri
     filesystem,
     stateStore,
     controlPlaneOptions: {
-      baseUrl: "http://127.0.0.1:4010",
+      baseUrl: "http://127.0.0.1:4020",
       authToken: "test-token",
       fetchImpl: fetchStub as unknown as typeof fetch
     }

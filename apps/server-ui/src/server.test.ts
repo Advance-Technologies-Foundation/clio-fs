@@ -4,6 +4,36 @@ import { createServerUi } from "./server.js";
 
 const TEST_UI_TOKEN = "test-token";
 
+const wait = (durationMs: number) => new Promise((resolve) => setTimeout(resolve, durationMs));
+
+const fetchWithRetry = async (
+  input: string,
+  init: RequestInit,
+  attempts = 3
+) => {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fetch(input, init);
+    } catch (error) {
+      lastError = error;
+      const code =
+        error && typeof error === "object" && "cause" in error
+          ? (error.cause as { code?: string })?.code
+          : undefined;
+
+      if (code !== "EADDRNOTAVAIL" || attempt === attempts) {
+        throw error;
+      }
+
+      await wait(25 * attempt);
+    }
+  }
+
+  throw lastError;
+};
+
 const createFetchStub = (
   workspaces: Array<{
     workspaceId: string;
@@ -38,8 +68,14 @@ const createFetchStub = (
 
   return async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+    const pathname =
+      url.pathname === "/api"
+        ? "/"
+        : url.pathname.startsWith("/api/")
+          ? url.pathname.slice(4)
+          : url.pathname;
 
-    if (url.pathname === "/health") {
+    if (pathname === "/health") {
       return new Response(
         JSON.stringify({
           status: "ok",
@@ -51,7 +87,7 @@ const createFetchStub = (
       );
     }
 
-    if (url.pathname === "/workspaces") {
+    if (pathname === "/workspaces") {
       return new Response(
         JSON.stringify({
           items: workspaces.map((item) => ({
@@ -64,14 +100,14 @@ const createFetchStub = (
       );
     }
 
-    if (url.pathname === "/settings/watch" && (init?.method ?? "GET") === "GET") {
+    if (pathname === "/settings/watch" && (init?.method ?? "GET") === "GET") {
       return new Response(JSON.stringify(watchSettings), {
         status: 200,
         headers: { "content-type": "application/json" }
       });
     }
 
-    if (url.pathname === "/settings/watch" && (init?.method ?? "GET") === "PUT") {
+    if (pathname === "/settings/watch" && (init?.method ?? "GET") === "PUT") {
       watchSettings = JSON.parse(String(init?.body ?? "{}")) as typeof watchSettings;
 
       return new Response(JSON.stringify(watchSettings), {
@@ -80,7 +116,7 @@ const createFetchStub = (
       });
     }
 
-    if (url.pathname === "/workspaces/register" && (init?.method ?? "GET") === "POST") {
+    if (pathname === "/workspaces/register" && (init?.method ?? "GET") === "POST") {
       return new Response(
         JSON.stringify({
           workspaceId: "created-from-form",
@@ -91,12 +127,12 @@ const createFetchStub = (
       );
     }
 
-    if (workspace && url.pathname === `/workspaces/${workspace.workspaceId}` && (init?.method ?? "GET") === "DELETE") {
+    if (workspace && pathname === `/workspaces/${workspace.workspaceId}` && (init?.method ?? "GET") === "DELETE") {
       return new Response(null, { status: 204 });
     }
 
     const matchedWorkspace = workspaces.find(
-      (item) => url.pathname === `/workspaces/${item.workspaceId}`
+      (item) => pathname === `/workspaces/${item.workspaceId}`
     );
 
     if (matchedWorkspace) {
@@ -121,7 +157,6 @@ const startTestServer = async (
   const server = createServerUi({
     host: "127.0.0.1",
     port: 0,
-    controlPlaneBaseUrl: "http://127.0.0.1:4010",
     controlPlaneAuthToken: TEST_UI_TOKEN,
     allowedUiTokens: [TEST_UI_TOKEN, "backup-token"],
     fetchImpl: createFetchStub(workspaces) as typeof fetch,
@@ -141,7 +176,7 @@ const startTestServer = async (
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     login: async (token = TEST_UI_TOKEN) => {
-      const response = await fetch(`http://127.0.0.1:${address.port}/login`, {
+      const response = await fetchWithRetry(`http://127.0.0.1:${address.port}/login`, {
         method: "POST",
         headers: {
           "content-type": "application/x-www-form-urlencoded"

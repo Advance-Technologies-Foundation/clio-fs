@@ -30,7 +30,7 @@ The fastest way to try `clio-fs` is through the GitHub Release bundles.
    - macOS or Linux: `./clio-fs-server`
    - Windows Command Prompt: `clio-fs-server.cmd`
    - Windows PowerShell: `.\clio-fs-server.ps1`
-6. Open the operator UI at `http://<host>:4020` unless you changed the UI port.
+6. Open the operator UI at `http://<host>:4020` unless you changed the server port.
 7. Use one configured token on the login page. The same public server address also exposes the API under `/api`.
 
 ### Client
@@ -63,8 +63,8 @@ corepack pnpm run client-ui
 
 Default local URLs:
 
-- server API: `http://127.0.0.1:4010`
-- server UI: `http://127.0.0.1:4020`
+- server: `http://127.0.0.1:4020`
+- server API: `http://127.0.0.1:4020/api`
 - client UI: `http://127.0.0.1:4030`
 - development bearer token: `dev-token`
 
@@ -146,7 +146,6 @@ Conventional config files are loaded automatically from the current working dire
 
 - `config/shared.conf`
 - `config/server.conf`
-- `config/server-ui.conf`
 - `config/client.conf`
 - `config/client-ui.conf`
 
@@ -161,7 +160,6 @@ Detailed configuration reference:
 App-level examples:
 
 - `corepack pnpm --filter @clio-fs/server dev`
-- `corepack pnpm --filter @clio-fs/server-ui dev`
 - `corepack pnpm --filter @clio-fs/client dev`
 - `corepack pnpm run scenario:local-sync`
 
@@ -217,12 +215,11 @@ Client commands from the extracted bundle:
 
 Key runtime environment variables:
 
-- `CLIO_FS_SERVER_HOST` and `CLIO_FS_SERVER_PORT` control the API listener
+- `CLIO_FS_SERVER_HOST` and `CLIO_FS_SERVER_PORT` control the single server listener for both UI and API
 - `CLIO_FS_SERVER_AUTH_TOKEN` sets the primary bearer token used by the UI and client by default
 - `CLIO_FS_SERVER_AUTH_TOKENS` allows multiple comma-separated or newline-separated bearer tokens
 - `CLIO_FS_SERVER_WORKSPACE_REGISTRY_FILE` sets the file-backed workspace registry path
-- `CLIO_FS_SERVER_UI_HOST` and `CLIO_FS_SERVER_UI_PORT` control the operator UI listener
-- `CLIO_FS_CLIENT_CONTROL_PLANE_BASE_URL` accepts either a direct API origin or the public server UI origin; when the path is empty it automatically resolves to `/api`
+- `CLIO_FS_CLIENT_CONTROL_PLANE_BASE_URL` points to the public server origin; the client automatically resolves API calls to `/api` on that same origin
 - `CLIO_FS_CLIENT_CONTROL_PLANE_AUTH_TOKEN` overrides the client bearer token
 - `CLIO_FS_CLIENT_DEFAULT_WORKSPACE_ROOT` sets the default mirror root base directory
 - `CLIO_FS_CLIENT_STATE_FILE` sets the client state file path
@@ -232,13 +229,12 @@ If you prefer explicit config file locations instead of conventional `config/*.c
 
 - `CLIO_FS_CONFIG_FILE`
 - `CLIO_FS_SERVER_CONFIG_FILE`
-- `CLIO_FS_SERVER_UI_CONFIG_FILE`
 - `CLIO_FS_CLIENT_CONFIG_FILE`
 - `CLIO_FS_CLIENT_UI_CONFIG_FILE`
 
 ## Current Implementation Status
 
-Phase 1 has started in `apps/server` and `apps/server-ui`.
+Phase 1 has started in `apps/server` with the operator UI served from the same listener under `/`.
 
 Implemented today:
 
@@ -277,7 +273,7 @@ Implemented today:
 - integration tests covering health, auth, registration, validation, and duplicate detection
 - API tests use in-memory registry state and mocked filesystem inputs instead of real disk writes
 - a compiled dev flow for `@clio-fs/server` so `corepack pnpm --filter @clio-fs/server dev` runs against emitted `dist`
-- an operator-facing server UI in `apps/server-ui`
+- an operator-facing server UI rendered from the same public server origin
 - a client setup UI in `apps/client-ui`
 - server-rendered dashboard and workspace detail pages backed by control-plane API calls
 - modal-based workspace registration in the UI without `curl`
@@ -294,7 +290,6 @@ Implemented today:
 - delete actions for removing workspaces from the dashboard
 - simplified workspace list UI that shows either `Display Name (workspaceId)` or just `workspaceId`
 - integration tests covering dashboard rendering, workspace detail rendering, form submission, and not-found handling
-- a compiled dev flow for `@clio-fs/server-ui`
 - an explicit opt-in local sync integration scenario specification in [docs/LOCAL_SYNC_INTEGRATION_SCENARIO.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/docs/LOCAL_SYNC_INTEGRATION_SCENARIO.md)
 - initial client mirror slice with bind state, snapshot hydrate, and polling-based change application
 - client-side push API for conditional text file writes
@@ -323,8 +318,9 @@ Single-command server-side startup:
 
 This starts:
 
-- `@clio-fs/server` on `http://127.0.0.1:4010`
-- `@clio-fs/server-ui` on `http://127.0.0.1:4020`
+- `@clio-fs/server` on `http://127.0.0.1:4020`
+- the operator UI on `/`
+- the backend API on `/api`
 
 Client setup UI:
 
@@ -342,21 +338,17 @@ Use it to:
 - choose the local mirror path through the native folder picker
 - start or stop the active client sync session
 
-If you prefer separate terminals:
+If you prefer a direct package command:
 
-1. Start the control plane:
+1. Start the server:
 
    `corepack pnpm --filter @clio-fs/server dev`
 
-2. Start the operator UI in a second terminal:
+2. Open [http://127.0.0.1:4020](http://127.0.0.1:4020)
 
-   `corepack pnpm --filter @clio-fs/server-ui dev`
-
-3. Open [http://127.0.0.1:4020](http://127.0.0.1:4020)
-
-By default the UI is exposed on `http://127.0.0.1:4020` and proxies API traffic on the same origin under `/api`, so users and client setup only need one server address.
+By default the UI is exposed on `http://127.0.0.1:4020` and the backend API is exposed on the same origin under `/api`, so users and client setup only need one server address.
 Registered workspaces are persisted to [`.clio-fs/server/workspaces.json`](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/.clio-fs/server/workspaces.json) at the repository root once you create them through the UI or API.
-On the workspace registration form, `Choose Folder` opens the native directory picker on the machine running `server-ui` and fills `rootPath` with the selected absolute path.
+On the workspace registration form, `Choose Folder` opens the native directory picker on the machine running the server process and fills `rootPath` with the selected absolute path.
 
 ## Run The Headless Client Daemon Locally
 

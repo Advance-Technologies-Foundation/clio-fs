@@ -8,8 +8,8 @@
     "clio-fs-server": "./dist/cli.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "check": "tsc -p tsconfig.json --noEmit",
+    "build": "corepack pnpm --filter @clio-fs/server-ui build && tsc -p tsconfig.json",
+    "check": "corepack pnpm --filter @clio-fs/server-ui build && tsc -p tsconfig.json --noEmit",
     "dev": "node ../../scripts/dev-compiled.mjs",
     "test": "corepack pnpm build && node --test dist/**/*.test.js",
     "format": "node -e \"console.log('No formatter configured for @clio-fs/server yet')\""

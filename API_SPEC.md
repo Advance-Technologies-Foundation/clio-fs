@@ -24,6 +24,7 @@ The API is designed for this model:
 ## Transport
 
 - protocol: HTTPS
+- public server UI and API share one listener; API routes are served under `/api`
 - auth: bearer token
 - content type: `application/json`
 - binary file transfer: raw bytes or base64 envelope, depending on implementation choice

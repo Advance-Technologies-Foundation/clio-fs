@@ -3,12 +3,13 @@ import { pathToFileURL } from "node:url";
 import { appConfig } from "@clio-fs/config";
 import { startServerUi } from "./server.js";
 
+export { createServerUi, createServerUiRequestHandler, startServerUi } from "./server.js";
+
 export const startDefaultServerUi = () =>
   startServerUi({
-    host: appConfig.serverUi.host,
-    port: appConfig.serverUi.port,
-    controlPlaneBaseUrl: appConfig.serverUi.controlPlaneBaseUrl,
-    controlPlaneAuthToken: appConfig.serverUi.controlPlaneAuthToken,
+    host: appConfig.server.host,
+    port: appConfig.server.port,
+    controlPlaneAuthToken: appConfig.server.authToken,
     allowedUiTokens: appConfig.server.authTokens
   });
 

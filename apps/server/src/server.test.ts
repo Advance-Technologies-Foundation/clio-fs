@@ -43,6 +43,7 @@ const startTestServer = async (
 
   return {
     baseUrl,
+    apiBaseUrl: `${baseUrl}/api`,
     journal,
     registry,
     close: () =>
@@ -67,11 +68,62 @@ test("GET /health is public", async () => {
   }
 });
 
+test("server ui login and dashboard work on the same server origin", async () => {
+  const server = await startTestServer();
+
+  try {
+    const createResponse = await fetch(`${server.apiBaseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "ui-main",
+        displayName: "UI Main",
+        rootPath: "/srv/clio/ui-main"
+      })
+    });
+
+    assert.equal(createResponse.status, 201);
+
+    const loginResponse = await fetch(`${server.baseUrl}/login`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
+        authToken: AUTH_TOKEN
+      }),
+      redirect: "manual"
+    });
+
+    assert.equal(loginResponse.status, 303);
+
+    const sessionCookie = loginResponse.headers.get("set-cookie");
+    assert.ok(sessionCookie);
+
+    const dashboardResponse = await fetch(`${server.baseUrl}/`, {
+      headers: {
+        cookie: sessionCookie.split(";", 1)[0]
+      }
+    });
+    const dashboardHtml = await dashboardResponse.text();
+
+    assert.equal(dashboardResponse.status, 200);
+    assert.match(dashboardHtml, /Workspaces/i);
+    assert.match(dashboardHtml, /UI Main/);
+    assert.match(dashboardHtml, /ui-main/);
+  } finally {
+    await server.close();
+  }
+});
+
 test("workspace routes require authorization", async () => {
   const server = await startTestServer();
 
   try {
-    const response = await fetch(`${server.baseUrl}/workspaces`);
+    const response = await fetch(`${server.apiBaseUrl}/workspaces`);
     const body = await response.json();
 
     assert.equal(response.status, 401);
@@ -85,7 +137,7 @@ test("reads and updates server watch settings", async () => {
   const server = await startTestServer();
 
   try {
-    const getResponse = await fetch(`${server.baseUrl}/settings/watch`, {
+    const getResponse = await fetch(`${server.apiBaseUrl}/settings/watch`, {
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`
       }
@@ -95,7 +147,7 @@ test("reads and updates server watch settings", async () => {
     assert.equal(getResponse.status, 200);
     assert.equal(getBody.settleDelayMs, 1200);
 
-    const putResponse = await fetch(`${server.baseUrl}/settings/watch`, {
+    const putResponse = await fetch(`${server.apiBaseUrl}/settings/watch`, {
       method: "PUT",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -110,7 +162,7 @@ test("reads and updates server watch settings", async () => {
     assert.equal(putResponse.status, 200);
     assert.equal(putBody.settleDelayMs, 2200);
 
-    const reloadedResponse = await fetch(`${server.baseUrl}/settings/watch`, {
+    const reloadedResponse = await fetch(`${server.apiBaseUrl}/settings/watch`, {
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`
       }
@@ -128,7 +180,7 @@ test("returns diagnostics summary for the server", async () => {
   const server = await startTestServer();
 
   try {
-    const registerResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+    const registerResponse = await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -142,7 +194,7 @@ test("returns diagnostics summary for the server", async () => {
 
     assert.equal(registerResponse.status, 201);
 
-    const diagnosticsResponse = await fetch(`${server.baseUrl}/diagnostics/summary`, {
+    const diagnosticsResponse = await fetch(`${server.apiBaseUrl}/diagnostics/summary`, {
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`
       }
@@ -164,7 +216,7 @@ test("registers and retrieves a workspace", async () => {
   const server = await startTestServer();
 
   try {
-    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+    const createResponse = await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -179,7 +231,7 @@ test("registers and retrieves a workspace", async () => {
 
     assert.equal(createResponse.status, 201);
 
-    const listResponse = await fetch(`${server.baseUrl}/workspaces`, {
+    const listResponse = await fetch(`${server.apiBaseUrl}/workspaces`, {
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`
       }
@@ -190,7 +242,7 @@ test("registers and retrieves a workspace", async () => {
     assert.equal(listBody.items.length, 1);
     assert.equal(listBody.items[0].workspaceId, "crm-prod-main");
 
-    const detailResponse = await fetch(`${server.baseUrl}/workspaces/crm-prod-main`, {
+    const detailResponse = await fetch(`${server.apiBaseUrl}/workspaces/crm-prod-main`, {
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`
       }
@@ -210,7 +262,7 @@ test("allows workspace registration without display name", async () => {
   const server = await startTestServer();
 
   try {
-    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+    const createResponse = await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -222,7 +274,7 @@ test("allows workspace registration without display name", async () => {
       })
     });
 
-    const detailResponse = await fetch(`${server.baseUrl}/workspaces/workspace-id-only`, {
+    const detailResponse = await fetch(`${server.apiBaseUrl}/workspaces/workspace-id-only`, {
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`
       }
@@ -242,7 +294,7 @@ test("rejects invalid root paths during registration", async () => {
   const server = await startTestServer();
 
   try {
-    const response = await fetch(`${server.baseUrl}/workspaces/register`, {
+    const response = await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -281,8 +333,8 @@ test("rejects duplicate workspace registration", async () => {
       })
     };
 
-    const first = await fetch(`${server.baseUrl}/workspaces/register`, request);
-    const second = await fetch(`${server.baseUrl}/workspaces/register`, request);
+    const first = await fetch(`${server.apiBaseUrl}/workspaces/register`, request);
+    const second = await fetch(`${server.apiBaseUrl}/workspaces/register`, request);
     const body = await second.json();
 
     assert.equal(first.status, 201);
@@ -297,7 +349,7 @@ test("deletes a workspace", async () => {
   const server = await startTestServer();
 
   try {
-    await fetch(`${server.baseUrl}/workspaces/register`, {
+    await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -309,14 +361,14 @@ test("deletes a workspace", async () => {
       })
     });
 
-    const deleteResponse = await fetch(`${server.baseUrl}/workspaces/to-delete`, {
+    const deleteResponse = await fetch(`${server.apiBaseUrl}/workspaces/to-delete`, {
       method: "DELETE",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`
       }
     });
 
-    const detailResponse = await fetch(`${server.baseUrl}/workspaces/to-delete`, {
+    const detailResponse = await fetch(`${server.apiBaseUrl}/workspaces/to-delete`, {
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`
       }
@@ -344,7 +396,7 @@ test("returns a recursive snapshot manifest for a workspace", async () => {
   const server = await startTestServer({ filesystem: mockFileSystem });
 
   try {
-    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+    const createResponse = await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -358,7 +410,7 @@ test("returns a recursive snapshot manifest for a workspace", async () => {
 
     assert.equal(createResponse.status, 201);
 
-    const snapshotResponse = await fetch(`${server.baseUrl}/workspaces/snapshot-main/snapshot`, {
+    const snapshotResponse = await fetch(`${server.apiBaseUrl}/workspaces/snapshot-main/snapshot`, {
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`
       }
@@ -405,7 +457,7 @@ test("materializes file contents for a workspace snapshot", async () => {
   const server = await startTestServer({ filesystem: mockFileSystem });
 
   try {
-    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+    const createResponse = await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -420,7 +472,7 @@ test("materializes file contents for a workspace snapshot", async () => {
     assert.equal(createResponse.status, 201);
 
     const materializeResponse = await fetch(
-      `${server.baseUrl}/workspaces/materialize-main/snapshot-materialize`,
+      `${server.apiBaseUrl}/workspaces/materialize-main/snapshot-materialize`,
       {
         method: "POST",
         headers: {
@@ -468,7 +520,7 @@ test("materializes binary file contents using base64 encoding", async () => {
   const server = await startTestServer({ filesystem: mockFileSystem });
 
   try {
-    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+    const createResponse = await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -483,7 +535,7 @@ test("materializes binary file contents using base64 encoding", async () => {
     assert.equal(createResponse.status, 201);
 
     const materializeResponse = await fetch(
-      `${server.baseUrl}/workspaces/binary-main/snapshot-materialize`,
+      `${server.apiBaseUrl}/workspaces/binary-main/snapshot-materialize`,
       {
         method: "POST",
         headers: {
@@ -514,7 +566,7 @@ test("rejects invalid materialize paths", async () => {
   const server = await startTestServer({ filesystem: mockFileSystem });
 
   try {
-    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+    const createResponse = await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -529,7 +581,7 @@ test("rejects invalid materialize paths", async () => {
     assert.equal(createResponse.status, 201);
 
     const materializeResponse = await fetch(
-      `${server.baseUrl}/workspaces/materialize-invalid/snapshot-materialize`,
+      `${server.apiBaseUrl}/workspaces/materialize-invalid/snapshot-materialize`,
       {
         method: "POST",
         headers: {
@@ -555,7 +607,7 @@ test("returns ordered change events after the requested revision", async () => {
   const server = await startTestServer();
 
   try {
-    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+    const createResponse = await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -584,7 +636,7 @@ test("returns ordered change events after the requested revision", async () => {
       size: 18
     });
 
-    const changesResponse = await fetch(`${server.baseUrl}/workspaces/changes-main/changes?since=0`, {
+    const changesResponse = await fetch(`${server.apiBaseUrl}/workspaces/changes-main/changes?since=0`, {
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`
       }
@@ -616,7 +668,7 @@ test("rejects invalid change feed query parameters", async () => {
   const server = await startTestServer();
 
   try {
-    await fetch(`${server.baseUrl}/workspaces/register`, {
+    await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -628,7 +680,7 @@ test("rejects invalid change feed query parameters", async () => {
       })
     });
 
-    const response = await fetch(`${server.baseUrl}/workspaces/changes-invalid/changes?since=-1`, {
+    const response = await fetch(`${server.apiBaseUrl}/workspaces/changes-invalid/changes?since=-1`, {
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`
       }
@@ -648,7 +700,7 @@ test("writes a file through the API and advances revisions", async () => {
   const server = await startTestServer({ filesystem: mockFileSystem });
 
   try {
-    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+    const createResponse = await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -663,7 +715,7 @@ test("writes a file through the API and advances revisions", async () => {
     assert.equal(createResponse.status, 201);
 
     const writeResponse = await fetch(
-      `${server.baseUrl}/workspaces/write-main/file?path=${encodeURIComponent("packages/Alpha/readme.txt")}`,
+      `${server.apiBaseUrl}/workspaces/write-main/file?path=${encodeURIComponent("packages/Alpha/readme.txt")}`,
       {
         method: "PUT",
         headers: {
@@ -698,7 +750,7 @@ test("creates a directory through the API and advances revisions", async () => {
   const server = await startTestServer({ filesystem: mockFileSystem });
 
   try {
-    const createResponse = await fetch(`${server.baseUrl}/workspaces/register`, {
+    const createResponse = await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -713,7 +765,7 @@ test("creates a directory through the API and advances revisions", async () => {
     assert.equal(createResponse.status, 201);
 
     const mkdirResponse = await fetch(
-      `${server.baseUrl}/workspaces/mkdir-main/mkdir?path=packages/Gamma`,
+      `${server.apiBaseUrl}/workspaces/mkdir-main/mkdir?path=packages/Gamma`,
       {
         method: "POST",
         headers: {
@@ -745,7 +797,7 @@ test("rejects creating a directory when the path already exists", async () => {
   const server = await startTestServer({ filesystem: mockFileSystem });
 
   try {
-    await fetch(`${server.baseUrl}/workspaces/register`, {
+    await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -758,7 +810,7 @@ test("rejects creating a directory when the path already exists", async () => {
     });
 
     const mkdirResponse = await fetch(
-      `${server.baseUrl}/workspaces/mkdir-conflict/mkdir?path=packages`,
+      `${server.apiBaseUrl}/workspaces/mkdir-conflict/mkdir?path=packages`,
       {
         method: "POST",
         headers: {
@@ -791,7 +843,7 @@ test("moves a file through the API and advances revisions", async () => {
   const server = await startTestServer({ filesystem: mockFileSystem });
 
   try {
-    await fetch(`${server.baseUrl}/workspaces/register`, {
+    await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -803,7 +855,7 @@ test("moves a file through the API and advances revisions", async () => {
       })
     });
 
-    const moveResponse = await fetch(`${server.baseUrl}/workspaces/move-file-main/move`, {
+    const moveResponse = await fetch(`${server.apiBaseUrl}/workspaces/move-file-main/move`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -855,7 +907,7 @@ test("moves a directory subtree through the API", async () => {
   const server = await startTestServer({ filesystem: mockFileSystem });
 
   try {
-    await fetch(`${server.baseUrl}/workspaces/register`, {
+    await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -867,7 +919,7 @@ test("moves a directory subtree through the API", async () => {
       })
     });
 
-    const moveResponse = await fetch(`${server.baseUrl}/workspaces/move-dir-main/move`, {
+    const moveResponse = await fetch(`${server.apiBaseUrl}/workspaces/move-dir-main/move`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -907,7 +959,7 @@ test("rejects moves when the target path already exists", async () => {
   const server = await startTestServer({ filesystem: mockFileSystem });
 
   try {
-    await fetch(`${server.baseUrl}/workspaces/register`, {
+    await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -919,7 +971,7 @@ test("rejects moves when the target path already exists", async () => {
       })
     });
 
-    const moveResponse = await fetch(`${server.baseUrl}/workspaces/move-conflict/move`, {
+    const moveResponse = await fetch(`${server.apiBaseUrl}/workspaces/move-conflict/move`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -948,7 +1000,7 @@ test("rejects conflicting file writes with 409", async () => {
   const server = await startTestServer({ filesystem: mockFileSystem });
 
   try {
-    await fetch(`${server.baseUrl}/workspaces/register`, {
+    await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -969,7 +1021,7 @@ test("rejects conflicting file writes with 409", async () => {
     });
 
     const writeResponse = await fetch(
-      `${server.baseUrl}/workspaces/write-conflict/file?path=${encodeURIComponent("root.txt")}`,
+      `${server.apiBaseUrl}/workspaces/write-conflict/file?path=${encodeURIComponent("root.txt")}`,
       {
         method: "PUT",
         headers: {
@@ -1001,7 +1053,7 @@ test("deletes a file through the API and advances revisions", async () => {
   const server = await startTestServer({ filesystem: mockFileSystem });
 
   try {
-    await fetch(`${server.baseUrl}/workspaces/register`, {
+    await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -1022,7 +1074,7 @@ test("deletes a file through the API and advances revisions", async () => {
     });
 
     const deleteResponse = await fetch(
-      `${server.baseUrl}/workspaces/delete-main/file?path=${encodeURIComponent("root.txt")}`,
+      `${server.apiBaseUrl}/workspaces/delete-main/file?path=${encodeURIComponent("root.txt")}`,
       {
         method: "DELETE",
         headers: {
@@ -1054,7 +1106,7 @@ test("rejects conflicting file deletes with 409", async () => {
   const server = await startTestServer({ filesystem: mockFileSystem });
 
   try {
-    await fetch(`${server.baseUrl}/workspaces/register`, {
+    await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -1075,7 +1127,7 @@ test("rejects conflicting file deletes with 409", async () => {
     });
 
     const deleteResponse = await fetch(
-      `${server.baseUrl}/workspaces/delete-conflict/file?path=${encodeURIComponent("root.txt")}`,
+      `${server.apiBaseUrl}/workspaces/delete-conflict/file?path=${encodeURIComponent("root.txt")}`,
       {
         method: "DELETE",
         headers: {
@@ -1105,7 +1157,7 @@ test("resolves a file conflict by accepting canonical server state", async () =>
   const server = await startTestServer({ filesystem: mockFileSystem });
 
   try {
-    await fetch(`${server.baseUrl}/workspaces/register`, {
+    await fetch(`${server.apiBaseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,
@@ -1126,7 +1178,7 @@ test("resolves a file conflict by accepting canonical server state", async () =>
       contentHash: "sha256:server-v2"
     });
 
-    const resolveResponse = await fetch(`${server.baseUrl}/workspaces/resolve-main/conflicts/resolve`, {
+    const resolveResponse = await fetch(`${server.apiBaseUrl}/workspaces/resolve-main/conflicts/resolve`, {
       method: "POST",
       headers: {
         authorization: `Bearer ${AUTH_TOKEN}`,

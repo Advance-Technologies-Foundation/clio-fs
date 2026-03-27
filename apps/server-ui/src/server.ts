@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { createServer, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { promisify } from "node:util";
 import { URL } from "node:url";
 import type {
@@ -37,7 +37,6 @@ import {
 export interface ServerUiOptions {
   host: string;
   port: number;
-  controlPlaneBaseUrl: string;
   controlPlaneAuthToken: string;
   allowedUiTokens?: string[];
   fetchImpl?: typeof fetch;
@@ -235,11 +234,30 @@ const selectDirectoryWithNativeDialog = async (): Promise<string | null> => {
   }
 };
 
-const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient => {
+const resolveControlPlaneBaseUrl = (
+  request: { headers: Record<string, unknown> | Headers | undefined },
+  options: Pick<ServerUiOptions, "host" | "port">
+) => {
+  const hostHeader =
+    request.headers instanceof Headers
+      ? request.headers.get("host") ?? undefined
+      : typeof request.headers?.host === "string"
+        ? request.headers.host
+        : undefined;
+
+  return new URL("/api/", `http://${hostHeader ?? `${options.host}:${options.port}`}`).toString();
+};
+
+const createControlPlaneClient = (
+  options: Pick<ServerUiOptions, "fetchImpl">,
+  controlPlaneBaseUrl: string
+): ControlPlaneClient => {
   const fetchImpl = options.fetchImpl ?? fetch;
+  const resolveControlPlaneUrl = (pathOrUrl: string) =>
+    new URL(pathOrUrl.startsWith("/") ? `.${pathOrUrl}` : pathOrUrl, controlPlaneBaseUrl);
 
   const request = async <T>(authToken: string, pathname: string, init?: RequestInit): Promise<T> => {
-    const response = await fetchImpl(new URL(pathname, options.controlPlaneBaseUrl), {
+    const response = await fetchImpl(resolveControlPlaneUrl(pathname), {
       ...init,
       headers: {
         authorization: `Bearer ${authToken}`,
@@ -257,7 +275,7 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
 
   return {
     async getHealth() {
-      const response = await fetchImpl(new URL("/health", options.controlPlaneBaseUrl));
+      const response = await fetchImpl(resolveControlPlaneUrl("/health"));
 
       if (!response.ok) {
         throw new Error(`Health request failed with ${response.status}`);
@@ -278,7 +296,7 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
     },
     async getWorkspace(authToken: string, workspaceId: string) {
       const response = await fetchImpl(
-        new URL(`/workspaces/${encodeURIComponent(workspaceId)}`, options.controlPlaneBaseUrl),
+        resolveControlPlaneUrl(`/workspaces/${encodeURIComponent(workspaceId)}`),
         {
           headers: {
             authorization: `Bearer ${authToken}`
@@ -299,7 +317,7 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
     },
     async getWorkspaceDiagnostics(authToken: string, workspaceId: string) {
       const response = await fetchImpl(
-        new URL(`/workspaces/${encodeURIComponent(workspaceId)}/diagnostics`, options.controlPlaneBaseUrl),
+        resolveControlPlaneUrl(`/workspaces/${encodeURIComponent(workspaceId)}/diagnostics`),
         { headers: { authorization: `Bearer ${authToken}` } }
       );
 
@@ -324,7 +342,7 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
     },
     async deleteWorkspace(authToken: string, workspaceId: string) {
       const response = await fetchImpl(
-        new URL(`/workspaces/${encodeURIComponent(workspaceId)}`, options.controlPlaneBaseUrl),
+        resolveControlPlaneUrl(`/workspaces/${encodeURIComponent(workspaceId)}`),
         {
           method: "DELETE",
           headers: {
@@ -850,8 +868,7 @@ const renderError = (message: string) =>
     }
   );
 
-export const createServerUi = (options: ServerUiOptions) => {
-  const client = createControlPlaneClient(options);
+export const createServerUiRequestHandler = (options: ServerUiOptions) => {
   const selectDirectory = options.selectDirectory ?? selectDirectoryWithNativeDialog;
   const allowedUiTokens = options.allowedUiTokens?.filter((token) => token.trim().length > 0) ?? [
     options.controlPlaneAuthToken
@@ -877,10 +894,14 @@ export const createServerUi = (options: ServerUiOptions) => {
   const isUiRequest = (request: { headers: Record<string, unknown> }) =>
     request.headers["x-clio-ui-request"] === "1";
 
-  return createServer(async (request, response) => {
+  return async (request: IncomingMessage, response: ServerResponse) => {
     try {
       const method = request.method ?? "GET";
       const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+      const controlPlaneBaseUrl = resolveControlPlaneBaseUrl(request, options);
+      const resolveControlPlaneUrl = (pathOrUrl: string) =>
+        new URL(pathOrUrl.startsWith("/") ? `.${pathOrUrl}` : pathOrUrl, controlPlaneBaseUrl);
+      const client = createControlPlaneClient(options, controlPlaneBaseUrl);
       const authenticatedToken = getAuthenticatedToken(request);
 
       if (method === "GET" && url.pathname === "/login") {
@@ -902,6 +923,16 @@ export const createServerUi = (options: ServerUiOptions) => {
             tone: "error",
             message: "Invalid server token"
           }));
+          return;
+        }
+
+        // Same-process UI login should not round-trip back through /api just to verify
+        // a token that was already accepted from the server's configured token set.
+        if (!options.fetchImpl) {
+          const sessionId = randomUUID();
+          sessions.set(sessionId, authToken);
+          setCookie(response, createSessionCookieValue(sessionId));
+          redirect(response, "/");
           return;
         }
 
@@ -934,9 +965,19 @@ export const createServerUi = (options: ServerUiOptions) => {
       }
 
       if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
+        if (!options.fetchImpl) {
+          writeJson(response, 500, {
+            error: {
+              code: "standalone_ui_unsupported",
+              message: "Standalone server-ui proxy mode is no longer supported. Run the main server app instead."
+            }
+          });
+          return;
+        }
+
         const upstreamUrl = new URL(
-          url.pathname === "/api" ? "/" : url.pathname.slice(4),
-          options.controlPlaneBaseUrl
+          (url.pathname === "/api" ? "/" : url.pathname.slice(4)).replace(/^\//u, "./"),
+          controlPlaneBaseUrl
         );
         upstreamUrl.search = url.search;
         const requestBody =
@@ -1162,7 +1203,7 @@ export const createServerUi = (options: ServerUiOptions) => {
       }
 
       if (method === "GET" && url.pathname === "/logs/recent") {
-        const upstreamUrl = new URL("/logs/recent", options.controlPlaneBaseUrl);
+        const upstreamUrl = resolveControlPlaneUrl("/logs/recent");
         upstreamUrl.search = url.search;
         const upstreamResponse = await (options.fetchImpl ?? fetch)(upstreamUrl, {
           headers: { authorization: `Bearer ${authenticatedToken}` }
@@ -1172,7 +1213,7 @@ export const createServerUi = (options: ServerUiOptions) => {
       }
 
       if (method === "GET" && url.pathname === "/logs/stream") {
-        const upstreamUrl = new URL("/logs/stream", options.controlPlaneBaseUrl);
+        const upstreamUrl = resolveControlPlaneUrl("/logs/stream");
         const upstreamResponse = await (options.fetchImpl ?? fetch)(upstreamUrl, {
           headers: { authorization: `Bearer ${authenticatedToken}`, accept: "text/event-stream" }
         });
@@ -1326,7 +1367,12 @@ export const createServerUi = (options: ServerUiOptions) => {
         writeHtml(response, 500, renderError(message));
       }
     }
-  });
+  };
+};
+
+export const createServerUi = (options: ServerUiOptions) => {
+  const handler = createServerUiRequestHandler(options);
+  return createServer(handler);
 };
 
 export const startServerUi = async (options: ServerUiOptions): Promise<StartedServerUi> => {
@@ -1341,7 +1387,7 @@ export const startServerUi = async (options: ServerUiOptions): Promise<StartedSe
     typeof address === "object" && address && "port" in address ? address.port : options.port;
 
   console.log(`[server-ui] listening on http://${options.host}:${resolvedPort}`);
-  console.log(`[server-ui] control plane ${options.controlPlaneBaseUrl}`);
+  console.log(`[server-ui] control plane on same origin under /api`);
 
   return {
     host: options.host,

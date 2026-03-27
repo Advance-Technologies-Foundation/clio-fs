@@ -2,7 +2,6 @@ import { spawn } from "node:child_process";
 
 const tasks = [
   ["corepack", ["pnpm", "--filter", "@clio-fs/server", "dev"]],
-  ["corepack", ["pnpm", "--filter", "@clio-fs/server-ui", "dev"]],
   ["corepack", ["pnpm", "--filter", "@clio-fs/client", "dev"]]
 ];
 

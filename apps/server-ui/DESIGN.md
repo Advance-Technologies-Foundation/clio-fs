@@ -421,7 +421,7 @@ There are no CSS files, JSX files, or frontend build artifacts. The only output 
 
 ## 10. HTTP Routes
 
-All routes are handled in `apps/server-ui/src/server.ts` inside `createServerUi()`. The server talks to the control-plane API at `controlPlaneBaseUrl` using a Bearer token.
+All routes are handled in `apps/server-ui/src/server.ts` inside `createServerUi()`. In the current architecture the UI is mounted into the main server listener and talks to the control-plane API on the same public origin under `/api` using a Bearer token.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -431,14 +431,14 @@ All routes are handled in `apps/server-ui/src/server.ts` inside `createServerUi(
 | `POST` | `/workspaces/:id/delete` | Delete a workspace; redirects to `/` |
 | `POST` | `/native/select-directory` | Opens a native OS folder picker; returns `{ path }` JSON or `204` on cancel |
 
-The control-plane URL and auth token come from `@clio-fs/config` (`appConfig.serverUi`). In dev, defaults are `http://127.0.0.1:4010` with token `dev-token`.
+The control-plane auth token comes from `@clio-fs/config`. The control-plane base URL is resolved dynamically to the same origin under `/api`. In dev, the default public server origin is `http://127.0.0.1:4020` with token `dev-token`.
 
 ---
 
 ## 11. Development Workflow
 
 ```powershell
-# From the repo root — builds all packages then starts the control-plane + UI:
+# From the repo root — builds all packages then starts the single server listener:
 corepack pnpm -r build
 node scripts/dev-server.mjs
 ```
@@ -454,7 +454,7 @@ Once running:
 | Service | URL |
 |---------|-----|
 | Operator UI | http://127.0.0.1:4020 |
-| Control Plane API | http://127.0.0.1:4010 |
+| Control Plane API | http://127.0.0.1:4020/api |
 
 After editing any `.ts` file in `packages/ui-kit` or `apps/server-ui`, rebuild and restart:
 
@@ -468,9 +468,9 @@ There is no hot-reload. The dev loop is: edit → build → restart → refresh 
 
 ## 12. Deployment
 
-The UI is served by the Node.js `@clio-fs/server-ui` process. To deploy:
+The UI is served by the main Node.js `@clio-fs/server` process on the same listener as the control-plane API. To deploy:
 
 1. Run `corepack pnpm -r build` to compile all TypeScript to `dist/`.
-2. Start the process: `node apps/server-ui/dist/index.js`.
+2. Start the process: `node apps/server/dist/cli.js`.
 
-Configure the control-plane URL and auth token via the `@clio-fs/config` package values (or override them in a future environment-variable layer). No static file serving, no CDN, no separate frontend build step is required.
+No separate UI listener, static file serving, CDN, or standalone frontend build step is required.

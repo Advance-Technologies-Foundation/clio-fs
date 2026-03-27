@@ -187,7 +187,8 @@ Minimum server UI actions:
 Implementation note:
 
 - the server UI should be implemented in `TypeScript` as part of the same monorepo
-- it may be served by the server control plane directly in MVP
+- in MVP it is served by the same public server listener as the control-plane API
+- the API is exposed on that same origin under `/api`; a separate public API port is out of scope
 
 ### 3. Server Change Journal
 

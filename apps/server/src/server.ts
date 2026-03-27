@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { URL } from "node:url";
 import { healthSummary } from "@clio-fs/sync-core";
+import { createServerUiRequestHandler } from "../../server-ui/dist/server.js";
 import {
   type ApiErrorShape,
   type AuthTokenListItem,
@@ -1411,10 +1412,25 @@ export const createWorkspaceServer = (options: WorkspaceServerOptions) => {
     journal: options.journal ?? createInMemoryChangeJournal(options.registry),
     clientActivity: options.clientActivity ?? new Map<string, WorkspaceClientActivity>()
   };
+  const uiHandler = createServerUiRequestHandler({
+    host: options.host,
+    port: options.port,
+    controlPlaneAuthToken: normalizeAuthTokens(options)[0] ?? "dev-token",
+    allowedUiTokens: normalizeAuthTokens(options)
+  });
 
   return createServer(async (request, response) => {
     try {
-      await routeRequest(request, response, resolvedOptions);
+      const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+      const isApiRequest =
+        url.pathname === "/health" || url.pathname === "/api" || url.pathname.startsWith("/api/");
+
+      if (isApiRequest) {
+        await routeRequest(request, response, resolvedOptions);
+        return;
+      }
+
+      await uiHandler(request, response);
     } catch (error) {
       if (
         error instanceof Error &&
