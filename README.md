@@ -105,6 +105,8 @@ Current design documents:
 - [SYNC_FLOW.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/SYNC_FLOW.md): end-to-end sync scenarios
 - [IMPLEMENTATION_PLAN.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/IMPLEMENTATION_PLAN.md): phased delivery plan
 - [ARCHITECTURE_REVIEW.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/ARCHITECTURE_REVIEW.md): architectural review findings and closure history
+- [docs/RELEASE_IMPLEMENTATION_PLAN.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/docs/RELEASE_IMPLEMENTATION_PLAN.md): release/install/update rollout checklist
+- [docs/RELEASES.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/docs/RELEASES.md): release contract, bundle layout, and manual update model
 
 ## Current MVP Decisions
 
@@ -181,6 +183,7 @@ GitHub releases now publish one downloadable runnable archive per operating syst
   - `clio-fs-X.Y.Z-linux.tar.gz`
 - the workflow also keeps matching Actions artifacts for run-level inspection
 - create GitHub releases with semver tags such as `v1.2.3` or `v1.2.3-beta.1`
+- the long-term normalized release contract and manual-update model are tracked in [docs/RELEASES.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/docs/RELEASES.md)
 
 ## Use Release Artifacts
 
