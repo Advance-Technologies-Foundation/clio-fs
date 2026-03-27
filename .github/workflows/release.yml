@@ -6,7 +6,7 @@ on:
       - published
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   release-artifacts:
@@ -43,6 +43,12 @@ jobs:
       - name: Build release bundles
         run: node scripts/build-release-artifacts.mjs
 
+      - name: Archive release bundles
+        run: |
+          mkdir -p .release-assets
+          tar -C .release-artifacts -czf .release-assets/clio-fs-server-${RELEASE_TAG}.tar.gz clio-fs-server-${RELEASE_TAG}
+          tar -C .release-artifacts -czf .release-assets/clio-fs-client-${RELEASE_TAG}.tar.gz clio-fs-client-${RELEASE_TAG}
+
       - name: Upload server artifact
         uses: actions/upload-artifact@v4
         with:
@@ -56,3 +62,12 @@ jobs:
           name: clio-fs-client-${{ github.event.release.tag_name }}
           path: .release-artifacts/clio-fs-client-${{ github.event.release.tag_name }}
           if-no-files-found: error
+
+      - name: Upload release assets
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            .release-assets/clio-fs-server-${RELEASE_TAG}.tar.gz \
+            .release-assets/clio-fs-client-${RELEASE_TAG}.tar.gz \
+            --clobber

@@ -85,22 +85,28 @@ App-level examples:
 
 ## Release Flow
 
-GitHub releases now produce downloadable runnable artifacts.
+GitHub releases now publish downloadable runnable archives on the Release page.
 
 - `.github/workflows/release.yml` runs when a GitHub release is published
 - the workflow installs dependencies, runs `check`, `test`, and `build`, then builds release bundles under `.release-artifacts/`
 - the artifact version is derived from the GitHub release tag, for example `v1.2.3` -> `1.2.3`
 - release targets are the runnable `clio-fs-server` and `clio-fs-client` bundles
-- each artifact contains cross-platform launchers (`.cmd`, `.ps1`, and Unix shell) plus the built `dist/` output and vendored internal workspaces
-- internal workspaces under `packages/*`, plus `@clio-fs/server-ui`, are bundled into those release artifacts instead of being published separately
+- each release archive contains cross-platform launchers (`.cmd`, `.ps1`, and Unix shell) plus the built `dist/` output and vendored internal workspaces
+- internal workspaces under `packages/*`, plus `@clio-fs/server-ui`, are bundled into those release archives instead of being published separately
+- published releases attach these assets directly to the GitHub Release page:
+  - `clio-fs-server-X.Y.Z.tar.gz`
+  - `clio-fs-client-X.Y.Z.tar.gz`
+- the workflow also keeps matching Actions artifacts for run-level inspection
 - create GitHub releases with semver tags such as `v1.2.3` or `v1.2.3-beta.1`
 
 ## Use Release Artifacts
 
-Download the workflow artifacts created by the release workflow:
+Download the release assets from the GitHub Release page:
 
-- `clio-fs-server-vX.Y.Z`
-- `clio-fs-client-vX.Y.Z`
+- `clio-fs-server-X.Y.Z.tar.gz`
+- `clio-fs-client-X.Y.Z.tar.gz`
+
+Extract the archive, then run the launcher from the extracted folder.
 
 Server commands from the extracted bundle:
 
