@@ -38,6 +38,9 @@ importers:
       '@clio-fs/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@clio-fs/sync-core':
+        specifier: workspace:*
+        version: link:../../packages/sync-core
       '@clio-fs/ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui-kit
