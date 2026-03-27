@@ -959,7 +959,9 @@ export const createServerUi = (options: ServerUiOptions) => {
       response.end();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown UI error";
-      writeHtml(response, 500, renderError(message));
+      if (!response.headersSent) {
+        writeHtml(response, 500, renderError(message));
+      }
     }
   });
 };
