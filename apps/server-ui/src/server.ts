@@ -951,6 +951,22 @@ export const createServerUi = (options: ServerUiOptions) => {
       }
 
       if (!authenticatedToken) {
+        // Auto-authenticate localhost when localBypass is enabled
+        const isLocal = request.socket?.remoteAddress === "127.0.0.1"
+          || request.socket?.remoteAddress === "::1"
+          || request.socket?.remoteAddress === "::ffff:127.0.0.1";
+        let bypassSettings: ServerWatchSettings | undefined;
+        if (isLocal) {
+          try { bypassSettings = await client.getWatchSettings(options.controlPlaneAuthToken); } catch {}
+        }
+        if (isLocal && bypassSettings?.localBypass) {
+          const sessionId = randomUUID();
+          sessions.set(sessionId, options.controlPlaneAuthToken);
+          setCookie(response, createSessionCookieValue(sessionId));
+          redirect(response, url.pathname + url.search);
+          return;
+        }
+
         if (isUiRequest(request)) {
           writeJson(response, 401, {
             error: {
