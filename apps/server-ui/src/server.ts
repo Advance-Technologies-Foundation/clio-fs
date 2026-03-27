@@ -556,7 +556,7 @@ const renderLogViewerPage = () =>
             <input type="checkbox" id="log-autoscroll" checked /> Autoscroll
           </label>
         </div>
-        <div id="log-entries" style="font-family:'Consolas','Courier New',monospace;font-size:0.78rem;line-height:1.6;padding:0.75rem 1rem;min-height:400px;max-height:70vh;overflow-y:auto;background:#0f172a;color:#94a3b8;"></div>
+        <div id="log-entries" style="font-family:'Consolas','Courier New',monospace;font-size:0.78rem;line-height:1.6;padding:0.75rem 1rem;height:80vh;overflow-y:auto;background:#0f172a;color:#94a3b8;"></div>
       </section>
       <script>
         const entries = document.getElementById('log-entries');
