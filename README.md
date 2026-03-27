@@ -93,6 +93,8 @@ Implemented today:
 - in-memory multi-workspace registry for early development
 - first endpoints:
   - `GET /health`
+  - `GET /settings/watch`
+  - `PUT /settings/watch`
   - `GET /workspaces`
   - `POST /workspaces/register`
   - `GET /workspaces/:workspaceId`
@@ -111,12 +113,14 @@ Implemented today:
 - server-side move endpoint for file and directory renames
 - optional `displayName`; most workspaces can rely on `workspaceId` alone
 - file-backed workspace registry stored in `.clio-fs/server/workspaces.json`
+- file-backed server watch settings stored in `.clio-fs/server/watch-settings.json`
 - integration tests covering health, auth, registration, validation, and duplicate detection
 - API tests use in-memory registry state and mocked filesystem inputs instead of real disk writes
 - a compiled dev flow for `@clio-fs/server` so `corepack pnpm --filter @clio-fs/server dev` runs against emitted `dist`
 - an operator-facing server UI in `apps/server-ui`
 - server-rendered dashboard and workspace detail pages backed by control-plane API calls
 - modal-based workspace registration in the UI without `curl`
+- server settings modal opened from a gear action in the dashboard top bar
 - native `Choose Folder` button for selecting `rootPath` through the operating system file explorer dialog
 - workspace creation returns to the dashboard and refreshes the workspace list instead of opening detail immediately
 - empty-state dashboard collapses to a blank slate with a single `Add Workspace` action
@@ -136,6 +140,7 @@ Implemented today:
 - file-backed client bind state store at `.clio-fs/client/state.json`
 - local watcher-driven push loop for file create/update/delete events
 - polling watcher-based local file rename propagation through the move endpoint
+- default local watcher debounce is configured at the server level and loaded by clients through `GET /settings/watch`
 - client tests covering hydrate and server-originated change application on mocked adapters
 
 ## Run The UI Locally

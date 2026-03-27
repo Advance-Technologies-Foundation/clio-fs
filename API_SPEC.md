@@ -173,6 +173,46 @@ Rules:
 - server must record `clientId`, `workspaceId`, and `instanceId` in the audit log
 - `instanceId` is optional for local mirror clients, but required for server-side integrations if used
 
+## Server Watch Settings
+
+### GET /settings/watch
+
+Returns server-level watcher settings shared by all workspaces on the control plane.
+
+Response `200`:
+
+```json
+{
+  "settleDelayMs": 1200
+}
+```
+
+### PUT /settings/watch
+
+Updates server-level watcher settings shared by all workspaces on the control plane.
+
+Request:
+
+```json
+{
+  "settleDelayMs": 1800
+}
+```
+
+Response `200`:
+
+```json
+{
+  "settleDelayMs": 1800
+}
+```
+
+Current implementation note:
+
+- watch settings are stored once per server, not per workspace
+- `settleDelayMs` defines how long a client waits after the last observed local file change before pushing it
+- the operator-facing UI exposes these settings through a server settings modal
+
 ## Workspace Management
 
 ### GET /workspaces
@@ -626,6 +666,7 @@ Current implementation note:
 - duplicate directory creation currently returns `400 invalid_request`
 - local watcher-driven empty-directory propagation is not implemented yet on the client side
 - local watcher-driven file rename propagation is implemented through polling watcher detection and the move endpoint
+- the local watcher debounce window is loaded from server-level watch settings
 
 ### DELETE /workspaces/{workspaceId}/file
 

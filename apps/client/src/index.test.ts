@@ -8,6 +8,7 @@ import { createManualMirrorWatcher } from "./watcher.js";
 const createFetchStub = () => {
   let snapshotCalls = 0;
   let changeCalls = 0;
+  let watchSettingsCalls = 0;
   const putCalls: Array<{ path: string | null; baseFileRevision?: number; content: string }> = [];
   const deleteCalls: Array<{ path: string | null; baseFileRevision?: number }> = [];
   const mkdirCalls: Array<{ path: string | null }> = [];
@@ -53,6 +54,17 @@ const createFetchStub = () => {
               fileRevision: 2
             }
           ]
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    if (url.pathname === "/settings/watch") {
+      watchSettingsCalls += 1;
+
+      return new Response(
+        JSON.stringify({
+          settleDelayMs: 20
         }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
@@ -263,6 +275,7 @@ const createFetchStub = () => {
   };
 
   return Object.assign(fetchImpl, {
+    getWatchSettingsCalls: () => watchSettingsCalls,
     getMkdirCalls: () => mkdirCalls,
     getMoveCalls: () => moveCalls,
     getPutCalls: () => putCalls,
@@ -697,4 +710,42 @@ test("local watch loop pushes moved files through the control plane", async () =
   );
 
   client.stopLocalWatchLoop();
+});
+
+test("default local watch loop loads server watch settings and settles rapid writes", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const fetchStub = createFetchStub();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchStub as unknown as typeof fetch
+    }
+  });
+
+  try {
+    await client.bind();
+    await client.startLocalWatchLoop();
+
+    filesystem.writeFileText("/mirror/demo-workspace/packages/Alpha/readme.txt", "rapid-v2\n");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    filesystem.writeFileText("/mirror/demo-workspace/packages/Alpha/readme.txt", "rapid-v3\n");
+    await new Promise((resolve) => setTimeout(resolve, 700));
+
+    assert.equal(fetchStub.getWatchSettingsCalls(), 1);
+    assert.deepEqual(fetchStub.getPutCalls(), [
+      {
+        path: "packages/Alpha/readme.txt",
+        baseFileRevision: 2,
+        content: "rapid-v3\n"
+      }
+    ]);
+  } finally {
+    client.stopLocalWatchLoop();
+  }
 });

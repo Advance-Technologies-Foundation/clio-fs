@@ -1,4 +1,4 @@
-import type { WorkspaceRecord, WorkspaceStatus } from "@clio-fs/contracts";
+import type { ServerWatchSettings, WorkspaceRecord, WorkspaceStatus } from "@clio-fs/contracts";
 
 export const workspaceListRoute = "/workspaces";
 
@@ -40,6 +40,13 @@ const renderTrashIcon = () => `
   </svg>
 `;
 
+const renderGearIcon = () => `
+  <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="3"></circle>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+  </svg>
+`;
+
 const renderPumaMascot = () => `
   <svg aria-hidden="true" viewBox="0 0 240 180" class="blank-slate-mascot">
     <defs>
@@ -58,7 +65,13 @@ const renderPumaMascot = () => `
   </svg>
 `;
 
-export const renderPage = (title: string, body: string) => `<!doctype html>
+export const renderPage = (
+  title: string,
+  body: string,
+  options?: {
+    topbarActions?: string;
+  }
+) => `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -130,6 +143,18 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
         z-index: 100;
       }
       .topbar-brand { display: flex; align-items: center; gap: 0.75rem; }
+      .topbar-inner {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+      .topbar-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
       .topbar-dot {
         width: 8px; height: 8px;
         border-radius: 9999px;
@@ -567,10 +592,13 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
   </head>
   <body>
     <header class="topbar">
-      <div class="topbar-brand">
-        <span class="topbar-dot"></span>
-        <span class="topbar-title">Clio FS</span>
-        <span class="topbar-subtitle">Control Plane</span>
+      <div class="topbar-inner">
+        <div class="topbar-brand">
+          <span class="topbar-dot"></span>
+          <span class="topbar-title">Clio FS</span>
+          <span class="topbar-subtitle">Control Plane</span>
+        </div>
+        <div class="topbar-actions">${options?.topbarActions ?? ""}</div>
       </div>
     </header>
     <main class="shell">${body}</main>
@@ -594,6 +622,7 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
 
         const getAddDialog = () => document.querySelector("[data-add-workspace-dialog]");
         const getDeleteDialog = () => document.querySelector("[data-delete-dialog]");
+        const getSettingsDialog = () => document.querySelector("[data-server-settings-dialog]");
         const getWorkspaceIdInput = () => document.getElementById("workspaceId");
         const getStatusNode = () => document.querySelector("[data-root-picker-status]");
         const getShell = () => document.querySelector("main.shell");
@@ -675,6 +704,11 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
 
           shell.innerHTML = payload.html;
           const nextAddDialog = getAddDialog();
+          const nextDeleteDialog = getDeleteDialog();
+          const nextSettingsDialog = getSettingsDialog();
+          bindDialogBackdropClose(nextAddDialog);
+          bindDialogBackdropClose(nextDeleteDialog);
+          bindDialogBackdropClose(nextSettingsDialog);
           if (nextAddDialog instanceof HTMLDialogElement && nextAddDialog.dataset.openOnLoad === "true") {
             showDialog(nextAddDialog);
           }
@@ -702,10 +736,11 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
 
         bindDialogBackdropClose(getAddDialog());
         bindDialogBackdropClose(getDeleteDialog());
+        bindDialogBackdropClose(getSettingsDialog());
 
         document.addEventListener("click", async (event) => {
           const target = event.target instanceof Element
-            ? event.target.closest("[data-open-add-workspace], [data-close-add-workspace], [data-root-path-picker], [data-delete-workspace-button], [data-delete-cancel]")
+            ? event.target.closest("[data-open-add-workspace], [data-close-add-workspace], [data-root-path-picker], [data-delete-workspace-button], [data-delete-cancel], [data-open-server-settings], [data-close-server-settings]")
             : null;
 
           if (!(target instanceof HTMLElement)) {
@@ -718,8 +753,19 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
             return;
           }
 
+          if (target.matches("[data-open-server-settings]")) {
+            setInlineError("[data-server-settings-error]", "");
+            showDialog(getSettingsDialog());
+            return;
+          }
+
           if (target.matches("[data-close-add-workspace]")) {
             closeDialog(getAddDialog());
+            return;
+          }
+
+          if (target.matches("[data-close-server-settings]")) {
+            closeDialog(getSettingsDialog());
             return;
           }
 
@@ -874,6 +920,44 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
                 submitButton.disabled = false;
               }
             }
+            return;
+          }
+
+          if (form.matches("[data-server-settings-form]")) {
+            event.preventDefault();
+            const submitButton = form.querySelector('button[type="submit"]');
+
+            if (submitButton instanceof HTMLButtonElement) {
+              submitButton.disabled = true;
+            }
+
+            setInlineError("[data-server-settings-error]", "");
+
+            try {
+              const response = await fetch(form.action, {
+                method: "POST",
+                headers: {
+                  "content-type": "application/x-www-form-urlencoded",
+                  "x-clio-ui-request": "1"
+                },
+                body: new URLSearchParams(new FormData(form)).toString()
+              });
+              const payload = await response.json().catch(() => ({}));
+
+              if (!response.ok) {
+                setInlineError("[data-server-settings-error]", payload?.error?.message ?? "Failed to save server settings");
+                return;
+              }
+
+              closeDialog(getSettingsDialog());
+              await refreshDashboard();
+            } catch (error) {
+              setInlineError("[data-server-settings-error]", error instanceof Error ? error.message : "Failed to save server settings");
+            } finally {
+              if (submitButton instanceof HTMLButtonElement) {
+                submitButton.disabled = false;
+              }
+            }
           }
         });
       })();
@@ -886,6 +970,16 @@ export const renderMetricCard = (label: string, value: string) => `
     <div class="metric">${escapeHtml(label)}</div>
     <div class="metric-value">${escapeHtml(value)}</div>
   </section>
+`;
+
+export const renderServerSettingsButton = () => `
+  <button
+    type="button"
+    class="icon-button"
+    aria-label="Open server settings"
+    title="Server settings"
+    data-open-server-settings
+  >${renderGearIcon()}</button>
 `;
 
 export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
@@ -1012,6 +1106,43 @@ export const renderWorkspaceRegistrationModal = (
           <div class="modal-actions" style="padding:0;border-top:none;background:transparent;">
             <button type="button" class="secondary-button" data-close-add-workspace>Cancel</button>
             <button type="submit" class="primary-button">Create Workspace</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </dialog>
+`;
+
+export const renderServerSettingsModal = (
+  settings: ServerWatchSettings,
+  options?: {
+    openOnLoad?: boolean;
+  }
+) => `
+  <dialog data-server-settings-dialog data-open-on-load="${options?.openOnLoad ? "true" : "false"}">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 class="modal-title">Server Settings</h2>
+        <button
+          type="button"
+          class="modal-close"
+          aria-label="Close server settings dialog"
+          title="Close"
+          data-close-server-settings
+        >×</button>
+      </div>
+      <div class="modal-body">
+        Configure server-level watch behavior used by all connected clients on this control plane.
+        <div class="modal-inline-error" data-server-settings-error hidden></div>
+        <form method="post" action="/settings/watch" data-server-settings-form class="form-grid" style="margin-top:1.25rem;">
+          <div class="form-field">
+            <label for="settleDelayMs">Change Settle Delay (ms)<span style="color:var(--color-danger);margin-left:2px;">*</span></label>
+            <input id="settleDelayMs" name="settleDelayMs" required value="${escapeHtml(String(settings.settleDelayMs))}" />
+            <p class="helper-text">The client waits for this server-defined quiet period before it syncs rapid local file edits.</p>
+          </div>
+          <div class="modal-actions" style="padding:0;border-top:none;background:transparent;">
+            <button type="button" class="secondary-button" data-close-server-settings>Cancel</button>
+            <button type="submit" class="primary-button">Save Settings</button>
           </div>
         </form>
       </div>

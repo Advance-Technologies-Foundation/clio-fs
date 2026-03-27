@@ -195,16 +195,10 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
         authToken: appConfig.client.controlPlaneAuthToken
       }
     );
-  const watcher =
-    options.watcher ??
-    createPollingMirrorWatcher({
-      filesystem,
-      rootPath: options.mirrorRoot,
-      pollIntervalMs: appConfig.client.pollIntervalMs
-    });
   const suppressedHashes = new Map<string, string>();
   const suppressedDeletes = new Set<string>();
   const suppressedMoves = new Set<string>();
+  let watcher = options.watcher;
 
   const getMoveSignature = (oldPath: string, newPath: string) => `${oldPath}->${newPath}`;
 
@@ -219,6 +213,22 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
   };
 
   let client!: MirrorClient;
+
+  const ensureWatcher = async () => {
+    if (watcher) {
+      return watcher;
+    }
+
+    const watchSettings = await controlPlane.getWatchSettings();
+    watcher = createPollingMirrorWatcher({
+      filesystem,
+      rootPath: options.mirrorRoot,
+      pollIntervalMs: appConfig.client.localWatchScanIntervalMs,
+      settleDelayMs: watchSettings.settleDelayMs
+    });
+
+    return watcher;
+  };
 
   const applyWatcherEvent = async (event: MirrorWatcherEvent) => {
     const bound = stateStore.load(options.workspaceId);
@@ -353,6 +363,7 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
         throw new Error(`Workspace is not bound: ${options.workspaceId}`);
       }
 
+      suppressPath(path, content);
       filesystem.writeFileText(join(bound.mirrorRoot, path), content);
 
       const result = await controlPlane.putFile(bound.workspaceId, path, {
@@ -415,14 +426,15 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
     },
     async startLocalWatchLoop() {
       await client.bind();
-      watcher.start((event) => {
+      const activeWatcher = await ensureWatcher();
+      activeWatcher.start((event) => {
         applyWatcherEvent(event).catch((error) => {
           console.error("[client] local watcher push failed:", error);
         });
       });
     },
     stopLocalWatchLoop() {
-      watcher.stop();
+      watcher?.stop();
     },
     getState() {
       return stateStore.load(options.workspaceId);

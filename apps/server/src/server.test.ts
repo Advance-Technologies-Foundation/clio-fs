@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createInMemoryChangeJournal, createInMemoryWorkspaceRegistry } from "@clio-fs/database";
+import {
+  createInMemoryChangeJournal,
+  createInMemoryServerWatchSettingsStore,
+  createInMemoryWorkspaceRegistry
+} from "@clio-fs/database";
 import { createMockFileSystem } from "./filesystem.testkit.js";
 import { createWorkspaceServer } from "./server.js";
 
@@ -13,11 +17,13 @@ const startTestServer = async (
 ) => {
   const registry = createInMemoryWorkspaceRegistry();
   const journal = createInMemoryChangeJournal(registry);
+  const watchSettingsStore = createInMemoryServerWatchSettingsStore();
   const server = createWorkspaceServer({
     host: "127.0.0.1",
     port: 0,
     authToken: AUTH_TOKEN,
     registry,
+    watchSettingsStore,
     journal,
     serverPlatform: "linux",
     filesystem: options.filesystem
@@ -70,6 +76,49 @@ test("workspace routes require authorization", async () => {
 
     assert.equal(response.status, 401);
     assert.equal(body.error.code, "unauthorized");
+  } finally {
+    await server.close();
+  }
+});
+
+test("reads and updates server watch settings", async () => {
+  const server = await startTestServer();
+
+  try {
+    const getResponse = await fetch(`${server.baseUrl}/settings/watch`, {
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`
+      }
+    });
+    const getBody = await getResponse.json();
+
+    assert.equal(getResponse.status, 200);
+    assert.equal(getBody.settleDelayMs, 1200);
+
+    const putResponse = await fetch(`${server.baseUrl}/settings/watch`, {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        settleDelayMs: 2200
+      })
+    });
+    const putBody = await putResponse.json();
+
+    assert.equal(putResponse.status, 200);
+    assert.equal(putBody.settleDelayMs, 2200);
+
+    const reloadedResponse = await fetch(`${server.baseUrl}/settings/watch`, {
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`
+      }
+    });
+    const reloadedBody = await reloadedResponse.json();
+
+    assert.equal(reloadedResponse.status, 200);
+    assert.equal(reloadedBody.settleDelayMs, 2200);
   } finally {
     await server.close();
   }

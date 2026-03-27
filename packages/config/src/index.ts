@@ -4,7 +4,8 @@ export const appConfig = {
     host: "127.0.0.1",
     port: 4010,
     authToken: "dev-token",
-    workspaceRegistryFilePath: ".clio-fs/server/workspaces.json"
+    workspaceRegistryFilePath: ".clio-fs/server/workspaces.json",
+    watchSettingsFilePath: ".clio-fs/server/watch-settings.json"
   },
   serverUi: {
     host: "127.0.0.1",
@@ -17,6 +18,7 @@ export const appConfig = {
     controlPlaneAuthToken: "dev-token",
     defaultWorkspaceRoot: "./workspaces",
     stateFilePath: ".clio-fs/client/state.json",
-    pollIntervalMs: 1000
+    pollIntervalMs: 1000,
+    localWatchScanIntervalMs: 250
   }
 };

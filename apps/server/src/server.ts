@@ -4,13 +4,17 @@ import { healthSummary } from "@clio-fs/sync-core";
 import {
   type ApiErrorShape,
   type RegisterWorkspaceInput,
+  type ServerWatchSettings,
+  type ServerWatchSettingsResponse,
   type SnapshotMaterializeRequest,
+  type UpdateServerWatchSettingsRequest,
   type WorkspacePlatform,
   type WorkspaceRecord
 } from "@clio-fs/contracts";
 import {
   type WorkspaceRegistry,
   type ChangeJournal,
+  type ServerWatchSettingsStore,
   createInMemoryChangeJournal,
   WorkspaceRegistryError
 } from "@clio-fs/database";
@@ -34,6 +38,7 @@ export interface WorkspaceServerOptions {
   port: number;
   authToken: string;
   registry: WorkspaceRegistry;
+  watchSettingsStore: ServerWatchSettingsStore;
   journal?: ChangeJournal;
   serverPlatform?: WorkspacePlatform;
   filesystem?: FileSystemAdapter;
@@ -109,6 +114,22 @@ const fullWorkspaceShape = (workspace: WorkspaceRecord) => ({
   policies: workspace.policies
 });
 
+const parseUpdateServerWatchSettingsRequest = (payload: unknown): UpdateServerWatchSettingsRequest => {
+  if (typeof payload !== "object" || payload === null) {
+    throw new Error("Watch settings payload must be an object");
+  }
+
+  const input = payload as Partial<UpdateServerWatchSettingsRequest>;
+
+  if (!Number.isInteger(input.settleDelayMs) || Number(input.settleDelayMs) < 100) {
+    throw new Error("settleDelayMs must be an integer greater than or equal to 100");
+  }
+
+  return {
+    settleDelayMs: Number(input.settleDelayMs)
+  };
+};
+
 const routeRequest = async (
   request: IncomingMessage,
   response: ServerResponse,
@@ -131,6 +152,24 @@ const routeRequest = async (
   if (!isAuthorized(request, options.authToken)) {
     writeError(response, 401, "unauthorized", "Missing or invalid bearer token");
     return;
+  }
+
+  if (method === "GET" && url.pathname === "/settings/watch") {
+    const settings: ServerWatchSettingsResponse = options.watchSettingsStore.get();
+    json(response, 200, settings);
+    return;
+  }
+
+  if (method === "PUT" && url.pathname === "/settings/watch") {
+    try {
+      const input = parseUpdateServerWatchSettingsRequest(await readJsonBody(request));
+      json(response, 200, options.watchSettingsStore.update(input));
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid watch settings request";
+      writeError(response, 400, "invalid_request", message);
+      return;
+    }
   }
 
   if (method === "GET" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/changes")) {

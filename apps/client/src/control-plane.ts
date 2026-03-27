@@ -8,6 +8,7 @@ import type {
   MoveWorkspacePathResponse,
   PutWorkspaceFileRequest,
   PutWorkspaceFileResponse,
+  ServerWatchSettingsResponse,
   SnapshotMaterializeRequest,
   SnapshotMaterializeResponse,
   WorkspaceChangesResponse,
@@ -35,6 +36,10 @@ export class ClientControlPlane {
     return this.#request<WorkspaceSnapshotResponse>(
       `/workspaces/${encodeURIComponent(workspaceId)}/snapshot`
     );
+  }
+
+  async getWatchSettings(): Promise<ServerWatchSettingsResponse> {
+    return this.#request<ServerWatchSettingsResponse>("/settings/watch");
   }
 
   async materialize(

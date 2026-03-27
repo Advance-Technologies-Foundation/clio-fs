@@ -30,6 +30,9 @@ const createFetchStub = (
   ]
 ) => {
   const [workspace] = workspaces;
+  let watchSettings = {
+    settleDelayMs: 1200
+  };
 
   return async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
@@ -57,6 +60,22 @@ const createFetchStub = (
         }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
+    }
+
+    if (url.pathname === "/settings/watch" && (init?.method ?? "GET") === "GET") {
+      return new Response(JSON.stringify(watchSettings), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    if (url.pathname === "/settings/watch" && (init?.method ?? "GET") === "PUT") {
+      watchSettings = JSON.parse(String(init?.body ?? "{}")) as typeof watchSettings;
+
+      return new Response(JSON.stringify(watchSettings), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
     }
 
     if (url.pathname === "/workspaces/register" && (init?.method ?? "GET") === "POST") {
@@ -145,9 +164,42 @@ test("renders dashboard with workspace content", async () => {
     assert.match(html, /The underlying project folder is not deleted/i);
     assert.match(html, /Add Workspace/);
     assert.match(html, /Close add workspace dialog/);
+    assert.match(html, /aria-label="Open server settings"/);
+    assert.match(html, /Server Settings/);
+    assert.match(html, /Change Settle Delay \(ms\)/);
+    assert.match(html, /value="1200"/);
     assert.doesNotMatch(html, /onsubmit="return confirm/);
     assert.doesNotMatch(html, /Platform is determined by the server/i);
     assert.doesNotMatch(html, /<label for="platformDisplay">Platform<\/label>/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("updates server watch settings in JSON mode", async () => {
+  const server = await startTestServer();
+
+  try {
+    const response = await fetch(`${server.baseUrl}/settings/watch`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-clio-ui-request": "1"
+      },
+      body: new URLSearchParams({
+        settleDelayMs: "2400"
+      })
+    });
+    const body = (await response.json()) as { ok: boolean; settleDelayMs: number };
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.settleDelayMs, 2400);
+
+    const dashboard = await fetch(`${server.baseUrl}/`);
+    const html = await dashboard.text();
+
+    assert.match(html, /value="2400"/);
   } finally {
     await server.close();
   }

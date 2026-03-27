@@ -44,6 +44,14 @@ export interface ServerHealthResponse {
   platform: WorkspacePlatform;
 }
 
+export interface ServerWatchSettings {
+  settleDelayMs: number;
+}
+
+export interface ServerWatchSettingsResponse extends ServerWatchSettings {}
+
+export interface UpdateServerWatchSettingsRequest extends ServerWatchSettings {}
+
 export interface WorkspaceListResponse {
   items: WorkspaceDescriptor[];
 }
@@ -173,4 +181,8 @@ export const DEFAULT_WORKSPACE_POLICIES: WorkspacePolicies = {
   allowGit: true,
   allowBinaryWrites: true,
   maxFileBytes: 10 * 1024 * 1024
+};
+
+export const DEFAULT_SERVER_WATCH_SETTINGS: ServerWatchSettings = {
+  settleDelayMs: 1200
 };

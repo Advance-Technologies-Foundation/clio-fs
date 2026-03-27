@@ -67,27 +67,38 @@ export interface PollingMirrorWatcherOptions {
   filesystem: ClientFileSystemAdapter;
   rootPath: string;
   pollIntervalMs: number;
+  settleDelayMs: number;
+}
+
+interface PendingWatcherEvent {
+  event: MirrorWatcherEvent;
+  dueAt: number;
 }
 
 export class PollingMirrorWatcher implements MirrorWatcher {
   readonly #filesystem: ClientFileSystemAdapter;
   readonly #rootPath: string;
   readonly #pollIntervalMs: number;
+  readonly #settleDelayMs: number;
   #listener?: (event: MirrorWatcherEvent) => void;
   #interval?: NodeJS.Timeout;
   #knownFiles = new Map<string, { content: string; contentHash: string }>();
+  #pendingEvents = new Map<string, PendingWatcherEvent>();
 
   constructor(options: PollingMirrorWatcherOptions) {
     this.#filesystem = options.filesystem;
     this.#rootPath = options.rootPath;
     this.#pollIntervalMs = options.pollIntervalMs;
+    this.#settleDelayMs = options.settleDelayMs;
   }
 
   start(listener: (event: MirrorWatcherEvent) => void) {
     this.#listener = listener;
     this.#knownFiles = scanFiles(this.#filesystem, this.#rootPath);
+    this.#pendingEvents.clear();
 
     this.#interval = setInterval(() => {
+      const now = Date.now();
       const nextFiles = scanFiles(this.#filesystem, this.#rootPath);
       const createdFiles = new Map<string, { content: string; contentHash: string }>();
       const changedFiles = new Map<string, { content: string; contentHash: string }>();
@@ -144,40 +155,45 @@ export class PollingMirrorWatcher implements MirrorWatcher {
 
           deletedFiles.delete(oldPath);
           createdFiles.delete(newPath);
-          this.#listener?.({
-            type: "path_moved",
-            oldPath,
-            path: newPath
-          });
+          this.#queuePendingEvent(
+            `path:${newPath}`,
+            {
+              type: "path_moved",
+              oldPath,
+              path: newPath
+            },
+            now
+          );
         }
       }
 
       for (const [path, next] of createdFiles.entries()) {
-        this.#listener?.({
+        this.#queuePendingEvent(`path:${path}`, {
           type: "file_changed",
           path,
           content: next.content,
           contentHash: next.contentHash
-        });
+        }, now);
       }
 
       for (const [path, next] of changedFiles.entries()) {
-        this.#listener?.({
+        this.#queuePendingEvent(`path:${path}`, {
           type: "file_changed",
           path,
           content: next.content,
           contentHash: next.contentHash
-        });
+        }, now);
       }
 
       for (const path of deletedFiles.keys()) {
-        this.#listener?.({
+        this.#queuePendingEvent(`path:${path}`, {
           type: "file_deleted",
           path
-        });
+        }, now);
       }
 
       this.#knownFiles = nextFiles;
+      this.#flushReadyEvents(now);
     }, this.#pollIntervalMs);
   }
 
@@ -185,6 +201,32 @@ export class PollingMirrorWatcher implements MirrorWatcher {
     if (this.#interval) {
       clearInterval(this.#interval);
       this.#interval = undefined;
+    }
+
+    this.#pendingEvents.clear();
+  }
+
+  #queuePendingEvent(key: string, event: MirrorWatcherEvent, now: number) {
+    this.#pendingEvents.delete(`path:${event.path}`);
+
+    if (event.type === "path_moved") {
+      this.#pendingEvents.delete(`path:${event.oldPath}`);
+    }
+
+    this.#pendingEvents.set(key, {
+      event,
+      dueAt: now + this.#settleDelayMs
+    });
+  }
+
+  #flushReadyEvents(now: number) {
+    for (const [key, pending] of this.#pendingEvents.entries()) {
+      if (pending.dueAt > now) {
+        continue;
+      }
+
+      this.#pendingEvents.delete(key);
+      this.#listener?.(pending.event);
     }
   }
 }

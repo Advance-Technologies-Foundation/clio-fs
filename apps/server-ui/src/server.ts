@@ -6,6 +6,7 @@ import type {
   ApiErrorShape,
   RegisterWorkspaceRequest,
   ServerHealthResponse,
+  ServerWatchSettings,
   WorkspaceListResponse,
   WorkspaceRecord
 } from "@clio-fs/contracts";
@@ -15,6 +16,8 @@ import {
   renderNotice,
   renderEmptyWorkspaceState,
   renderPage,
+  renderServerSettingsButton,
+  renderServerSettingsModal,
   renderWorkspaceRegistrationModal,
   renderStatusBadge,
   renderWorkspaceTable,
@@ -38,10 +41,12 @@ export interface StartedServerUi {
 
 interface ControlPlaneClient {
   getHealth: () => Promise<ServerHealthResponse>;
+  getWatchSettings: () => Promise<ServerWatchSettings>;
   listWorkspaces: () => Promise<WorkspaceRecord[]>;
   getWorkspace: (workspaceId: string) => Promise<WorkspaceRecord | null>;
   registerWorkspace: (input: RegisterWorkspaceRequest) => Promise<{ workspaceId: string }>;
   deleteWorkspace: (workspaceId: string) => Promise<void>;
+  updateWatchSettings: (input: ServerWatchSettings) => Promise<ServerWatchSettings>;
 }
 
 const writeHtml = (response: ServerResponse, statusCode: number, html: string) => {
@@ -170,6 +175,9 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
 
       return Promise.all(detailRequests);
     },
+    async getWatchSettings() {
+      return request<ServerWatchSettings>("/settings/watch");
+    },
     async getWorkspace(workspaceId: string) {
       const response = await fetchImpl(
         new URL(`/workspaces/${encodeURIComponent(workspaceId)}`, options.controlPlaneBaseUrl),
@@ -217,6 +225,15 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
 
       const error = (await response.json()) as ApiErrorShape;
       throw new Error(error.error.message);
+    },
+    async updateWatchSettings(input: ServerWatchSettings) {
+      return request<ServerWatchSettings>("/settings/watch", {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(input)
+      });
     }
   };
 };
@@ -226,12 +243,22 @@ const renderDashboard = async (
   state?: {
     notice?: { tone: "error" | "success"; message: string };
     formValues?: Partial<RegisterWorkspaceRequest>;
+    watchSettings?: ServerWatchSettings;
   }
 ) => {
-  const [health, workspaces] = await Promise.all([client.getHealth(), client.listWorkspaces()]);
-  const body = renderDashboardBody(health, workspaces, state);
+  const [health, workspaces, watchSettings] = await Promise.all([
+    client.getHealth(),
+    client.listWorkspaces(),
+    state?.watchSettings ? Promise.resolve(state.watchSettings) : client.getWatchSettings()
+  ]);
+  const body = renderDashboardBody(health, workspaces, {
+    ...state,
+    watchSettings
+  });
 
-  return renderPage("Clio FS Control Plane", body);
+  return renderPage("Clio FS Control Plane", body, {
+    topbarActions: renderServerSettingsButton()
+  });
 };
 
 const renderDashboardBody = (
@@ -240,8 +267,13 @@ const renderDashboardBody = (
   state?: {
     notice?: { tone: "error" | "success"; message: string };
     formValues?: Partial<RegisterWorkspaceRequest>;
+    watchSettings?: ServerWatchSettings;
   }
 ) => {
+  const watchSettings = state?.watchSettings ?? {
+    settleDelayMs: 1200
+  };
+
   if (workspaces.length === 0) {
     return `
       ${
@@ -251,6 +283,7 @@ const renderDashboardBody = (
       ${renderWorkspaceRegistrationModal(state?.formValues, {
         openOnLoad: Boolean(state?.notice || state?.formValues)
       })}
+      ${renderServerSettingsModal(watchSettings)}
     `;
   }
 
@@ -277,6 +310,7 @@ const renderDashboardBody = (
     ${renderWorkspaceRegistrationModal(state?.formValues, {
       openOnLoad: Boolean(state?.notice || state?.formValues)
     })}
+    ${renderServerSettingsModal(watchSettings)}
   `;
 };
 
@@ -355,9 +389,15 @@ export const createServerUi = (options: ServerUiOptions) => {
       }
 
       if (method === "GET" && url.pathname === "/dashboard-fragment") {
-        const [health, workspaces] = await Promise.all([client.getHealth(), client.listWorkspaces()]);
+        const [health, workspaces, watchSettings] = await Promise.all([
+          client.getHealth(),
+          client.listWorkspaces(),
+          client.getWatchSettings()
+        ]);
         writeJson(response, 200, {
-          html: renderDashboardBody(health, workspaces)
+          html: renderDashboardBody(health, workspaces, {
+            watchSettings
+          })
         });
         return;
       }
@@ -438,6 +478,49 @@ export const createServerUi = (options: ServerUiOptions) => {
             400,
             await renderDashboard(client, {
               notice: { tone: "error", message }
+            })
+          );
+          return;
+        }
+      }
+
+      if (method === "POST" && url.pathname === "/settings/watch") {
+        const form = await readFormBody(request);
+        const settleDelayMs = Number(form.get("settleDelayMs"));
+        const input: ServerWatchSettings = {
+          settleDelayMs
+        };
+
+        try {
+          const result = await client.updateWatchSettings(input);
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 200, {
+              ok: true,
+              settleDelayMs: result.settleDelayMs
+            });
+            return;
+          }
+
+          redirect(response, "/");
+          return;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to save server settings";
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 400, {
+              error: {
+                code: "server_settings_update_failed",
+                message
+              }
+            });
+            return;
+          }
+
+          writeHtml(
+            response,
+            400,
+            await renderDashboard(client, {
+              notice: { tone: "error", message },
+              watchSettings: input
             })
           );
           return;

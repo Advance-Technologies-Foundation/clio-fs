@@ -1,12 +1,14 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import {
+  DEFAULT_SERVER_WATCH_SETTINGS,
   DEFAULT_WORKSPACE_POLICIES,
   type ChangeEvent,
   type ChangeOperation,
   type ChangeOrigin,
   type RegisterWorkspaceInput,
   type Revision,
+  type ServerWatchSettings,
   type WorkspaceRecord
 } from "@clio-fs/contracts";
 
@@ -203,6 +205,115 @@ export class FileWorkspaceRegistry extends InMemoryWorkspaceRegistry {
 }
 
 export const createFileWorkspaceRegistry = (filePath: string) => new FileWorkspaceRegistry(filePath);
+
+interface ServerWatchSettingsFileShape {
+  watch: ServerWatchSettings;
+}
+
+const isServerWatchSettings = (value: unknown): value is ServerWatchSettings => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return Number.isInteger(record.settleDelayMs) && Number(record.settleDelayMs) >= 100;
+};
+
+const loadServerWatchSettingsFile = (filePath: string): ServerWatchSettings => {
+  try {
+    const raw = readFileSync(filePath, "utf8");
+    const payload = JSON.parse(raw) as ServerWatchSettingsFileShape;
+
+    if (!isServerWatchSettings(payload.watch)) {
+      throw new WorkspaceRegistryError(
+        "invalid_workspace",
+        "Server watch settings file has an invalid shape",
+        { filePath }
+      );
+    }
+
+    return payload.watch;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { ...DEFAULT_SERVER_WATCH_SETTINGS };
+    }
+
+    if (error instanceof SyntaxError || error instanceof WorkspaceRegistryError) {
+      throw error;
+    }
+
+    throw new WorkspaceRegistryError(
+      "invalid_workspace",
+      "Failed to load server watch settings file",
+      {
+        filePath,
+        cause: error instanceof Error ? error.message : "Unknown file error"
+      }
+    );
+  }
+};
+
+export interface ServerWatchSettingsStore {
+  get: () => ServerWatchSettings;
+  update: (input: ServerWatchSettings) => ServerWatchSettings;
+}
+
+export class InMemoryServerWatchSettingsStore implements ServerWatchSettingsStore {
+  #settings: ServerWatchSettings;
+
+  constructor(initialSettings: ServerWatchSettings = DEFAULT_SERVER_WATCH_SETTINGS) {
+    this.#settings = { ...initialSettings };
+  }
+
+  get() {
+    return { ...this.#settings };
+  }
+
+  update(input: ServerWatchSettings) {
+    this.#settings = { ...input };
+    return this.get();
+  }
+}
+
+export const createInMemoryServerWatchSettingsStore = (
+  initialSettings: ServerWatchSettings = DEFAULT_SERVER_WATCH_SETTINGS
+) => new InMemoryServerWatchSettingsStore(initialSettings);
+
+export class FileServerWatchSettingsStore implements ServerWatchSettingsStore {
+  readonly #filePath: string;
+  #settings: ServerWatchSettings;
+
+  constructor(filePath: string) {
+    this.#filePath = resolve(filePath);
+    this.#settings = loadServerWatchSettingsFile(this.#filePath);
+  }
+
+  get() {
+    return { ...this.#settings };
+  }
+
+  update(input: ServerWatchSettings) {
+    this.#settings = { ...input };
+    this.flush();
+    return this.get();
+  }
+
+  private flush() {
+    mkdirSync(dirname(this.#filePath), { recursive: true });
+
+    const tempFilePath = `${this.#filePath}.tmp`;
+    const payload: ServerWatchSettingsFileShape = {
+      watch: this.#settings
+    };
+
+    writeFileSync(tempFilePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+    renameSync(tempFilePath, this.#filePath);
+  }
+}
+
+export const createFileServerWatchSettingsStore = (filePath: string) =>
+  new FileServerWatchSettingsStore(filePath);
 
 export interface AppendChangeEventInput {
   workspaceId: string;
