@@ -23,7 +23,7 @@ Goal: make release artifacts installable and operable without requiring source c
 
 Goal: detect updates safely and show them in the UI without installing them automatically.
 
-- [ ] Item 1. Add a release manifest format plus checksum publication flow.
+- [x] Item 1. Add a release manifest format plus checksum publication flow.
 - [ ] Item 2. Add version endpoints for server and client UI.
 - [ ] Item 3. Add update-check endpoints for server and client UI.
 - [ ] Item 4. Add version/update widgets to server and client UI with `Check for updates`.

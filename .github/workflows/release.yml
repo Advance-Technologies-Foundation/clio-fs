@@ -59,6 +59,11 @@ jobs:
           New-Item -ItemType Directory -Force -Path .release-assets | Out-Null
           Compress-Archive -Path ".release-artifacts/clio-fs-server-$env:RELEASE_TAG", ".release-artifacts/clio-fs-client-$env:RELEASE_TAG" -DestinationPath ".release-assets/clio-fs-$env:RELEASE_TAG-windows.zip"
 
+      - name: Generate release metadata
+        env:
+          RELEASE_PUBLISHED_AT: ${{ github.event.release.published_at }}
+        run: node scripts/generate-release-metadata.mjs --version "${RELEASE_TAG}"
+
       - name: Upload server artifact
         uses: actions/upload-artifact@v4
         with:
@@ -81,4 +86,6 @@ jobs:
             .release-assets/clio-fs-${RELEASE_TAG}-windows.zip \
             .release-assets/clio-fs-${RELEASE_TAG}-macos.tar.gz \
             .release-assets/clio-fs-${RELEASE_TAG}-linux.tar.gz \
+            .release-assets/SHA256SUMS \
+            .release-assets/manifest.json \
             --clobber

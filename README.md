@@ -266,6 +266,7 @@ GitHub releases now publish one downloadable runnable archive per operating syst
 - `clio-fs-client` starts the client setup UI backed by the local mirror engine
 - each release archive contains the launcher needed for the target platform plus the built `dist/` output and vendored internal workspaces
 - internal workspaces under `packages/*`, plus `@clio-fs/server-ui` and `@clio-fs/client`, are bundled into those release archives instead of being published separately
+- each published release also attaches `SHA256SUMS` and `manifest.json` for manual update checks and installer verification
 - published releases attach these assets directly to the GitHub Release page:
   - `clio-fs-X.Y.Z-windows.zip`
   - `clio-fs-X.Y.Z-macos.tar.gz`

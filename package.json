@@ -18,7 +18,7 @@
     "release:artifacts": "node scripts/build-release-artifacts.mjs",
     "server": "node scripts/dev-server.mjs",
     "scenario:local-sync": "node scripts/run-local-sync-scenario.mjs",
-    "test": "corepack pnpm -r test && node --test scripts/build-release-artifacts.test.mjs",
+    "test": "corepack pnpm -r test && node --test scripts/*.test.mjs",
     "format": "corepack pnpm -r format"
   }
 }
