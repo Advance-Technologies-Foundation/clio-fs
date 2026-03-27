@@ -213,4 +213,5 @@ At the time this document was introduced:
 - install scripts now live under [install/server/install-server.sh](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/server/install-server.sh), [install/server/install-server.ps1](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/server/install-server.ps1), [install/client/install-client.sh](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/client/install-client.sh), and [install/client/install-client.ps1](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/client/install-client.ps1)
 - Linux service unit templates now live under [deploy/systemd/clio-fs-server.service](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/deploy/systemd/clio-fs-server.service) and [deploy/systemd/clio-fs-client.service](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/deploy/systemd/clio-fs-client.service)
 - release publication now includes `SHA256SUMS` and `manifest.json`
-- manual-update endpoints are still pending implementation
+- manual update-check endpoints and dashboard widgets are now implemented
+- compatibility fields are published but automated gating is still pending

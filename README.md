@@ -189,6 +189,7 @@ Current design documents:
 - [ARCHITECTURE_REVIEW.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/ARCHITECTURE_REVIEW.md): architectural review findings and closure history
 - [docs/RELEASE_IMPLEMENTATION_PLAN.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/docs/RELEASE_IMPLEMENTATION_PLAN.md): release/install/update rollout checklist
 - [docs/RELEASES.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/docs/RELEASES.md): release contract, bundle layout, and manual update model
+- [docs/UPDATES.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/docs/UPDATES.md): current update discovery flow and compatibility notes
 
 ## Current MVP Decisions
 
