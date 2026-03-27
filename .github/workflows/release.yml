@@ -43,24 +43,21 @@ jobs:
       - name: Build release bundles
         run: node scripts/build-release-artifacts.mjs
 
-      - name: Archive Linux release bundles
+      - name: Archive Linux release bundle
         run: |
           mkdir -p .release-assets
-          tar -C .release-artifacts -czf .release-assets/clio-fs-server-${RELEASE_TAG}-linux.tar.gz clio-fs-server-${RELEASE_TAG}
-          tar -C .release-artifacts -czf .release-assets/clio-fs-client-${RELEASE_TAG}-linux.tar.gz clio-fs-client-${RELEASE_TAG}
+          tar -C .release-artifacts -czf .release-assets/clio-fs-${RELEASE_TAG}-linux.tar.gz clio-fs-server-${RELEASE_TAG} clio-fs-client-${RELEASE_TAG}
 
-      - name: Archive macOS release bundles
+      - name: Archive macOS release bundle
         run: |
           mkdir -p .release-assets
-          tar -C .release-artifacts -czf .release-assets/clio-fs-server-${RELEASE_TAG}-macos.tar.gz clio-fs-server-${RELEASE_TAG}
-          tar -C .release-artifacts -czf .release-assets/clio-fs-client-${RELEASE_TAG}-macos.tar.gz clio-fs-client-${RELEASE_TAG}
+          tar -C .release-artifacts -czf .release-assets/clio-fs-${RELEASE_TAG}-macos.tar.gz clio-fs-server-${RELEASE_TAG} clio-fs-client-${RELEASE_TAG}
 
-      - name: Archive Windows release bundles
+      - name: Archive Windows release bundle
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path .release-assets | Out-Null
-          Compress-Archive -Path ".release-artifacts/clio-fs-server-$env:RELEASE_TAG" -DestinationPath ".release-assets/clio-fs-server-$env:RELEASE_TAG-windows.zip"
-          Compress-Archive -Path ".release-artifacts/clio-fs-client-$env:RELEASE_TAG" -DestinationPath ".release-assets/clio-fs-client-$env:RELEASE_TAG-windows.zip"
+          Compress-Archive -Path ".release-artifacts/clio-fs-server-$env:RELEASE_TAG", ".release-artifacts/clio-fs-client-$env:RELEASE_TAG" -DestinationPath ".release-assets/clio-fs-$env:RELEASE_TAG-windows.zip"
 
       - name: Upload server artifact
         uses: actions/upload-artifact@v4
@@ -81,10 +78,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           gh release upload "$RELEASE_TAG" \
-            .release-assets/clio-fs-server-${RELEASE_TAG}-windows.zip \
-            .release-assets/clio-fs-client-${RELEASE_TAG}-windows.zip \
-            .release-assets/clio-fs-server-${RELEASE_TAG}-macos.tar.gz \
-            .release-assets/clio-fs-client-${RELEASE_TAG}-macos.tar.gz \
-            .release-assets/clio-fs-server-${RELEASE_TAG}-linux.tar.gz \
-            .release-assets/clio-fs-client-${RELEASE_TAG}-linux.tar.gz \
+            .release-assets/clio-fs-${RELEASE_TAG}-windows.zip \
+            .release-assets/clio-fs-${RELEASE_TAG}-macos.tar.gz \
+            .release-assets/clio-fs-${RELEASE_TAG}-linux.tar.gz \
             --clobber
