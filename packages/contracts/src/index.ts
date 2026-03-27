@@ -224,6 +224,63 @@ export interface ApiErrorShape {
   };
 }
 
+export interface GetWorkspaceFileResponse {
+  workspaceId: WorkspaceId;
+  path: string;
+  metadata: {
+    size: number;
+    mtime: string;
+    contentHash: string;
+    fileRevision: Revision;
+    workspaceRevision: Revision;
+  };
+  encoding: FileTransferEncoding;
+  content: string;
+}
+
+export interface WorkspaceTreeItem {
+  path: string;
+  kind: SnapshotEntryKind;
+  mtime: string;
+  size?: number;
+  workspaceRevision: Revision;
+}
+
+export interface GetWorkspaceTreeResponse {
+  workspaceId: WorkspaceId;
+  path: string;
+  workspaceRevision: Revision;
+  items: WorkspaceTreeItem[];
+}
+
+export interface GitStatusItem {
+  path: string;
+  indexStatus: string;
+  worktreeStatus: string;
+}
+
+export interface GitStatusRequest {
+  path: string;
+}
+
+export interface GitStatusResponse {
+  workspaceId: WorkspaceId;
+  branch: string;
+  items: GitStatusItem[];
+}
+
+export interface GitDiffRequest {
+  path: string;
+  against: string;
+}
+
+export interface GitDiffResponse {
+  workspaceId: WorkspaceId;
+  path: string;
+  against: string;
+  diff: string;
+}
+
 export const DEFAULT_WORKSPACE_POLICIES: WorkspacePolicies = {
   allowGit: true,
   allowBinaryWrites: true,

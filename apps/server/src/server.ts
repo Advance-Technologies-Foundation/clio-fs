@@ -3,6 +3,12 @@ import { URL } from "node:url";
 import { healthSummary } from "@clio-fs/sync-core";
 import {
   type ApiErrorShape,
+  type GetWorkspaceFileResponse,
+  type GetWorkspaceTreeResponse,
+  type GitDiffRequest,
+  type GitDiffResponse,
+  type GitStatusRequest,
+  type GitStatusResponse,
   type RegisterWorkspaceInput,
   type ServerDiagnosticsSummaryResponse,
   type ServerWatchSettings,
@@ -26,17 +32,20 @@ import {
   createWorkspaceDirectory,
   deleteWorkspacePath,
   FileWriteConflictError,
+  FilePolicyViolationError,
   parseCreateWorkspaceDirectoryRequest,
   parseDeleteWorkspaceFileRequest,
   parseMoveWorkspacePathRequest,
   parsePutWorkspaceFileRequest,
   parseResolveWorkspaceConflictRequest,
   moveWorkspacePath,
-  putWorkspaceFile
-  ,
+  putWorkspaceFile,
   resolveWorkspaceConflict
 } from "./file-write.js";
 import { createWorkspaceSnapshot, materializeWorkspaceFiles } from "./snapshot.js";
+import { getWorkspaceFile, getWorkspaceFileMetadata, getWorkspaceTree } from "./file-read.js";
+import { getGitStatus, getGitDiff } from "./git.js";
+import { type Logger, noopLogger } from "./logger.js";
 import type { WorkspaceChangeWatcher } from "./workspace-watcher.js";
 import { detectServerPlatform, parseRegisterWorkspaceInput } from "./workspace.js";
 
@@ -51,6 +60,7 @@ export interface WorkspaceServerOptions {
   serverPlatform?: WorkspacePlatform;
   filesystem?: FileSystemAdapter;
   workspaceWatcher?: WorkspaceChangeWatcher;
+  logger?: Logger;
 }
 
 export interface StartedWorkspaceServer {
@@ -69,11 +79,21 @@ const noContent = (response: ServerResponse, statusCode: number) => {
   response.end();
 };
 
+const MAX_REQUEST_BODY_BYTES = 12 * 1024 * 1024; // 12 MB
+
 const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
   const chunks: Buffer[] = [];
+  let totalBytes = 0;
 
   for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buf.byteLength;
+
+    if (totalBytes > MAX_REQUEST_BODY_BYTES) {
+      throw Object.assign(new Error("Request body too large"), { statusCode: 413 });
+    }
+
+    chunks.push(buf);
   }
 
   if (chunks.length === 0) {
@@ -373,6 +393,40 @@ const routeRequest = async (
     return;
   }
 
+  if (method === "GET" && pathname === "/logs/recent") {
+    const limitValue = url.searchParams.get("limit");
+    const limit = limitValue ? Math.min(Number(limitValue), 500) : 200;
+    json(response, 200, { items: (options.logger ?? noopLogger).getRecent(limit) });
+    return;
+  }
+
+  if (method === "GET" && pathname === "/logs/stream") {
+    response.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive"
+    });
+
+    let closed = false;
+    request.on("close", () => {
+      closed = true;
+    });
+
+    const unsubscribe = (options.logger ?? noopLogger).subscribe((entry) => {
+      if (!closed) {
+        response.write(`data: ${JSON.stringify(entry)}\n\n`);
+      }
+    });
+
+    request.on("close", () => {
+      unsubscribe();
+      response.end();
+    });
+
+    response.write(`data: ${JSON.stringify({ timestamp: new Date().toISOString(), level: "info", event: "log_stream_connected" })}\n\n`);
+    return;
+  }
+
   if (method === "POST" && pathname === "/workspaces/register") {
     let input: RegisterWorkspaceInput;
 
@@ -388,6 +442,10 @@ const routeRequest = async (
     try {
       const workspace = options.registry.register(input);
       options.workspaceWatcher?.resyncWorkspace(workspace.workspaceId);
+      (options.logger ?? noopLogger).audit("workspace_registered", {
+        workspaceId: workspace.workspaceId,
+        rootPath: workspace.rootPath
+      });
       json(response, 201, {
         workspaceId: workspace.workspaceId,
         status: workspace.status,
@@ -490,17 +548,20 @@ const routeRequest = async (
     try {
       const payload = await readJsonBody(request);
       const input = parseCreateWorkspaceDirectoryRequest(payload);
-      json(
-        response,
-        201,
-        createWorkspaceDirectory(
-          workspace,
-          path,
-          input,
-          options.filesystem ?? nodeFileSystem,
-          options.journal!
-        )
+      const mkdirResult = createWorkspaceDirectory(
+        workspace,
+        path,
+        input,
+        options.filesystem ?? nodeFileSystem,
+        options.journal!
       );
+      (options.logger ?? noopLogger).audit("directory_created", {
+        workspaceId,
+        path,
+        origin: input.origin,
+        revision: mkdirResult.workspaceRevision
+      });
+      json(response, 201, mkdirResult);
       options.workspaceWatcher?.resyncWorkspace(workspaceId);
       return;
     } catch (error) {
@@ -528,11 +589,15 @@ const routeRequest = async (
     try {
       const payload = await readJsonBody(request);
       const input = parseMoveWorkspacePathRequest(payload);
-      json(
-        response,
-        200,
-        moveWorkspacePath(workspace, input, options.filesystem ?? nodeFileSystem, options.journal!)
-      );
+      const moveResult = moveWorkspacePath(workspace, input, options.filesystem ?? nodeFileSystem, options.journal!);
+      (options.logger ?? noopLogger).audit("path_moved", {
+        workspaceId,
+        oldPath: input.oldPath,
+        newPath: input.newPath,
+        origin: input.origin,
+        revision: moveResult.workspaceRevision
+      });
+      json(response, 200, moveResult);
       options.workspaceWatcher?.resyncWorkspace(workspaceId);
       return;
     } catch (error) {
@@ -563,17 +628,192 @@ const routeRequest = async (
 
     try {
       const input = parseResolveWorkspaceConflictRequest(await readJsonBody(request));
-      json(
-        response,
-        200,
-        resolveWorkspaceConflict(workspace, input, options.filesystem ?? nodeFileSystem, options.journal!)
-      );
+      const resolveResult = resolveWorkspaceConflict(workspace, input, options.filesystem ?? nodeFileSystem, options.journal!);
+      (options.logger ?? noopLogger).audit("conflict_resolved", {
+        workspaceId,
+        path: input.path,
+        resolution: input.resolution,
+        origin: input.origin
+      });
+      json(response, 200, resolveResult);
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid conflict resolution request";
       writeError(response, 400, "invalid_request", message, { workspaceId });
       return;
     }
+  }
+
+  if (method === "GET" && pathname.startsWith("/workspaces/") && pathname.endsWith("/tree")) {
+    const [, , workspaceId] = pathname.split("/");
+    const path = url.searchParams.get("path") ?? ".";
+    const recursive = url.searchParams.get("recursive") === "true";
+
+    if (!workspaceId) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    const workspace = options.registry.get(workspaceId);
+
+    if (!workspace) {
+      writeError(response, 404, "not_found", "Workspace not found", { workspaceId });
+      return;
+    }
+
+    try {
+      json(response, 200, getWorkspaceTree(workspace, path, recursive, options.filesystem ?? nodeFileSystem));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to list tree";
+      writeError(response, 400, "invalid_request", message, { workspaceId, path });
+    }
+    return;
+  }
+
+  if (method === "HEAD" && pathname.startsWith("/workspaces/") && pathname.endsWith("/file")) {
+    const [, , workspaceId] = pathname.split("/");
+    const path = url.searchParams.get("path");
+
+    if (!workspaceId) {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+
+    if (!path) {
+      response.writeHead(400);
+      response.end();
+      return;
+    }
+
+    const workspace = options.registry.get(workspaceId);
+
+    if (!workspace) {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+
+    try {
+      const meta = getWorkspaceFileMetadata(workspace, path, options.filesystem ?? nodeFileSystem);
+      response.writeHead(200, {
+        etag: `"${meta.contentHash}"`,
+        "x-file-revision": String(meta.fileRevision),
+        "x-workspace-revision": String(meta.workspaceRevision),
+        "x-content-size": String(meta.size),
+        "x-mtime": meta.mtime
+      });
+      response.end();
+    } catch {
+      response.writeHead(404);
+      response.end();
+    }
+    return;
+  }
+
+  if (method === "GET" && pathname.startsWith("/workspaces/") && pathname.endsWith("/file")) {
+    const [, , workspaceId] = pathname.split("/");
+    const path = url.searchParams.get("path");
+
+    if (!workspaceId) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    if (!path) {
+      writeError(response, 400, "invalid_request", "path query parameter is required", { workspaceId });
+      return;
+    }
+
+    const workspace = options.registry.get(workspaceId);
+
+    if (!workspace) {
+      writeError(response, 404, "not_found", "Workspace not found", { workspaceId });
+      return;
+    }
+
+    try {
+      json(response, 200, getWorkspaceFile(workspace, path, options.filesystem ?? nodeFileSystem));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to read file";
+      writeError(response, 404, "not_found", message, { workspaceId, path });
+    }
+    return;
+  }
+
+  if (
+    method === "POST" &&
+    pathname.startsWith("/workspaces/") &&
+    pathname.endsWith("/git/status")
+  ) {
+    const [, , workspaceId] = pathname.split("/");
+
+    if (!workspaceId) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    const workspace = options.registry.get(workspaceId);
+
+    if (!workspace) {
+      writeError(response, 404, "not_found", "Workspace not found", { workspaceId });
+      return;
+    }
+
+    if (!workspace.policies.allowGit) {
+      writeError(response, 403, "forbidden", "Git operations are not allowed for this workspace", { workspaceId });
+      return;
+    }
+
+    try {
+      const input = (await readJsonBody(request)) as GitStatusRequest;
+      const path = typeof input.path === "string" ? input.path : ".";
+      json(response, 200, getGitStatus(workspace, path));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "git status failed";
+      writeError(response, 400, "git_error", message, { workspaceId });
+    }
+    return;
+  }
+
+  if (
+    method === "POST" &&
+    pathname.startsWith("/workspaces/") &&
+    pathname.endsWith("/git/diff")
+  ) {
+    const [, , workspaceId] = pathname.split("/");
+
+    if (!workspaceId) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    const workspace = options.registry.get(workspaceId);
+
+    if (!workspace) {
+      writeError(response, 404, "not_found", "Workspace not found", { workspaceId });
+      return;
+    }
+
+    if (!workspace.policies.allowGit) {
+      writeError(response, 403, "forbidden", "Git operations are not allowed for this workspace", { workspaceId });
+      return;
+    }
+
+    try {
+      const input = (await readJsonBody(request)) as GitDiffRequest;
+
+      if (typeof input.path !== "string" || typeof input.against !== "string") {
+        writeError(response, 400, "invalid_request", "path and against are required", { workspaceId });
+        return;
+      }
+
+      json(response, 200, getGitDiff(workspace, input.path, input.against));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "git diff failed";
+      writeError(response, 400, "git_error", message, { workspaceId });
+    }
+    return;
   }
 
   if (method === "PUT" && pathname.startsWith("/workspaces/") && pathname.endsWith("/file")) {
@@ -601,22 +841,32 @@ const routeRequest = async (
 
     try {
       const input = parsePutWorkspaceFileRequest(await readJsonBody(request));
-      json(
-        response,
-        200,
-        putWorkspaceFile(
-          workspace,
-          path,
-          input,
-          options.filesystem ?? nodeFileSystem,
-          options.journal!
-        )
+      const putResult = putWorkspaceFile(
+        workspace,
+        path,
+        input,
+        options.filesystem ?? nodeFileSystem,
+        options.journal!
       );
+      (options.logger ?? noopLogger).audit("file_written", {
+        workspaceId,
+        path,
+        origin: input.origin,
+        revision: putResult.workspaceRevision,
+        sizeBytes: putResult.contentHash ? undefined : undefined
+      });
+      json(response, 200, putResult);
       options.workspaceWatcher?.resyncWorkspace(workspaceId);
       return;
     } catch (error) {
       if (error instanceof FileWriteConflictError) {
         writeError(response, 409, "conflict", error.message, error.details);
+        return;
+      }
+
+      if (error instanceof FilePolicyViolationError) {
+        const statusCode = error.code === "file_too_large" ? 413 : 403;
+        writeError(response, statusCode, error.code, error.message, error.details);
         return;
       }
 
@@ -651,17 +901,20 @@ const routeRequest = async (
 
     try {
       const input = parseDeleteWorkspaceFileRequest(await readJsonBody(request));
-      json(
-        response,
-        200,
-        deleteWorkspacePath(
-          workspace,
-          path,
-          input,
-          options.filesystem ?? nodeFileSystem,
-          options.journal!
-        )
+      const deleteResult = deleteWorkspacePath(
+        workspace,
+        path,
+        input,
+        options.filesystem ?? nodeFileSystem,
+        options.journal!
       );
+      (options.logger ?? noopLogger).audit("path_deleted", {
+        workspaceId,
+        path,
+        origin: input.origin,
+        revision: deleteResult.workspaceRevision
+      });
+      json(response, 200, deleteResult);
       options.workspaceWatcher?.resyncWorkspace(workspaceId);
       return;
     } catch (error) {
@@ -716,6 +969,7 @@ const routeRequest = async (
     try {
       options.registry.delete(workspaceId);
       options.workspaceWatcher?.removeWorkspace(workspaceId);
+      (options.logger ?? noopLogger).audit("workspace_deleted", { workspaceId });
       noContent(response, 204);
       return;
     } catch (error) {
@@ -742,6 +996,15 @@ export const createWorkspaceServer = (options: WorkspaceServerOptions) => {
     try {
       await routeRequest(request, response, resolvedOptions);
     } catch (error) {
+      if (
+        error instanceof Error &&
+        "statusCode" in error &&
+        (error as Error & { statusCode: number }).statusCode === 413
+      ) {
+        writeError(response, 413, "payload_too_large", error.message);
+        return;
+      }
+
       const message = error instanceof Error ? error.message : "Internal server error";
       writeError(response, 500, "internal_error", message);
     }

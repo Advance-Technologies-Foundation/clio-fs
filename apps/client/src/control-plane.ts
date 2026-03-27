@@ -4,6 +4,12 @@ import type {
   CreateWorkspaceDirectoryResponse,
   DeleteWorkspaceFileRequest,
   DeleteWorkspaceFileResponse,
+  GetWorkspaceFileResponse,
+  GetWorkspaceTreeResponse,
+  GitDiffRequest,
+  GitDiffResponse,
+  GitStatusRequest,
+  GitStatusResponse,
   MoveWorkspacePathRequest,
   MoveWorkspacePathResponse,
   PutWorkspaceFileRequest,
@@ -169,6 +175,47 @@ export class ClientControlPlane {
         headers: {
           "content-type": "application/json"
         },
+        body: JSON.stringify(input)
+      }
+    );
+  }
+
+  async getFile(workspaceId: string, path: string): Promise<GetWorkspaceFileResponse> {
+    const url = this.#resolveUrl(`/workspaces/${encodeURIComponent(workspaceId)}/file`);
+    url.searchParams.set("path", path);
+    return this.#request<GetWorkspaceFileResponse>(url);
+  }
+
+  async getTree(
+    workspaceId: string,
+    path: string,
+    recursive = false
+  ): Promise<GetWorkspaceTreeResponse> {
+    const url = this.#resolveUrl(`/workspaces/${encodeURIComponent(workspaceId)}/tree`);
+    url.searchParams.set("path", path);
+    if (recursive) {
+      url.searchParams.set("recursive", "true");
+    }
+    return this.#request<GetWorkspaceTreeResponse>(url);
+  }
+
+  async getGitStatus(workspaceId: string, input: GitStatusRequest): Promise<GitStatusResponse> {
+    return this.#request<GitStatusResponse>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/git/status`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input)
+      }
+    );
+  }
+
+  async getGitDiff(workspaceId: string, input: GitDiffRequest): Promise<GitDiffResponse> {
+    return this.#request<GitDiffResponse>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/git/diff`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify(input)
       }
     );

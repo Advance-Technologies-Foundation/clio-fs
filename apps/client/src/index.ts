@@ -1356,6 +1356,19 @@ export const runClientDaemon = async () => {
         console.error("[client] poll failed:", error);
       });
   }, appConfig.client.pollIntervalMs);
+
+  setInterval(() => {
+    client
+      .resyncFromServer()
+      .then((nextState) => {
+        console.log(
+          `[client] reconciled workspace ${nextState.workspaceId}; revision=${nextState.lastAppliedRevision}`
+        );
+      })
+      .catch((error) => {
+        console.error("[client] periodic reconciliation failed:", error);
+      });
+  }, appConfig.client.reconcileIntervalMs);
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

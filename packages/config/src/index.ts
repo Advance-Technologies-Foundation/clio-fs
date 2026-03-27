@@ -156,6 +156,7 @@ export interface AppConfig {
     stateFilePath: string;
     pollIntervalMs: number;
     localWatchScanIntervalMs: number;
+    reconcileIntervalMs: number;
   };
   clientUi: {
     host: string;
@@ -242,6 +243,11 @@ export const readAppConfig = (
         runtimeEnv,
         "CLIO_FS_CLIENT_LOCAL_WATCH_SCAN_INTERVAL_MS",
         250
+      ),
+      reconcileIntervalMs: readInteger(
+        runtimeEnv,
+        "CLIO_FS_CLIENT_RECONCILE_INTERVAL_MS",
+        6 * 60 * 60 * 1000
       )
     },
     clientUi: {

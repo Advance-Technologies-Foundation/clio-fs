@@ -8,6 +8,7 @@ import type {
   RegisterWorkspaceRequest,
   ServerHealthResponse,
   ServerWatchSettings,
+  WorkspaceDiagnosticsResponse,
   WorkspaceListResponse,
   WorkspaceRecord
 } from "@clio-fs/contracts";
@@ -47,6 +48,7 @@ interface ControlPlaneClient {
   getWatchSettings: (authToken: string) => Promise<ServerWatchSettings>;
   listWorkspaces: (authToken: string) => Promise<WorkspaceRecord[]>;
   getWorkspace: (authToken: string, workspaceId: string) => Promise<WorkspaceRecord | null>;
+  getWorkspaceDiagnostics: (authToken: string, workspaceId: string) => Promise<WorkspaceDiagnosticsResponse | null>;
   registerWorkspace: (authToken: string, input: RegisterWorkspaceRequest) => Promise<{ workspaceId: string }>;
   deleteWorkspace: (authToken: string, workspaceId: string) => Promise<void>;
   updateWatchSettings: (authToken: string, input: ServerWatchSettings) => Promise<ServerWatchSettings>;
@@ -278,6 +280,22 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
 
       return (await response.json()) as WorkspaceRecord;
     },
+    async getWorkspaceDiagnostics(authToken: string, workspaceId: string) {
+      const response = await fetchImpl(
+        new URL(`/workspaces/${encodeURIComponent(workspaceId)}/diagnostics`, options.controlPlaneBaseUrl),
+        { headers: { authorization: `Bearer ${authToken}` } }
+      );
+
+      if (response.status === 404) {
+        return null;
+      }
+
+      if (!response.ok) {
+        return null;
+      }
+
+      return (await response.json()) as WorkspaceDiagnosticsResponse;
+    },
     async registerWorkspace(authToken: string, input: RegisterWorkspaceRequest) {
       return request<{ workspaceId: string }>(authToken, "/workspaces/register", {
         method: "POST",
@@ -365,7 +383,7 @@ const renderDashboard = async (
   });
 
   return renderPage("Clio FS Server", body, {
-    topbarActions: `${renderServerSettingsButton()}${renderLogoutButton()}`,
+    topbarActions: `${renderLogsLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
     topbarSubtitle: "Server Control Plane"
   });
 };
@@ -421,8 +439,23 @@ const renderDashboardBody = (
   `;
 };
 
-const renderWorkspaceDetail = (workspace: WorkspaceRecord) =>
-  renderPage(
+const STALE_THRESHOLD_MS = 5 * 60 * 1000;
+
+const renderDegradedBadge = () =>
+  `<span style="display:inline-flex;align-items:center;padding:2px 10px;border-radius:9999px;background:rgba(220,38,38,0.10);color:#991b1b;font-family:'Montserrat',sans-serif;font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">Stale</span>`;
+
+const renderWorkspaceDetail = (
+  workspace: WorkspaceRecord,
+  diagnostics: WorkspaceDiagnosticsResponse | null
+) => {
+  const lastEvent = diagnostics?.latestRevisionEvent;
+  const lastEventAge = lastEvent ? Date.now() - Date.parse(lastEvent.timestamp) : null;
+  const isStale = lastEventAge !== null && lastEventAge > STALE_THRESHOLD_MS;
+  const lastEventLabel = lastEvent
+    ? new Date(lastEvent.timestamp).toLocaleString()
+    : "No events yet";
+
+  return renderPage(
     `${formatWorkspaceLabel(workspace)} | Clio FS Server`,
     `
       <div class="nav"><a href="/">← Back to dashboard</a></div>
@@ -435,9 +468,12 @@ const renderWorkspaceDetail = (workspace: WorkspaceRecord) =>
           workspace.displayName
         )}</code>` : ""}.</p>
       </section>
+      ${isStale ? renderNotice("error", `Workspace has had no activity for over ${Math.round((lastEventAge ?? 0) / 60_000)} minutes. Last event: ${lastEventLabel}`) : ""}
       <section class="grid">
         ${renderMetricCard("Revision", String(workspace.currentRevision))}
         ${renderMetricCard("Status", workspace.status)}
+        ${renderMetricCard("Journal Events", String(diagnostics?.journalEventCount ?? "—"))}
+        ${renderMetricCard("Last Event", lastEventLabel)}
       </section>
       <section class="panel stack">
         <dl class="meta-list">
@@ -446,7 +482,7 @@ const renderWorkspaceDetail = (workspace: WorkspaceRecord) =>
           <dt>Root Path</dt>
           <dd>${escapeHtml(workspace.rootPath)}</dd>
           <dt>Status</dt>
-          <dd>${renderStatusBadge(workspace.status)}</dd>
+          <dd>${renderStatusBadge(workspace.status)}${isStale ? `&nbsp;${renderDegradedBadge()}` : ""}</dd>
           <dt>Allow Git</dt>
           <dd>${String(workspace.policies.allowGit)}</dd>
           <dt>Allow Binary Writes</dt>
@@ -455,11 +491,77 @@ const renderWorkspaceDetail = (workspace: WorkspaceRecord) =>
           <dd>${String(workspace.policies.maxFileBytes)}</dd>
         </dl>
       </section>
-    `
-    ,
+    `,
     {
       topbarSubtitle: "Server Control Plane"
     }
+  );
+};
+
+const renderLogsLink = () =>
+  `<a href="/logs" style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.375rem 0.875rem;border-radius:8px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.80);font-size:0.8125rem;font-weight:500;text-decoration:none;" onmouseover="this.style.background='rgba(255,255,255,0.14)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'">Logs</a>`;
+
+const renderLogViewerPage = () =>
+  renderPage(
+    "Live Logs | Clio FS Server",
+    `
+      <div class="nav"><a href="/">← Back to dashboard</a></div>
+      <section class="hero">
+        <div class="eyebrow">Server Logs</div>
+        <h1>Live Log Stream</h1>
+        <p class="lede">Real-time structured log events from the control plane. Audit events are highlighted.</p>
+      </section>
+      <section class="panel stack" style="padding:0;overflow:hidden;">
+        <div id="log-toolbar" style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;border-bottom:1px solid rgba(0,0,0,0.08);background:rgba(0,0,0,0.03);">
+          <span id="log-status" style="font-size:0.8rem;color:#6b7280;">Connecting…</span>
+          <label style="display:flex;align-items:center;gap:0.375rem;font-size:0.8rem;color:#374151;margin-left:auto;">
+            <input type="checkbox" id="log-audit-only" /> Audit only
+          </label>
+          <button onclick="document.getElementById('log-entries').innerHTML=''" style="font-size:0.8rem;padding:0.25rem 0.75rem;border-radius:6px;border:1px solid #d1d5db;background:#fff;cursor:pointer;color:#374151;">Clear</button>
+          <label style="display:flex;align-items:center;gap:0.375rem;font-size:0.8rem;color:#374151;">
+            <input type="checkbox" id="log-autoscroll" checked /> Autoscroll
+          </label>
+        </div>
+        <div id="log-entries" style="font-family:'Consolas','Courier New',monospace;font-size:0.78rem;line-height:1.6;padding:0.75rem 1rem;min-height:400px;max-height:70vh;overflow-y:auto;background:#0f172a;color:#94a3b8;"></div>
+      </section>
+      <script>
+        const entries = document.getElementById('log-entries');
+        const status = document.getElementById('log-status');
+        const auditOnly = document.getElementById('log-audit-only');
+        const autoscroll = document.getElementById('log-autoscroll');
+
+        const LEVEL_COLORS = { debug: '#64748b', info: '#38bdf8', warn: '#fbbf24', error: '#f87171' };
+        const AUDIT_BG = 'rgba(56,189,248,0.08)';
+
+        function appendEntry(data) {
+          if (auditOnly.checked && !data.audit) return;
+          const row = document.createElement('div');
+          const isAudit = !!data.audit;
+          row.style.cssText = 'padding:2px 4px;border-radius:3px;' + (isAudit ? 'background:' + AUDIT_BG + ';' : '');
+          const color = LEVEL_COLORS[data.level] || '#94a3b8';
+          const ts = data.timestamp ? data.timestamp.replace('T', ' ').replace('Z', '') : '';
+          const badge = isAudit ? '<span style="color:#38bdf8;font-weight:700;">[AUDIT]</span> ' : '';
+          const rest = Object.entries(data).filter(([k]) => !['timestamp','level','event','audit'].includes(k));
+          const fields = rest.length ? ' ' + rest.map(([k,v]) => '<span style="color:#64748b;">' + k + '=</span><span style="color:#e2e8f0;">' + JSON.stringify(v) + '</span>').join(' ') : '';
+          row.innerHTML = '<span style="color:#475569;">' + ts + '</span> <span style="color:' + color + ';font-weight:600;">' + data.level.toUpperCase() + '</span> ' + badge + '<span style="color:#f1f5f9;">' + (data.event || '') + '</span>' + fields;
+          entries.appendChild(row);
+          if (autoscroll.checked) entries.scrollTop = entries.scrollHeight;
+        }
+
+        fetch('/logs/recent')
+          .then(r => r.json())
+          .then(body => { (body.items || []).forEach(appendEntry); })
+          .catch(() => {});
+
+        const es = new EventSource('/logs/stream');
+        es.onopen = () => { status.textContent = 'Connected'; status.style.color = '#16a34a'; };
+        es.onerror = () => { status.textContent = 'Disconnected — retrying…'; status.style.color = '#dc2626'; };
+        es.onmessage = (e) => {
+          try { appendEntry(JSON.parse(e.data)); } catch {}
+        };
+      </script>
+    `,
+    { topbarSubtitle: "Server Control Plane" }
   );
 
 const renderNotFound = () =>
@@ -781,6 +883,50 @@ export const createServerUi = (options: ServerUiOptions) => {
         }
       }
 
+      if (method === "GET" && url.pathname === "/logs") {
+        writeHtml(response, 200, renderLogViewerPage());
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/logs/recent") {
+        const upstreamUrl = new URL("/logs/recent", options.controlPlaneBaseUrl);
+        upstreamUrl.search = url.search;
+        const upstreamResponse = await (options.fetchImpl ?? fetch)(upstreamUrl, {
+          headers: { authorization: `Bearer ${authenticatedToken}` }
+        });
+        await copyUpstreamResponse(upstreamResponse, response);
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/logs/stream") {
+        const upstreamUrl = new URL("/logs/stream", options.controlPlaneBaseUrl);
+        const upstreamResponse = await (options.fetchImpl ?? fetch)(upstreamUrl, {
+          headers: { authorization: `Bearer ${authenticatedToken}`, accept: "text/event-stream" }
+        });
+
+        response.writeHead(upstreamResponse.status, {
+          "content-type": "text/event-stream; charset=utf-8",
+          "cache-control": "no-cache, no-transform",
+          connection: "keep-alive"
+        });
+
+        if (!upstreamResponse.body) {
+          response.end();
+          return;
+        }
+
+        let closed = false;
+        request.on("close", () => { closed = true; });
+
+        for await (const chunk of upstreamResponse.body) {
+          if (closed) break;
+          response.write(chunk);
+        }
+
+        response.end();
+        return;
+      }
+
       if (method === "GET" && url.pathname.startsWith("/workspaces/")) {
         const [, , workspaceId] = url.pathname.split("/");
 
@@ -789,14 +935,17 @@ export const createServerUi = (options: ServerUiOptions) => {
           return;
         }
 
-        const workspace = await client.getWorkspace(authenticatedToken, workspaceId);
+        const [workspace, diagnostics] = await Promise.all([
+          client.getWorkspace(authenticatedToken, workspaceId),
+          client.getWorkspaceDiagnostics(authenticatedToken, workspaceId)
+        ]);
 
         if (!workspace) {
           writeHtml(response, 404, renderNotFound());
           return;
         }
 
-        writeHtml(response, 200, renderWorkspaceDetail(workspace));
+        writeHtml(response, 200, renderWorkspaceDetail(workspace, diagnostics));
         return;
       }
 

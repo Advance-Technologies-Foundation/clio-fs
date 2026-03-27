@@ -405,12 +405,19 @@ const loadChangeJournalFile = (filePath: string): ChangeEvent[] => {
   }
 };
 
+export const DEFAULT_MAX_JOURNAL_EVENTS_PER_WORKSPACE = 10_000;
+
 export class InMemoryChangeJournal implements ChangeJournal {
   protected readonly eventsByWorkspace = new Map<string, ChangeEvent[]>();
   readonly #registry: WorkspaceRegistry;
+  readonly #maxEventsPerWorkspace: number;
 
-  constructor(registry: WorkspaceRegistry) {
+  constructor(
+    registry: WorkspaceRegistry,
+    maxEventsPerWorkspace: number = DEFAULT_MAX_JOURNAL_EVENTS_PER_WORKSPACE
+  ) {
     this.#registry = registry;
+    this.#maxEventsPerWorkspace = maxEventsPerWorkspace;
   }
 
   append(input: AppendChangeEventInput): ChangeEvent {
@@ -439,6 +446,11 @@ export class InMemoryChangeJournal implements ChangeJournal {
 
     const items = this.eventsByWorkspace.get(input.workspaceId) ?? [];
     items.push(event);
+
+    if (items.length > this.#maxEventsPerWorkspace) {
+      items.splice(0, items.length - this.#maxEventsPerWorkspace);
+    }
+
     this.eventsByWorkspace.set(input.workspaceId, items);
     this.#registry.advanceRevision(input.workspaceId, revision);
 
@@ -494,14 +506,20 @@ export class InMemoryChangeJournal implements ChangeJournal {
   }
 }
 
-export const createInMemoryChangeJournal = (registry: WorkspaceRegistry) =>
-  new InMemoryChangeJournal(registry);
+export const createInMemoryChangeJournal = (
+  registry: WorkspaceRegistry,
+  maxEventsPerWorkspace?: number
+) => new InMemoryChangeJournal(registry, maxEventsPerWorkspace);
 
 export class FileChangeJournal extends InMemoryChangeJournal {
   readonly #filePath: string;
 
-  constructor(registry: WorkspaceRegistry, filePath: string) {
-    super(registry);
+  constructor(
+    registry: WorkspaceRegistry,
+    filePath: string,
+    maxEventsPerWorkspace?: number
+  ) {
+    super(registry, maxEventsPerWorkspace);
     this.#filePath = resolve(filePath);
 
     for (const event of loadChangeJournalFile(this.#filePath)) {
@@ -539,5 +557,8 @@ export class FileChangeJournal extends InMemoryChangeJournal {
   }
 }
 
-export const createFileChangeJournal = (registry: WorkspaceRegistry, filePath: string) =>
-  new FileChangeJournal(registry, filePath);
+export const createFileChangeJournal = (
+  registry: WorkspaceRegistry,
+  filePath: string,
+  maxEventsPerWorkspace?: number
+) => new FileChangeJournal(registry, filePath, maxEventsPerWorkspace);

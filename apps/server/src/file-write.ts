@@ -27,6 +27,22 @@ export class FileWriteConflictError extends Error {
   }
 }
 
+export class FilePolicyViolationError extends Error {
+  readonly code: "file_too_large" | "binary_writes_not_allowed";
+  readonly details: Record<string, unknown>;
+
+  constructor(
+    code: FilePolicyViolationError["code"],
+    message: string,
+    details: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = "FilePolicyViolationError";
+    this.code = code;
+    this.details = details;
+  }
+}
+
 export const parsePutWorkspaceFileRequest = (value: unknown): PutWorkspaceFileRequest => {
   if (typeof value !== "object" || value === null) {
     throw new Error("request body must be a JSON object");
@@ -250,7 +266,31 @@ export const putWorkspaceFile = (
     });
   }
 
-  const decodedContent = decodeTransferContent(input.content, input.encoding ?? "utf8");
+  const encoding = input.encoding ?? "utf8";
+
+  if (encoding === "base64" && !workspace.policies.allowBinaryWrites) {
+    throw new FilePolicyViolationError(
+      "binary_writes_not_allowed",
+      "Binary file writes are not allowed for this workspace",
+      { workspaceId: workspace.workspaceId, path }
+    );
+  }
+
+  const decodedContent = decodeTransferContent(input.content, encoding);
+
+  if (decodedContent.byteLength > workspace.policies.maxFileBytes) {
+    throw new FilePolicyViolationError(
+      "file_too_large",
+      `File size ${decodedContent.byteLength} bytes exceeds workspace limit of ${workspace.policies.maxFileBytes} bytes`,
+      {
+        workspaceId: workspace.workspaceId,
+        path,
+        sizeBytes: decodedContent.byteLength,
+        limitBytes: workspace.policies.maxFileBytes
+      }
+    );
+  }
+
   filesystem.writeFileBytes(absolutePath, decodedContent);
 
   const nextHash = hashBytes(decodedContent);
