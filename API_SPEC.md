@@ -173,6 +173,46 @@ Rules:
 - server must record `clientId`, `workspaceId`, and `instanceId` in the audit log
 - `instanceId` is optional for local mirror clients, but required for server-side integrations if used
 
+## Server Watch Settings
+
+### GET /settings/watch
+
+Returns server-level watcher settings shared by all workspaces on the control plane.
+
+Response `200`:
+
+```json
+{
+  "settleDelayMs": 1200
+}
+```
+
+### PUT /settings/watch
+
+Updates server-level watcher settings shared by all workspaces on the control plane.
+
+Request:
+
+```json
+{
+  "settleDelayMs": 1800
+}
+```
+
+Response `200`:
+
+```json
+{
+  "settleDelayMs": 1800
+}
+```
+
+Current implementation note:
+
+- watch settings are stored once per server, not per workspace
+- `settleDelayMs` defines how long a client waits after the last observed local file change before pushing it
+- the operator-facing UI exposes these settings through a server settings modal
+
 ## Workspace Management
 
 ### GET /workspaces
@@ -624,8 +664,10 @@ Current implementation note:
 
 - directory creation is implemented for workspace-relative paths
 - duplicate directory creation currently returns `400 invalid_request`
-- local watcher-driven empty-directory propagation is not implemented yet on the client side
+- local watcher-driven empty-directory propagation is implemented on the client side
 - local watcher-driven file rename propagation is implemented through polling watcher detection and the move endpoint
+- the local watcher debounce window is loaded from server-level watch settings
+- local watcher-driven directory subtree move propagation is implemented through subtree translation detection and the move endpoint
 
 ### DELETE /workspaces/{workspaceId}/file
 
@@ -660,7 +702,7 @@ Response `200`:
 Current implementation note:
 
 - file delete is implemented with optimistic concurrency checks
-- directory delete is accepted by the API and journaled, but client-side local delete propagation currently targets file deletions only
+- directory delete is accepted by the API, journaled, and used by client-side local empty-directory delete propagation
 
 Directory move semantics:
 
@@ -701,7 +743,43 @@ Current implementation note:
 - the change feed emits one `path_moved` event for the moved root
 - client-side remote move application now uses direct local path moves instead of a full rehydrate fallback
 - local watcher-driven file rename propagation is implemented on the client side
-- local watcher-driven directory subtree move propagation is still pending
+- local watcher-driven directory subtree move propagation is implemented on the client side
+
+### POST /workspaces/{workspaceId}/conflicts/resolve
+
+Resolves a client-side blocked conflict path by accepting the current canonical server state.
+
+Request:
+
+```json
+{
+  "path": "packages/MyPkg/descriptor.json",
+  "resolution": "accept_server",
+  "origin": "local-client"
+}
+```
+
+Response `200`:
+
+```json
+{
+  "workspaceId": "crm-prod-main",
+  "path": "packages/MyPkg/descriptor.json",
+  "resolution": "accept_server",
+  "workspaceRevision": 18446,
+  "existsOnServer": true,
+  "fileRevision": 18015,
+  "contentHash": "sha256:44ddef..."
+}
+```
+
+Current implementation note:
+
+- `accept_server` and `accept_local` are currently implemented
+- the endpoint does not mutate server content; it confirms the current canonical server state for the path
+- if the path no longer exists on the server, the response returns `existsOnServer: false`
+- the client uses this endpoint before unblocking the path locally
+- for `accept_local`, the client resolves against current server metadata and then replays the local file or delete using fresh base revision/hash values
 
 ## Change Feed API
 
@@ -716,9 +794,9 @@ Query params:
 
 Current implementation note:
 
-- the change feed is currently backed by an in-memory per-workspace journal
-- it is suitable for API contract development and client integration work
-- durable journal persistence is still a later milestone
+- the change feed is backed by a file-backed per-workspace journal persisted at `.clio-fs/server/change-journal.json`
+- the server also runs a polling watcher over registered workspace roots and appends external filesystem changes made outside the API
+- API-originated writes resync watcher baselines so the same mutation is not journaled twice
 
 Response `200`:
 
@@ -865,6 +943,15 @@ Client behavior on `409`:
 4. mark the path as conflict-blocked in local metadata
 5. optionally attempt 3-way merge for text files into a separate merged artifact
 6. do not resume outbound writes for that path until the conflict is resolved explicitly
+
+Current implementation note:
+
+- the client now persists conflict-blocked paths in local state
+- the client writes sibling `*.conflict-server-*` artifacts for stale file writes and deletes when canonical server content can be materialized
+- conflict-blocked paths are skipped by outbound watcher writes until explicitly resolved
+- the explicit resolution flows are:
+  - `accept_server`: client restores canonical server state locally, then unblocks the path
+  - `accept_local`: client fetches current server metadata, retries the local version against that metadata, then unblocks the path on success
 
 Recommended local conflict file naming:
 

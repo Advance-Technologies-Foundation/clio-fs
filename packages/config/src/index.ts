@@ -33,6 +33,8 @@ export interface AppConfig {
     port: number;
     authToken: string;
     workspaceRegistryFilePath: string;
+    watchSettingsFilePath: string;
+    changeJournalFilePath: string;
   };
   serverUi: {
     host: string;
@@ -46,6 +48,7 @@ export interface AppConfig {
     defaultWorkspaceRoot: string;
     stateFilePath: string;
     pollIntervalMs: number;
+    localWatchScanIntervalMs: number;
   };
 }
 
@@ -64,6 +67,16 @@ export const readAppConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig =
         env,
         "CLIO_FS_SERVER_WORKSPACE_REGISTRY_FILE",
         ".clio-fs/server/workspaces.json"
+      ),
+      watchSettingsFilePath: readString(
+        env,
+        "CLIO_FS_SERVER_WATCH_SETTINGS_FILE",
+        ".clio-fs/server/watch-settings.json"
+      ),
+      changeJournalFilePath: readString(
+        env,
+        "CLIO_FS_SERVER_CHANGE_JOURNAL_FILE",
+        ".clio-fs/server/change-journal.json"
       )
     },
     serverUi: {
@@ -97,7 +110,8 @@ export const readAppConfig = (env: NodeJS.ProcessEnv = process.env): AppConfig =
         "./workspaces"
       ),
       stateFilePath: readString(env, "CLIO_FS_CLIENT_STATE_FILE", ".clio-fs/client/state.json"),
-      pollIntervalMs: readInteger(env, "CLIO_FS_CLIENT_POLL_INTERVAL_MS", 1000)
+      pollIntervalMs: readInteger(env, "CLIO_FS_CLIENT_POLL_INTERVAL_MS", 1000),
+      localWatchScanIntervalMs: readInteger(env, "CLIO_FS_CLIENT_LOCAL_WATCH_SCAN_INTERVAL_MS", 250)
     }
   };
 };

@@ -1,46 +1,53 @@
 import { createHash } from "node:crypto";
 import { join, relative } from "node:path";
-import type { ClientFileSystemAdapter } from "./filesystem.js";
-
-export type MirrorWatcherEvent =
-  | {
-      type: "file_changed";
-      path: string;
-      content: string;
-      contentHash: string;
-    }
-  | {
-      type: "file_deleted";
-      path: string;
-    }
-  | {
-      type: "directory_created";
-      path: string;
-    }
-  | {
-      type: "directory_deleted";
-      path: string;
-    }
-  | {
-      type: "path_moved";
-      path: string;
-      oldPath: string;
-    };
-
-export interface MirrorWatcher {
-  start: (listener: (event: MirrorWatcherEvent) => void) => void;
-  stop: () => void;
-}
+import type { ChangeOrigin, ServerWatchSettings, WorkspaceRecord } from "@clio-fs/contracts";
+import type { ChangeJournal, WorkspaceRegistry } from "@clio-fs/database";
+import type { FileSystemAdapter } from "./filesystem.js";
 
 interface FileSnapshot {
-  content: string;
   contentHash: string;
+  size: number;
+}
+
+interface WorkspaceScanState {
+  files: Map<string, FileSnapshot>;
+  directories: Set<string>;
+  pending: Map<string, PendingWorkspaceEvent>;
+}
+
+type WorkspaceWatcherEvent =
+  | { type: "file_created"; path: string; contentHash: string; size: number }
+  | { type: "file_updated"; path: string; contentHash: string; size: number }
+  | { type: "file_deleted"; path: string }
+  | { type: "directory_created"; path: string }
+  | { type: "directory_deleted"; path: string }
+  | { type: "path_moved"; oldPath: string; path: string };
+
+interface PendingWorkspaceEvent {
+  event: WorkspaceWatcherEvent;
+  dueAt: number;
 }
 
 interface MatchedMovePair {
   oldPath: string;
   newPath: string;
   contentHash: string;
+}
+
+export interface WorkspaceChangeWatcher {
+  start: () => void;
+  stop: () => void;
+  resyncWorkspace: (workspaceId: string) => void;
+  removeWorkspace: (workspaceId: string) => void;
+}
+
+export interface WorkspaceChangeWatcherOptions {
+  registry: WorkspaceRegistry;
+  journal: ChangeJournal;
+  filesystem: FileSystemAdapter;
+  getWatchSettings: () => ServerWatchSettings;
+  pollIntervalMs?: number;
+  origin?: ChangeOrigin;
 }
 
 const hashText = (content: string) =>
@@ -157,12 +164,12 @@ const detectDirectoryMoveGroups = (
 };
 
 const scanFiles = (
-  filesystem: ClientFileSystemAdapter,
+  filesystem: FileSystemAdapter,
   rootPath: string,
   directoryPath = rootPath,
   results = new Map<string, FileSnapshot>()
 ) => {
-  if (!filesystem.exists(directoryPath)) {
+  if (!filesystem.exists(rootPath) || !filesystem.exists(directoryPath)) {
     return results;
   }
 
@@ -182,8 +189,8 @@ const scanFiles = (
     const relativePath = relative(rootPath, absolutePath).replaceAll("\\", "/");
 
     results.set(relativePath, {
-      content,
-      contentHash: hashText(content)
+      contentHash: hashText(content),
+      size: Buffer.byteLength(content, "utf8")
     });
   }
 
@@ -191,12 +198,12 @@ const scanFiles = (
 };
 
 const scanDirectories = (
-  filesystem: ClientFileSystemAdapter,
+  filesystem: FileSystemAdapter,
   rootPath: string,
   directoryPath = rootPath,
   results = new Set<string>()
 ) => {
-  if (!filesystem.exists(directoryPath)) {
+  if (!filesystem.exists(rootPath) || !filesystem.exists(directoryPath)) {
     return results;
   }
 
@@ -214,54 +221,84 @@ const scanDirectories = (
   return results;
 };
 
-export interface PollingMirrorWatcherOptions {
-  filesystem: ClientFileSystemAdapter;
-  rootPath: string;
-  pollIntervalMs: number;
-  settleDelayMs: number;
-}
+const createScanState = (
+  filesystem: FileSystemAdapter,
+  workspace: WorkspaceRecord,
+  pending = new Map<string, PendingWorkspaceEvent>()
+): WorkspaceScanState => ({
+  files: scanFiles(filesystem, workspace.rootPath),
+  directories: scanDirectories(filesystem, workspace.rootPath),
+  pending
+});
 
-interface PendingWatcherEvent {
-  event: MirrorWatcherEvent;
-  dueAt: number;
-}
-
-export class PollingMirrorWatcher implements MirrorWatcher {
-  readonly #filesystem: ClientFileSystemAdapter;
-  readonly #rootPath: string;
+export class PollingWorkspaceChangeWatcher implements WorkspaceChangeWatcher {
+  readonly #registry: WorkspaceRegistry;
+  readonly #journal: ChangeJournal;
+  readonly #filesystem: FileSystemAdapter;
+  readonly #getWatchSettings: () => ServerWatchSettings;
   readonly #pollIntervalMs: number;
-  readonly #settleDelayMs: number;
-  #listener?: (event: MirrorWatcherEvent) => void;
+  readonly #origin: ChangeOrigin;
+  readonly #states = new Map<string, WorkspaceScanState>();
   #interval?: NodeJS.Timeout;
-  #knownFiles = new Map<string, { content: string; contentHash: string }>();
-  #knownDirectories = new Set<string>();
-  #pendingEvents = new Map<string, PendingWatcherEvent>();
 
-  constructor(options: PollingMirrorWatcherOptions) {
+  constructor(options: WorkspaceChangeWatcherOptions) {
+    this.#registry = options.registry;
+    this.#journal = options.journal;
     this.#filesystem = options.filesystem;
-    this.#rootPath = options.rootPath;
-    this.#pollIntervalMs = options.pollIntervalMs;
-    this.#settleDelayMs = options.settleDelayMs;
+    this.#getWatchSettings = options.getWatchSettings;
+    this.#pollIntervalMs = options.pollIntervalMs ?? 250;
+    this.#origin = options.origin ?? "unknown";
   }
 
-  start(listener: (event: MirrorWatcherEvent) => void) {
-    this.#listener = listener;
-    this.#knownFiles = scanFiles(this.#filesystem, this.#rootPath);
-    this.#knownDirectories = scanDirectories(this.#filesystem, this.#rootPath);
-    this.#pendingEvents.clear();
+  start() {
+    for (const workspace of this.#registry.list()) {
+      this.resyncWorkspace(workspace.workspaceId);
+    }
 
     this.#interval = setInterval(() => {
-      const now = Date.now();
-      const nextFiles = scanFiles(this.#filesystem, this.#rootPath);
-      const nextDirectories = scanDirectories(this.#filesystem, this.#rootPath);
+      this.#tick();
+    }, this.#pollIntervalMs);
+  }
+
+  stop() {
+    if (this.#interval) {
+      clearInterval(this.#interval);
+      this.#interval = undefined;
+    }
+  }
+
+  resyncWorkspace(workspaceId: string) {
+    const workspace = this.#registry.get(workspaceId);
+
+    if (!workspace) {
+      this.#states.delete(workspaceId);
+      return;
+    }
+
+    this.#states.set(workspaceId, createScanState(this.#filesystem, workspace));
+  }
+
+  removeWorkspace(workspaceId: string) {
+    this.#states.delete(workspaceId);
+  }
+
+  #tick() {
+    const now = Date.now();
+    const settleDelayMs = this.#getWatchSettings().settleDelayMs;
+
+    for (const workspace of this.#registry.list()) {
+      const previousState =
+        this.#states.get(workspace.workspaceId) ?? createScanState(this.#filesystem, workspace);
+      const nextFiles = scanFiles(this.#filesystem, workspace.rootPath);
+      const nextDirectories = scanDirectories(this.#filesystem, workspace.rootPath);
       const createdFiles = new Map<string, FileSnapshot>();
-      const changedFiles = new Map<string, FileSnapshot>();
+      const updatedFiles = new Map<string, FileSnapshot>();
       const deletedFiles = new Map<string, FileSnapshot>();
       const createdDirectories = new Set<string>();
       const deletedDirectories = new Set<string>();
 
       for (const [path, next] of nextFiles.entries()) {
-        const previous = this.#knownFiles.get(path);
+        const previous = previousState.files.get(path);
 
         if (!previous) {
           createdFiles.set(path, next);
@@ -269,23 +306,23 @@ export class PollingMirrorWatcher implements MirrorWatcher {
         }
 
         if (previous.contentHash !== next.contentHash) {
-          changedFiles.set(path, next);
+          updatedFiles.set(path, next);
         }
       }
 
-      for (const [path, previous] of this.#knownFiles.entries()) {
+      for (const [path, previous] of previousState.files.entries()) {
         if (!nextFiles.has(path)) {
           deletedFiles.set(path, previous);
         }
       }
 
       for (const path of nextDirectories) {
-        if (!this.#knownDirectories.has(path)) {
+        if (!previousState.directories.has(path)) {
           createdDirectories.add(path);
         }
       }
 
-      for (const path of this.#knownDirectories) {
+      for (const path of previousState.directories) {
         if (!nextDirectories.has(path)) {
           deletedDirectories.add(path);
         }
@@ -318,15 +355,11 @@ export class PollingMirrorWatcher implements MirrorWatcher {
           const oldPath = oldPaths.shift();
           const newPath = newPaths.shift();
 
-          if (typeof oldPath !== "string" || typeof newPath !== "string") {
+          if (!oldPath || !newPath) {
             continue;
           }
 
-          matchedPairs.push({
-            oldPath,
-            newPath,
-            contentHash
-          });
+          matchedPairs.push({ oldPath, newPath, contentHash });
         }
       }
 
@@ -352,15 +385,11 @@ export class PollingMirrorWatcher implements MirrorWatcher {
           }
         }
 
-        this.#queuePendingEvent(
-          `path:${group.newRoot}`,
-          {
-            type: "path_moved",
-            oldPath: group.oldRoot,
-            path: group.newRoot
-          },
-          now
-        );
+        this.#queuePendingEvent(previousState, `path:${group.newRoot}`, {
+          type: "path_moved",
+          oldPath: group.oldRoot,
+          path: group.newRoot
+        }, now, settleDelayMs);
       }
 
       for (const pair of matchedPairs) {
@@ -370,111 +399,106 @@ export class PollingMirrorWatcher implements MirrorWatcher {
 
         deletedFiles.delete(pair.oldPath);
         createdFiles.delete(pair.newPath);
-        this.#queuePendingEvent(
-          `path:${pair.newPath}`,
-          {
-            type: "path_moved",
-            oldPath: pair.oldPath,
-            path: pair.newPath
-          },
-          now
-        );
+        this.#queuePendingEvent(previousState, `path:${pair.newPath}`, {
+          type: "path_moved",
+          oldPath: pair.oldPath,
+          path: pair.newPath
+        }, now, settleDelayMs);
       }
 
-      for (const [path, next] of createdFiles.entries()) {
-        this.#queuePendingEvent(`path:${path}`, {
-          type: "file_changed",
+      for (const [path, snapshot] of createdFiles.entries()) {
+        this.#queuePendingEvent(previousState, `path:${path}`, {
+          type: "file_created",
           path,
-          content: next.content,
-          contentHash: next.contentHash
-        }, now);
+          contentHash: snapshot.contentHash,
+          size: snapshot.size
+        }, now, settleDelayMs);
       }
 
-      for (const [path, next] of changedFiles.entries()) {
-        this.#queuePendingEvent(`path:${path}`, {
-          type: "file_changed",
+      for (const [path, snapshot] of updatedFiles.entries()) {
+        this.#queuePendingEvent(previousState, `path:${path}`, {
+          type: "file_updated",
           path,
-          content: next.content,
-          contentHash: next.contentHash
-        }, now);
+          contentHash: snapshot.contentHash,
+          size: snapshot.size
+        }, now, settleDelayMs);
       }
 
       for (const path of deletedFiles.keys()) {
-        this.#queuePendingEvent(`path:${path}`, {
-          type: "file_deleted",
-          path
-        }, now);
+        this.#queuePendingEvent(previousState, `path:${path}`, { type: "file_deleted", path }, now, settleDelayMs);
       }
 
       for (const path of [...createdDirectories].sort((left, right) => left.localeCompare(right))) {
-        this.#queuePendingEvent(`path:${path}`, {
-          type: "directory_created",
-          path
-        }, now);
+        this.#queuePendingEvent(previousState, `path:${path}`, { type: "directory_created", path }, now, settleDelayMs);
       }
 
       for (const path of [...deletedDirectories].sort((left, right) => right.localeCompare(left))) {
-        this.#queuePendingEvent(`path:${path}`, {
-          type: "directory_deleted",
-          path
-        }, now);
+        this.#queuePendingEvent(previousState, `path:${path}`, { type: "directory_deleted", path }, now, settleDelayMs);
       }
 
-      this.#knownFiles = nextFiles;
-      this.#knownDirectories = nextDirectories;
-      this.#flushReadyEvents(now);
-    }, this.#pollIntervalMs);
-  }
-
-  stop() {
-    if (this.#interval) {
-      clearInterval(this.#interval);
-      this.#interval = undefined;
+      previousState.files = nextFiles;
+      previousState.directories = nextDirectories;
+      this.#flushReadyEvents(workspace.workspaceId, previousState, now);
+      this.#states.set(workspace.workspaceId, previousState);
     }
-
-    this.#pendingEvents.clear();
   }
 
-  #queuePendingEvent(key: string, event: MirrorWatcherEvent, now: number) {
-    this.#pendingEvents.delete(`path:${event.path}`);
+  #queuePendingEvent(
+    state: WorkspaceScanState,
+    key: string,
+    event: WorkspaceWatcherEvent,
+    now: number,
+    settleDelayMs: number
+  ) {
+    state.pending.delete(`path:${event.path}`);
 
     if (event.type === "path_moved") {
-      this.#pendingEvents.delete(`path:${event.oldPath}`);
+      state.pending.delete(`path:${event.oldPath}`);
     }
 
-    this.#pendingEvents.set(key, {
+    state.pending.set(key, {
       event,
-      dueAt: now + this.#settleDelayMs
+      dueAt: now + settleDelayMs
     });
   }
 
-  #flushReadyEvents(now: number) {
-    for (const [key, pending] of this.#pendingEvents.entries()) {
+  #flushReadyEvents(workspaceId: string, state: WorkspaceScanState, now: number) {
+    for (const [key, pending] of state.pending.entries()) {
       if (pending.dueAt > now) {
         continue;
       }
 
-      this.#pendingEvents.delete(key);
-      this.#listener?.(pending.event);
+      state.pending.delete(key);
+      this.#appendEvent(workspaceId, pending.event);
     }
   }
+
+  #appendEvent(workspaceId: string, event: WorkspaceWatcherEvent) {
+    this.#journal.append({
+      workspaceId,
+      operation:
+        event.type === "file_created" ||
+        event.type === "file_updated" ||
+        event.type === "file_deleted" ||
+        event.type === "directory_created" ||
+        event.type === "directory_deleted" ||
+        event.type === "path_moved"
+          ? event.type
+          : "file_updated",
+      path: event.path,
+      oldPath: event.type === "path_moved" ? event.oldPath : null,
+      origin: this.#origin,
+      contentHash:
+        event.type === "file_created" || event.type === "file_updated"
+          ? event.contentHash
+          : null,
+      size:
+        event.type === "file_created" || event.type === "file_updated"
+          ? event.size
+          : null
+    });
+  }
 }
 
-export const createPollingMirrorWatcher = (options: PollingMirrorWatcherOptions) =>
-  new PollingMirrorWatcher(options);
-
-export class ManualMirrorWatcher implements MirrorWatcher {
-  #listener?: (event: MirrorWatcherEvent) => void;
-
-  start(listener: (event: MirrorWatcherEvent) => void) {
-    this.#listener = listener;
-  }
-
-  stop() {}
-
-  emit(event: MirrorWatcherEvent) {
-    this.#listener?.(event);
-  }
-}
-
-export const createManualMirrorWatcher = () => new ManualMirrorWatcher();
+export const createPollingWorkspaceChangeWatcher = (options: WorkspaceChangeWatcherOptions) =>
+  new PollingWorkspaceChangeWatcher(options);

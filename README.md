@@ -146,30 +146,37 @@ Implemented today:
 - in-memory multi-workspace registry for early development
 - first endpoints:
   - `GET /health`
+  - `GET /settings/watch`
+  - `PUT /settings/watch`
   - `GET /workspaces`
   - `POST /workspaces/register`
   - `GET /workspaces/:workspaceId`
   - `GET /workspaces/:workspaceId/snapshot`
   - `POST /workspaces/:workspaceId/snapshot-materialize`
   - `GET /workspaces/:workspaceId/changes?since=`
+  - `POST /workspaces/:workspaceId/conflicts/resolve`
   - `DELETE /workspaces/:workspaceId`
 - validation for `workspaceId` and absolute `rootPath`
 - server-level `platform` reported via `GET /health`
 - recursive snapshot manifest endpoint for initial hydrate preparation
 - bulk snapshot materialization endpoint for initial file content hydrate
-- in-memory per-workspace change feed endpoint for revision-ordered catch-up
+- file-backed per-workspace change journal at `.clio-fs/server/change-journal.json`
+- revision-ordered change feed endpoint backed by the durable journal
 - conditional server-side utf8 file write endpoint with optimistic concurrency
 - conditional server-side delete endpoint for files and directories with revision-aware conflict checks
 - server-side directory create endpoint for revisioned directory bootstrap
 - server-side move endpoint for file and directory renames
+- server-side polling watcher that captures direct workspace mutations made outside the API and appends them to the journal
 - optional `displayName`; most workspaces can rely on `workspaceId` alone
 - file-backed workspace registry stored in `.clio-fs/server/workspaces.json`
+- file-backed server watch settings stored in `.clio-fs/server/watch-settings.json`
 - integration tests covering health, auth, registration, validation, and duplicate detection
 - API tests use in-memory registry state and mocked filesystem inputs instead of real disk writes
 - a compiled dev flow for `@clio-fs/server` so `corepack pnpm --filter @clio-fs/server dev` runs against emitted `dist`
 - an operator-facing server UI in `apps/server-ui`
 - server-rendered dashboard and workspace detail pages backed by control-plane API calls
 - modal-based workspace registration in the UI without `curl`
+- server settings modal opened from a gear action in the dashboard top bar
 - native `Choose Folder` button for selecting `rootPath` through the operating system file explorer dialog
 - workspace creation returns to the dashboard and refreshes the workspace list instead of opening detail immediately
 - empty-state dashboard collapses to a blank slate with a single `Add Workspace` action
@@ -187,9 +194,17 @@ Implemented today:
 - client-side move API
 - client-side delete API for conditional file removal
 - file-backed client bind state store at `.clio-fs/client/state.json`
+- file-backed client conflict metadata persisted alongside bind state
 - local watcher-driven push loop for file create/update/delete events
+- local watcher-driven empty-directory create/delete propagation through directory create and delete endpoints
 - polling watcher-based local file rename propagation through the move endpoint
+- default local watcher debounce is configured at the server level and loaded by clients through `GET /settings/watch`
+- polling watcher-based local directory subtree move propagation through the move endpoint
 - client tests covering hydrate and server-originated change application on mocked adapters
+- conflict-safe client write handling that stores sibling `*.conflict-server-*` artifacts and blocks stale paths after `409`
+- explicit conflict resolution flows for `accept_server` and `accept_local`
+- persistent client pending-operation queue with retry/replay for transient failures
+- runnable opt-in local sync scenario runner in mocked mode by default, with optional real-filesystem mode
 
 ## Run The UI Locally
 
@@ -235,16 +250,15 @@ Current client behavior:
 - binds to one workspace
 - performs initial hydrate through `snapshot` and `snapshot-materialize`
 - polls `changes?since=` and applies server-originated create, update, and delete events
+- receives direct server-side workspace mutations captured by the server watcher, including file updates outside the HTTP API
 - can push a conditional utf8 file write through the control plane
 - can create directories through the control plane
 - can move files and directory subtrees through the control plane
 - can push a conditional delete through the control plane
-- can watch the local mirror and push changed and deleted files automatically
-
-Current client limitations:
-
-- local watcher-driven empty-directory creation is not implemented yet
-- local watcher-driven directory subtree move propagation is not implemented yet
+- can watch the local mirror and push changed files, deletes, empty-directory creates/deletes, and move events automatically
+- marks stale local paths as conflict-blocked after `409` and writes canonical server content to sibling conflict artifacts
+- can explicitly resolve a blocked path by accepting canonical server state or replaying the local version against the latest server revision
+- stores pending local operations for transient failures and retries them on subsequent sync cycles
 
 ## Opt-In Local Sync Scenario
 
@@ -259,10 +273,14 @@ corepack pnpm run scenario:local-sync
 ```
 
 This command is intentionally opt-in and separate from the default test suite.
-Right now it prints the frozen scenario contract and its execution requirements.
-It must not be reported as a real sync pass until the mirror client implementation exists.
-When implemented, this scenario must default to mocked filesystem and persistence adapters.
-Any real-filesystem variant must stay opt-in and separate from the default integration path.
+It now runs a real end-to-end scenario in mocked mode by default and writes scenario artifacts under `.clio-fs/scenario-artifacts`.
+An optional heavier real-filesystem mode is available via:
+
+```bash
+node scripts/run-local-sync-scenario.mjs --mode=real
+```
+
+The mocked mode remains the default integration path.
 
 ## Recommended Reading Order
 
@@ -274,9 +292,9 @@ Any real-filesystem variant must stay opt-in and separate from the default integ
 
 ## Next Step
 
-The next practical milestone is extending implementation beyond the initial server slice:
+The next practical milestone is production hardening:
 
-- persistent workspace registry storage
-- workspace snapshot and change-feed endpoints
-- server control UI shell
-- local mirror daemon sync loop
+- richer conflict resolution beyond text-file `accept_server` / `accept_local`
+- binary payload support
+- optional streaming transport in addition to polling
+- broader operational diagnostics and recovery tooling

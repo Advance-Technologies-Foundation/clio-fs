@@ -14,7 +14,35 @@ test("file client state store persists bind state to disk", () => {
     workspaceId: "persisted-client-main",
     mirrorRoot: "/tmp/persisted-client-main",
     lastAppliedRevision: 7,
-    hydrated: true
+    hydrated: true,
+    conflicts: [
+      {
+        path: "packages/Alpha/readme.txt",
+        detectedAt: "2026-03-27T00:00:00.000Z",
+        serverArtifactPath: "/tmp/persisted-client-main/packages/Alpha/readme.txt.conflict-server-2026-03-27T00-00-00.000Z",
+        message: "File has changed since the provided base revision"
+      }
+    ],
+    pendingOperations: [
+      {
+        id: "put:packages/Alpha/readme.txt",
+        kind: "put_file",
+        path: "packages/Alpha/readme.txt",
+        content: "local-version\n",
+        baseFileRevision: 7,
+        attemptCount: 1,
+        enqueuedAt: "2026-03-27T00:00:00.000Z",
+        nextRetryAt: "2026-03-27T00:00:02.000Z",
+        lastError: "Service unavailable"
+      }
+    ],
+    trackedFiles: [
+      {
+        path: "packages/Alpha/readme.txt",
+        fileRevision: 7,
+        contentHash: "sha256:abc"
+      }
+    ]
   });
 
   const saved = JSON.parse(readFileSync(filePath, "utf8")) as {
@@ -31,6 +59,34 @@ test("file client state store persists bind state to disk", () => {
     workspaceId: "persisted-client-main",
     mirrorRoot: "/tmp/persisted-client-main",
     lastAppliedRevision: 7,
-    hydrated: true
+    hydrated: true,
+    conflicts: [
+      {
+        path: "packages/Alpha/readme.txt",
+        detectedAt: "2026-03-27T00:00:00.000Z",
+        serverArtifactPath: "/tmp/persisted-client-main/packages/Alpha/readme.txt.conflict-server-2026-03-27T00-00-00.000Z",
+        message: "File has changed since the provided base revision"
+      }
+    ],
+    pendingOperations: [
+      {
+        id: "put:packages/Alpha/readme.txt",
+        kind: "put_file",
+        path: "packages/Alpha/readme.txt",
+        content: "local-version\n",
+        baseFileRevision: 7,
+        attemptCount: 1,
+        enqueuedAt: "2026-03-27T00:00:00.000Z",
+        nextRetryAt: "2026-03-27T00:00:02.000Z",
+        lastError: "Service unavailable"
+      }
+    ],
+    trackedFiles: [
+      {
+        path: "packages/Alpha/readme.txt",
+        fileRevision: 7,
+        contentHash: "sha256:abc"
+      }
+    ]
   });
 });

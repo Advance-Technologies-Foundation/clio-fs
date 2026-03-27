@@ -8,10 +8,12 @@ import { createManualMirrorWatcher } from "./watcher.js";
 const createFetchStub = () => {
   let snapshotCalls = 0;
   let changeCalls = 0;
+  let watchSettingsCalls = 0;
   const putCalls: Array<{ path: string | null; baseFileRevision?: number; content: string }> = [];
   const deleteCalls: Array<{ path: string | null; baseFileRevision?: number }> = [];
   const mkdirCalls: Array<{ path: string | null }> = [];
   const moveCalls: Array<{ oldPath: string; newPath: string }> = [];
+  const resolveCalls: Array<{ path: string; resolution: string }> = [];
 
   const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
@@ -53,6 +55,17 @@ const createFetchStub = () => {
               fileRevision: 2
             }
           ]
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    if (url.pathname === "/settings/watch") {
+      watchSettingsCalls += 1;
+
+      return new Response(
+        JSON.stringify({
+          settleDelayMs: 20
         }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
@@ -185,6 +198,33 @@ const createFetchStub = () => {
     }
 
     if (
+      url.pathname === "/workspaces/demo-workspace/conflicts/resolve" &&
+      (init?.method ?? "GET") === "POST"
+    ) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        path: string;
+        resolution: string;
+      };
+      resolveCalls.push({
+        path: body.path,
+        resolution: body.resolution
+      });
+
+      return new Response(
+        JSON.stringify({
+          workspaceId: "demo-workspace",
+          path: body.path,
+          resolution: "accept_server",
+          workspaceRevision: 3,
+          existsOnServer: true,
+          fileRevision: 3,
+          contentHash: "sha256:server-readme"
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    if (
       url.pathname === "/workspaces/demo-workspace/file" &&
       (init?.method ?? "GET") === "PUT"
     ) {
@@ -199,7 +239,7 @@ const createFetchStub = () => {
         content: body.content
       });
 
-      if (body.baseFileRevision === 2) {
+      if (body.baseFileRevision === 2 || body.baseFileRevision === 3 || body.baseFileRevision === 0) {
         return new Response(
           JSON.stringify({
             workspaceId: "demo-workspace",
@@ -263,10 +303,12 @@ const createFetchStub = () => {
   };
 
   return Object.assign(fetchImpl, {
+    getWatchSettingsCalls: () => watchSettingsCalls,
     getMkdirCalls: () => mkdirCalls,
     getMoveCalls: () => moveCalls,
     getPutCalls: () => putCalls,
-    getDeleteCalls: () => deleteCalls
+    getDeleteCalls: () => deleteCalls,
+    getResolveCalls: () => resolveCalls
   });
 };
 
@@ -478,6 +520,212 @@ test("pushFile surfaces server conflict errors", async () => {
       }),
     /provided base revision/i
   );
+
+  const conflictState = stateStore.load("demo-workspace");
+  assert.equal(conflictState?.conflicts?.length, 1);
+  assert.equal(conflictState?.conflicts?.[0]?.path, "packages/Alpha/readme.txt");
+  assert.equal(
+    filesystem.snapshot().some((node) =>
+      node.path.includes("readme.txt.conflict-server-")
+    ),
+    true
+  );
+});
+
+test("resolveConflict restores canonical server content and clears the blocked path", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const fetchStub = createFetchStub();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchStub as unknown as typeof fetch
+    }
+  });
+
+  await client.bind();
+  await assert.rejects(
+    () =>
+      client.pushFile("packages/Alpha/readme.txt", "client-stale-write\n", {
+        baseFileRevision: 1
+      }),
+    /provided base revision/i
+  );
+
+  const nextState = await client.resolveConflict("packages/Alpha/readme.txt");
+
+  assert.equal(nextState.conflicts?.length ?? 0, 0);
+  assert.equal(
+    filesystem.readFileText("/mirror/demo-workspace/packages/Alpha/readme.txt"),
+    "alpha-seed-v1\n"
+  );
+  assert.deepEqual(fetchStub.getResolveCalls(), [
+    {
+      path: "packages/Alpha/readme.txt",
+      resolution: "accept_server"
+    }
+  ]);
+});
+
+test("resolveConflict with accept_local reapplies local content to the server and clears the block", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const fetchStub = createFetchStub();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchStub as unknown as typeof fetch
+    }
+  });
+
+  await client.bind();
+  await assert.rejects(
+    () =>
+      client.pushFile("packages/Alpha/readme.txt", "client-stale-write\n", {
+        baseFileRevision: 1
+      }),
+    /provided base revision/i
+  );
+
+  filesystem.writeFileText("/mirror/demo-workspace/packages/Alpha/readme.txt", "my-local-resolution\n");
+  const nextState = await client.resolveConflict("packages/Alpha/readme.txt", "accept_local");
+
+  assert.equal(nextState.conflicts?.length ?? 0, 0);
+  assert.equal(
+    filesystem.readFileText("/mirror/demo-workspace/packages/Alpha/readme.txt"),
+    "my-local-resolution\n"
+  );
+  assert.deepEqual(fetchStub.getResolveCalls(), [
+    {
+      path: "packages/Alpha/readme.txt",
+      resolution: "accept_local"
+    }
+  ]);
+  assert.equal(
+    fetchStub.getPutCalls().some(
+      (call) => call.path === "packages/Alpha/readme.txt" && call.content === "my-local-resolution\n"
+    ),
+    true
+  );
+});
+
+test("pollOnce retries queued pending operations and clears them on success", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  let firstPut = true;
+  const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+
+    if (url.pathname === "/settings/watch") {
+      return new Response(JSON.stringify({ settleDelayMs: 20 }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    if (url.pathname === "/workspaces/demo-workspace/snapshot") {
+      return new Response(
+        JSON.stringify({
+          workspaceId: "demo-workspace",
+          currentRevision: 2,
+          items: []
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    if (
+      url.pathname === "/workspaces/demo-workspace/file" &&
+      (init?.method ?? "GET") === "PUT"
+    ) {
+      if (firstPut) {
+        firstPut = false;
+        return new Response(
+          JSON.stringify({
+            error: {
+              code: "internal_error",
+              message: "Temporary failure"
+            }
+          }),
+          { status: 500, headers: { "content-type": "application/json" } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({
+          workspaceId: "demo-workspace",
+          path: url.searchParams.get("path"),
+          fileRevision: 3,
+          workspaceRevision: 3,
+          contentHash: "sha256:retry-success"
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    if (url.pathname === "/workspaces/demo-workspace/changes") {
+      const since = Number(url.searchParams.get("since"));
+      return new Response(
+        JSON.stringify({
+          workspaceId: "demo-workspace",
+          fromRevision: since,
+          toRevision: since,
+          hasMore: false,
+          items: []
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    if (
+      url.pathname === "/workspaces/demo-workspace/snapshot-materialize" &&
+      (init?.method ?? "GET") === "POST"
+    ) {
+      return new Response(
+        JSON.stringify({
+          workspaceId: "demo-workspace",
+          currentRevision: 2,
+          files: []
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchImpl as typeof fetch
+    }
+  });
+
+  await client.bind();
+  const queuedState = await client.pushFile("packages/Alpha/retry.txt", "queued-write\n");
+  assert.equal(queuedState.pendingOperations?.length, 1);
+
+  queuedState.pendingOperations![0]!.nextRetryAt = "2000-01-01T00:00:00.000Z";
+  stateStore.save(queuedState);
+
+  const nextState = await client.pollOnce();
+  assert.equal(nextState.pendingOperations?.length ?? 0, 0);
+  assert.equal(nextState.lastAppliedRevision, 3);
 });
 
 test("createDirectory sends a directory create request and advances local bind state", async () => {
@@ -652,6 +900,84 @@ test("local watch loop pushes deleted files through the control plane", async ()
   client.stopLocalWatchLoop();
 });
 
+test("local watch loop pushes empty directory creates through the control plane", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const watcher = createManualMirrorWatcher();
+  const fetchStub = createFetchStub();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    watcher,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchStub as unknown as typeof fetch
+    }
+  });
+
+  await client.bind();
+  await client.startLocalWatchLoop();
+
+  filesystem.ensureDirectory("/mirror/demo-workspace/packages/Empty");
+  watcher.emit({
+    type: "directory_created",
+    path: "packages/Empty"
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(fetchStub.getMkdirCalls(), [
+    {
+      path: "packages/Empty"
+    }
+  ]);
+
+  client.stopLocalWatchLoop();
+});
+
+test("local watch loop pushes empty directory deletes through the control plane", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const watcher = createManualMirrorWatcher();
+  const fetchStub = createFetchStub();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    watcher,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchStub as unknown as typeof fetch
+    }
+  });
+
+  await client.bind();
+  filesystem.ensureDirectory("/mirror/demo-workspace/packages/Empty");
+  await client.startLocalWatchLoop();
+
+  filesystem.removePath("/mirror/demo-workspace/packages/Empty");
+  watcher.emit({
+    type: "directory_deleted",
+    path: "packages/Empty"
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(fetchStub.getDeleteCalls(), [
+    {
+      path: "packages/Empty",
+      baseFileRevision: 0
+    }
+  ]);
+
+  client.stopLocalWatchLoop();
+});
+
 test("local watch loop pushes moved files through the control plane", async () => {
   const filesystem = createInMemoryClientFileSystem();
   const stateStore = createInMemoryClientStateStore();
@@ -697,4 +1023,90 @@ test("local watch loop pushes moved files through the control plane", async () =
   );
 
   client.stopLocalWatchLoop();
+});
+
+test("local watch loop pushes moved directory subtrees through the control plane", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const watcher = createManualMirrorWatcher();
+  const fetchStub = createFetchStub();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    watcher,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchStub as unknown as typeof fetch
+    }
+  });
+
+  await client.bind();
+  filesystem.writeFileText("/mirror/demo-workspace/packages/Alpha/sub/nested.txt", "nested\n");
+  await client.startLocalWatchLoop();
+
+  filesystem.movePath(
+    "/mirror/demo-workspace/packages/Alpha",
+    "/mirror/demo-workspace/packages/Beta"
+  );
+  watcher.emit({
+    type: "path_moved",
+    oldPath: "packages/Alpha",
+    path: "packages/Beta"
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(fetchStub.getMoveCalls(), [
+    {
+      oldPath: "packages/Alpha",
+      newPath: "packages/Beta"
+    }
+  ]);
+  assert.equal(
+    filesystem.readFileText("/mirror/demo-workspace/packages/Beta/sub/nested.txt"),
+    "nested\n"
+  );
+
+  client.stopLocalWatchLoop();
+});
+
+test("default local watch loop loads server watch settings and settles rapid writes", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const fetchStub = createFetchStub();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchStub as unknown as typeof fetch
+    }
+  });
+
+  try {
+    await client.bind();
+    await client.startLocalWatchLoop();
+
+    filesystem.writeFileText("/mirror/demo-workspace/packages/Alpha/readme.txt", "rapid-v2\n");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    filesystem.writeFileText("/mirror/demo-workspace/packages/Alpha/readme.txt", "rapid-v3\n");
+    await new Promise((resolve) => setTimeout(resolve, 700));
+
+    assert.equal(fetchStub.getWatchSettingsCalls(), 1);
+    assert.deepEqual(fetchStub.getPutCalls(), [
+      {
+        path: "packages/Alpha/readme.txt",
+        baseFileRevision: 2,
+        content: "rapid-v3\n"
+      }
+    ]);
+  } finally {
+    client.stopLocalWatchLoop();
+  }
 });

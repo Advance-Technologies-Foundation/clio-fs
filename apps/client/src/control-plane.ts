@@ -8,6 +8,9 @@ import type {
   MoveWorkspacePathResponse,
   PutWorkspaceFileRequest,
   PutWorkspaceFileResponse,
+  ResolveWorkspaceConflictRequest,
+  ResolveWorkspaceConflictResponse,
+  ServerWatchSettingsResponse,
   SnapshotMaterializeRequest,
   SnapshotMaterializeResponse,
   WorkspaceChangesResponse,
@@ -18,6 +21,20 @@ export interface ClientControlPlaneOptions {
   baseUrl: string;
   authToken: string;
   fetchImpl?: typeof fetch;
+}
+
+export class ControlPlaneRequestError extends Error {
+  readonly status: number;
+  readonly code: string;
+  readonly details?: Record<string, unknown>;
+
+  constructor(status: number, code: string, message: string, details?: Record<string, unknown>) {
+    super(message);
+    this.name = "ControlPlaneRequestError";
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
 }
 
 export class ClientControlPlane {
@@ -35,6 +52,10 @@ export class ClientControlPlane {
     return this.#request<WorkspaceSnapshotResponse>(
       `/workspaces/${encodeURIComponent(workspaceId)}/snapshot`
     );
+  }
+
+  async getWatchSettings(): Promise<ServerWatchSettingsResponse> {
+    return this.#request<ServerWatchSettingsResponse>("/settings/watch");
   }
 
   async materialize(
@@ -137,6 +158,22 @@ export class ClientControlPlane {
     return this.#request<WorkspaceChangesResponse>(url);
   }
 
+  async resolveConflict(
+    workspaceId: string,
+    input: ResolveWorkspaceConflictRequest
+  ): Promise<ResolveWorkspaceConflictResponse> {
+    return this.#request<ResolveWorkspaceConflictResponse>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/conflicts/resolve`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(input)
+      }
+    );
+  }
+
   async #request<T>(pathOrUrl: string | URL, init?: RequestInit): Promise<T> {
     const response = await this.#fetch(
       pathOrUrl instanceof URL ? pathOrUrl : new URL(pathOrUrl, this.#baseUrl),
@@ -151,7 +188,12 @@ export class ClientControlPlane {
 
     if (!response.ok) {
       const error = (await response.json()) as ApiErrorShape;
-      throw new Error(error.error.message);
+      throw new ControlPlaneRequestError(
+        response.status,
+        error.error.code,
+        error.error.message,
+        error.error.details
+      );
     }
 
     return (await response.json()) as T;

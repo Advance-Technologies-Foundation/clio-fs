@@ -4,13 +4,17 @@ import { healthSummary } from "@clio-fs/sync-core";
 import {
   type ApiErrorShape,
   type RegisterWorkspaceInput,
+  type ServerWatchSettings,
+  type ServerWatchSettingsResponse,
   type SnapshotMaterializeRequest,
+  type UpdateServerWatchSettingsRequest,
   type WorkspacePlatform,
   type WorkspaceRecord
 } from "@clio-fs/contracts";
 import {
   type WorkspaceRegistry,
   type ChangeJournal,
+  type ServerWatchSettingsStore,
   createInMemoryChangeJournal,
   WorkspaceRegistryError
 } from "@clio-fs/database";
@@ -23,10 +27,14 @@ import {
   parseDeleteWorkspaceFileRequest,
   parseMoveWorkspacePathRequest,
   parsePutWorkspaceFileRequest,
+  parseResolveWorkspaceConflictRequest,
   moveWorkspacePath,
   putWorkspaceFile
+  ,
+  resolveWorkspaceConflict
 } from "./file-write.js";
 import { createWorkspaceSnapshot, materializeWorkspaceFiles } from "./snapshot.js";
+import type { WorkspaceChangeWatcher } from "./workspace-watcher.js";
 import { detectServerPlatform, parseRegisterWorkspaceInput } from "./workspace.js";
 
 export interface WorkspaceServerOptions {
@@ -34,9 +42,11 @@ export interface WorkspaceServerOptions {
   port: number;
   authToken: string;
   registry: WorkspaceRegistry;
+  watchSettingsStore: ServerWatchSettingsStore;
   journal?: ChangeJournal;
   serverPlatform?: WorkspacePlatform;
   filesystem?: FileSystemAdapter;
+  workspaceWatcher?: WorkspaceChangeWatcher;
 }
 
 export interface StartedWorkspaceServer {
@@ -109,6 +119,22 @@ const fullWorkspaceShape = (workspace: WorkspaceRecord) => ({
   policies: workspace.policies
 });
 
+const parseUpdateServerWatchSettingsRequest = (payload: unknown): UpdateServerWatchSettingsRequest => {
+  if (typeof payload !== "object" || payload === null) {
+    throw new Error("Watch settings payload must be an object");
+  }
+
+  const input = payload as Partial<UpdateServerWatchSettingsRequest>;
+
+  if (!Number.isInteger(input.settleDelayMs) || Number(input.settleDelayMs) < 100) {
+    throw new Error("settleDelayMs must be an integer greater than or equal to 100");
+  }
+
+  return {
+    settleDelayMs: Number(input.settleDelayMs)
+  };
+};
+
 const routeRequest = async (
   request: IncomingMessage,
   response: ServerResponse,
@@ -131,6 +157,24 @@ const routeRequest = async (
   if (!isAuthorized(request, options.authToken)) {
     writeError(response, 401, "unauthorized", "Missing or invalid bearer token");
     return;
+  }
+
+  if (method === "GET" && url.pathname === "/settings/watch") {
+    const settings: ServerWatchSettingsResponse = options.watchSettingsStore.get();
+    json(response, 200, settings);
+    return;
+  }
+
+  if (method === "PUT" && url.pathname === "/settings/watch") {
+    try {
+      const input = parseUpdateServerWatchSettingsRequest(await readJsonBody(request));
+      json(response, 200, options.watchSettingsStore.update(input));
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid watch settings request";
+      writeError(response, 400, "invalid_request", message);
+      return;
+    }
   }
 
   if (method === "GET" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/changes")) {
@@ -197,6 +241,7 @@ const routeRequest = async (
 
     try {
       const workspace = options.registry.register(input);
+      options.workspaceWatcher?.resyncWorkspace(workspace.workspaceId);
       json(response, 201, {
         workspaceId: workspace.workspaceId,
         status: workspace.status,
@@ -283,6 +328,7 @@ const routeRequest = async (
           options.journal!
         )
       );
+      options.workspaceWatcher?.resyncWorkspace(workspaceId);
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid directory create request";
@@ -314,9 +360,44 @@ const routeRequest = async (
         200,
         moveWorkspacePath(workspace, input, options.filesystem ?? nodeFileSystem, options.journal!)
       );
+      options.workspaceWatcher?.resyncWorkspace(workspaceId);
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid move request";
+      writeError(response, 400, "invalid_request", message, { workspaceId });
+      return;
+    }
+  }
+
+  if (
+    method === "POST" &&
+    url.pathname.startsWith("/workspaces/") &&
+    url.pathname.endsWith("/conflicts/resolve")
+  ) {
+    const [, , workspaceId] = url.pathname.split("/");
+
+    if (!workspaceId) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    const workspace = options.registry.get(workspaceId);
+
+    if (!workspace) {
+      writeError(response, 404, "not_found", "Workspace not found", { workspaceId });
+      return;
+    }
+
+    try {
+      const input = parseResolveWorkspaceConflictRequest(await readJsonBody(request));
+      json(
+        response,
+        200,
+        resolveWorkspaceConflict(workspace, input, options.filesystem ?? nodeFileSystem, options.journal!)
+      );
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid conflict resolution request";
       writeError(response, 400, "invalid_request", message, { workspaceId });
       return;
     }
@@ -358,6 +439,7 @@ const routeRequest = async (
           options.journal!
         )
       );
+      options.workspaceWatcher?.resyncWorkspace(workspaceId);
       return;
     } catch (error) {
       if (error instanceof FileWriteConflictError) {
@@ -407,6 +489,7 @@ const routeRequest = async (
           options.journal!
         )
       );
+      options.workspaceWatcher?.resyncWorkspace(workspaceId);
       return;
     } catch (error) {
       if (error instanceof FileWriteConflictError) {
@@ -459,6 +542,7 @@ const routeRequest = async (
 
     try {
       options.registry.delete(workspaceId);
+      options.workspaceWatcher?.removeWorkspace(workspaceId);
       noContent(response, 204);
       return;
     } catch (error) {
@@ -495,6 +579,7 @@ export const startWorkspaceServer = async (
   options: WorkspaceServerOptions
 ): Promise<StartedWorkspaceServer> => {
   const server = createWorkspaceServer(options);
+  options.workspaceWatcher?.start();
 
   await new Promise<void>((resolve) => {
     server.listen(options.port, options.host, resolve);
@@ -517,6 +602,7 @@ export const startWorkspaceServer = async (
             reject(error);
             return;
           }
+          options.workspaceWatcher?.stop();
           resolve();
         });
       })

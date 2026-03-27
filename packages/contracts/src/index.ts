@@ -44,6 +44,14 @@ export interface ServerHealthResponse {
   platform: WorkspacePlatform;
 }
 
+export interface ServerWatchSettings {
+  settleDelayMs: number;
+}
+
+export interface ServerWatchSettingsResponse extends ServerWatchSettings {}
+
+export interface UpdateServerWatchSettingsRequest extends ServerWatchSettings {}
+
 export interface WorkspaceListResponse {
   items: WorkspaceDescriptor[];
 }
@@ -138,6 +146,22 @@ export interface DeleteWorkspaceFileResponse {
   deleted: true;
 }
 
+export interface ResolveWorkspaceConflictRequest {
+  path: string;
+  resolution: "accept_server" | "accept_local";
+  origin: ChangeOrigin;
+}
+
+export interface ResolveWorkspaceConflictResponse {
+  workspaceId: WorkspaceId;
+  path: string;
+  resolution: "accept_server" | "accept_local";
+  workspaceRevision: Revision;
+  existsOnServer: boolean;
+  fileRevision?: Revision;
+  contentHash?: string | null;
+}
+
 export interface ChangeEvent {
   workspaceId: WorkspaceId;
   revision: Revision;
@@ -173,4 +197,8 @@ export const DEFAULT_WORKSPACE_POLICIES: WorkspacePolicies = {
   allowGit: true,
   allowBinaryWrites: true,
   maxFileBytes: 10 * 1024 * 1024
+};
+
+export const DEFAULT_SERVER_WATCH_SETTINGS: ServerWatchSettings = {
+  settleDelayMs: 1200
 };

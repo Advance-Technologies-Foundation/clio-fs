@@ -3,7 +3,13 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createFileWorkspaceRegistry, createInMemoryChangeJournal, createInMemoryWorkspaceRegistry } from "./index.js";
+import {
+  createFileChangeJournal,
+  createFileServerWatchSettingsStore,
+  createFileWorkspaceRegistry,
+  createInMemoryChangeJournal,
+  createInMemoryWorkspaceRegistry
+} from "./index.js";
 
 test("file workspace registry persists registrations to a JSON file", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "clio-fs-registry-"));
@@ -87,4 +93,66 @@ test("change journal advances workspace revisions monotonically", () => {
     changes.items.map((event) => event.revision),
     [1, 2]
   );
+});
+
+test("file server watch settings store persists settle delay to a JSON file", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "clio-fs-watch-settings-"));
+  const filePath = join(tempDir, "watch-settings.json");
+  const store = createFileServerWatchSettingsStore(filePath);
+
+  assert.equal(store.get().settleDelayMs, 1200);
+
+  const updated = store.update({
+    settleDelayMs: 2400
+  });
+
+  assert.equal(updated.settleDelayMs, 2400);
+
+  const saved = JSON.parse(readFileSync(filePath, "utf8")) as {
+    watch: { settleDelayMs: number };
+  };
+
+  assert.equal(saved.watch.settleDelayMs, 2400);
+
+  const reloaded = createFileServerWatchSettingsStore(filePath);
+
+  assert.equal(reloaded.get().settleDelayMs, 2400);
+});
+
+test("file change journal persists and reloads workspace events", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "clio-fs-change-journal-"));
+  const registryPath = join(tempDir, "workspaces.json");
+  const journalPath = join(tempDir, "journal.json");
+  const registry = createFileWorkspaceRegistry(registryPath);
+
+  registry.register({
+    workspaceId: "persisted-journal",
+    rootPath: "/srv/clio/persisted-journal"
+  });
+
+  const journal = createFileChangeJournal(registry, journalPath);
+  journal.append({
+    workspaceId: "persisted-journal",
+    operation: "file_created",
+    path: "root.txt",
+    origin: "server-tool",
+    size: 5,
+    contentHash: "sha256:demo"
+  });
+
+  const saved = JSON.parse(readFileSync(journalPath, "utf8")) as {
+    events: Array<{ workspaceId: string; revision: number }>;
+  };
+
+  assert.equal(saved.events.length, 1);
+  assert.equal(saved.events[0]?.workspaceId, "persisted-journal");
+  assert.equal(saved.events[0]?.revision, 1);
+
+  const reloadedRegistry = createFileWorkspaceRegistry(registryPath);
+  const reloadedJournal = createFileChangeJournal(reloadedRegistry, journalPath);
+  const changes = reloadedJournal.listSince({ workspaceId: "persisted-journal", since: 0 });
+
+  assert.equal(changes.items.length, 1);
+  assert.equal(changes.items[0]?.path, "root.txt");
+  assert.equal(reloadedRegistry.get("persisted-journal")?.currentRevision, 1);
 });

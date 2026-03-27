@@ -1,12 +1,14 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import {
+  DEFAULT_SERVER_WATCH_SETTINGS,
   DEFAULT_WORKSPACE_POLICIES,
   type ChangeEvent,
   type ChangeOperation,
   type ChangeOrigin,
   type RegisterWorkspaceInput,
   type Revision,
+  type ServerWatchSettings,
   type WorkspaceRecord
 } from "@clio-fs/contracts";
 
@@ -204,6 +206,115 @@ export class FileWorkspaceRegistry extends InMemoryWorkspaceRegistry {
 
 export const createFileWorkspaceRegistry = (filePath: string) => new FileWorkspaceRegistry(filePath);
 
+interface ServerWatchSettingsFileShape {
+  watch: ServerWatchSettings;
+}
+
+const isServerWatchSettings = (value: unknown): value is ServerWatchSettings => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  return Number.isInteger(record.settleDelayMs) && Number(record.settleDelayMs) >= 100;
+};
+
+const loadServerWatchSettingsFile = (filePath: string): ServerWatchSettings => {
+  try {
+    const raw = readFileSync(filePath, "utf8");
+    const payload = JSON.parse(raw) as ServerWatchSettingsFileShape;
+
+    if (!isServerWatchSettings(payload.watch)) {
+      throw new WorkspaceRegistryError(
+        "invalid_workspace",
+        "Server watch settings file has an invalid shape",
+        { filePath }
+      );
+    }
+
+    return payload.watch;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { ...DEFAULT_SERVER_WATCH_SETTINGS };
+    }
+
+    if (error instanceof SyntaxError || error instanceof WorkspaceRegistryError) {
+      throw error;
+    }
+
+    throw new WorkspaceRegistryError(
+      "invalid_workspace",
+      "Failed to load server watch settings file",
+      {
+        filePath,
+        cause: error instanceof Error ? error.message : "Unknown file error"
+      }
+    );
+  }
+};
+
+export interface ServerWatchSettingsStore {
+  get: () => ServerWatchSettings;
+  update: (input: ServerWatchSettings) => ServerWatchSettings;
+}
+
+export class InMemoryServerWatchSettingsStore implements ServerWatchSettingsStore {
+  #settings: ServerWatchSettings;
+
+  constructor(initialSettings: ServerWatchSettings = DEFAULT_SERVER_WATCH_SETTINGS) {
+    this.#settings = { ...initialSettings };
+  }
+
+  get() {
+    return { ...this.#settings };
+  }
+
+  update(input: ServerWatchSettings) {
+    this.#settings = { ...input };
+    return this.get();
+  }
+}
+
+export const createInMemoryServerWatchSettingsStore = (
+  initialSettings: ServerWatchSettings = DEFAULT_SERVER_WATCH_SETTINGS
+) => new InMemoryServerWatchSettingsStore(initialSettings);
+
+export class FileServerWatchSettingsStore implements ServerWatchSettingsStore {
+  readonly #filePath: string;
+  #settings: ServerWatchSettings;
+
+  constructor(filePath: string) {
+    this.#filePath = resolve(filePath);
+    this.#settings = loadServerWatchSettingsFile(this.#filePath);
+  }
+
+  get() {
+    return { ...this.#settings };
+  }
+
+  update(input: ServerWatchSettings) {
+    this.#settings = { ...input };
+    this.flush();
+    return this.get();
+  }
+
+  private flush() {
+    mkdirSync(dirname(this.#filePath), { recursive: true });
+
+    const tempFilePath = `${this.#filePath}.tmp`;
+    const payload: ServerWatchSettingsFileShape = {
+      watch: this.#settings
+    };
+
+    writeFileSync(tempFilePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+    renameSync(tempFilePath, this.#filePath);
+  }
+}
+
+export const createFileServerWatchSettingsStore = (filePath: string) =>
+  new FileServerWatchSettingsStore(filePath);
+
 export interface AppendChangeEventInput {
   workspaceId: string;
   operation: ChangeOperation;
@@ -227,8 +338,69 @@ export interface ChangeJournal {
   getLatestForPath: (workspaceId: string, path: string) => ChangeEvent | undefined;
 }
 
+interface ChangeJournalFileShape {
+  events: ChangeEvent[];
+}
+
+const isChangeEvent = (value: unknown): value is ChangeEvent => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const event = value as Record<string, unknown>;
+
+  return (
+    typeof event.workspaceId === "string" &&
+    typeof event.revision === "number" &&
+    typeof event.timestamp === "string" &&
+    typeof event.operation === "string" &&
+    typeof event.path === "string" &&
+    (typeof event.oldPath === "string" || event.oldPath === null) &&
+    typeof event.origin === "string" &&
+    (typeof event.contentHash === "string" || event.contentHash === null) &&
+    (typeof event.size === "number" || event.size === null) &&
+    (typeof event.operationId === "string" || event.operationId === null)
+  );
+};
+
+const loadChangeJournalFile = (filePath: string): ChangeEvent[] => {
+  try {
+    const raw = readFileSync(filePath, "utf8");
+    const payload = JSON.parse(raw) as ChangeJournalFileShape;
+
+    if (!Array.isArray(payload.events) || !payload.events.every(isChangeEvent)) {
+      throw new WorkspaceRegistryError(
+        "invalid_workspace",
+        "Change journal file has an invalid shape",
+        { filePath }
+      );
+    }
+
+    return payload.events
+      .slice()
+      .sort((left, right) =>
+        left.workspaceId === right.workspaceId
+          ? left.revision - right.revision
+          : left.workspaceId.localeCompare(right.workspaceId)
+      );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return [];
+    }
+
+    if (error instanceof SyntaxError || error instanceof WorkspaceRegistryError) {
+      throw error;
+    }
+
+    throw new WorkspaceRegistryError("invalid_workspace", "Failed to load change journal file", {
+      filePath,
+      cause: error instanceof Error ? error.message : "Unknown file error"
+    });
+  }
+};
+
 export class InMemoryChangeJournal implements ChangeJournal {
-  readonly #eventsByWorkspace = new Map<string, ChangeEvent[]>();
+  protected readonly eventsByWorkspace = new Map<string, ChangeEvent[]>();
   readonly #registry: WorkspaceRegistry;
 
   constructor(registry: WorkspaceRegistry) {
@@ -244,7 +416,8 @@ export class InMemoryChangeJournal implements ChangeJournal {
       });
     }
 
-    const revision = workspace.currentRevision + 1;
+    const latestRevision = (this.eventsByWorkspace.get(input.workspaceId) ?? []).at(-1)?.revision ?? 0;
+    const revision = Math.max(workspace.currentRevision, latestRevision) + 1;
     const event: ChangeEvent = {
       workspaceId: input.workspaceId,
       revision,
@@ -258,16 +431,16 @@ export class InMemoryChangeJournal implements ChangeJournal {
       operationId: input.operationId ?? null
     };
 
-    const items = this.#eventsByWorkspace.get(input.workspaceId) ?? [];
+    const items = this.eventsByWorkspace.get(input.workspaceId) ?? [];
     items.push(event);
-    this.#eventsByWorkspace.set(input.workspaceId, items);
+    this.eventsByWorkspace.set(input.workspaceId, items);
     this.#registry.advanceRevision(input.workspaceId, revision);
 
     return event;
   }
 
   listSince(options: ListChangeEventsOptions) {
-    const items = (this.#eventsByWorkspace.get(options.workspaceId) ?? []).filter(
+    const items = (this.eventsByWorkspace.get(options.workspaceId) ?? []).filter(
       (event) => event.revision > options.since
     );
     const limit = options.limit ?? 500;
@@ -279,7 +452,7 @@ export class InMemoryChangeJournal implements ChangeJournal {
   }
 
   getLatestForPath(workspaceId: string, path: string) {
-    const items = this.#eventsByWorkspace.get(workspaceId) ?? [];
+    const items = this.eventsByWorkspace.get(workspaceId) ?? [];
 
     for (let index = items.length - 1; index >= 0; index -= 1) {
       const event = items[index];
@@ -295,3 +468,48 @@ export class InMemoryChangeJournal implements ChangeJournal {
 
 export const createInMemoryChangeJournal = (registry: WorkspaceRegistry) =>
   new InMemoryChangeJournal(registry);
+
+export class FileChangeJournal extends InMemoryChangeJournal {
+  readonly #filePath: string;
+
+  constructor(registry: WorkspaceRegistry, filePath: string) {
+    super(registry);
+    this.#filePath = resolve(filePath);
+
+    for (const event of loadChangeJournalFile(this.#filePath)) {
+      const items = this.eventsByWorkspace.get(event.workspaceId) ?? [];
+      items.push(event);
+      this.eventsByWorkspace.set(event.workspaceId, items);
+
+      const workspace = registry.get(event.workspaceId);
+      if (workspace && workspace.currentRevision < event.revision) {
+        registry.advanceRevision(event.workspaceId, event.revision);
+      }
+    }
+  }
+
+  override append(input: AppendChangeEventInput): ChangeEvent {
+    const event = super.append(input);
+    this.flush();
+    return event;
+  }
+
+  private flush() {
+    mkdirSync(dirname(this.#filePath), { recursive: true });
+
+    const tempFilePath = `${this.#filePath}.tmp`;
+    const payload: ChangeJournalFileShape = {
+      events: [...this.eventsByWorkspace.values()].flat().sort((left, right) =>
+        left.workspaceId === right.workspaceId
+          ? left.revision - right.revision
+          : left.workspaceId.localeCompare(right.workspaceId)
+      )
+    };
+
+    writeFileSync(tempFilePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+    renameSync(tempFilePath, this.#filePath);
+  }
+}
+
+export const createFileChangeJournal = (registry: WorkspaceRegistry, filePath: string) =>
+  new FileChangeJournal(registry, filePath);

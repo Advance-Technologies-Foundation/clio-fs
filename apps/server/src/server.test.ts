@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createInMemoryChangeJournal, createInMemoryWorkspaceRegistry } from "@clio-fs/database";
+import {
+  createInMemoryChangeJournal,
+  createInMemoryServerWatchSettingsStore,
+  createInMemoryWorkspaceRegistry
+} from "@clio-fs/database";
 import { createMockFileSystem } from "./filesystem.testkit.js";
 import { createWorkspaceServer } from "./server.js";
 
@@ -13,11 +17,13 @@ const startTestServer = async (
 ) => {
   const registry = createInMemoryWorkspaceRegistry();
   const journal = createInMemoryChangeJournal(registry);
+  const watchSettingsStore = createInMemoryServerWatchSettingsStore();
   const server = createWorkspaceServer({
     host: "127.0.0.1",
     port: 0,
     authToken: AUTH_TOKEN,
     registry,
+    watchSettingsStore,
     journal,
     serverPlatform: "linux",
     filesystem: options.filesystem
@@ -70,6 +76,49 @@ test("workspace routes require authorization", async () => {
 
     assert.equal(response.status, 401);
     assert.equal(body.error.code, "unauthorized");
+  } finally {
+    await server.close();
+  }
+});
+
+test("reads and updates server watch settings", async () => {
+  const server = await startTestServer();
+
+  try {
+    const getResponse = await fetch(`${server.baseUrl}/settings/watch`, {
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`
+      }
+    });
+    const getBody = await getResponse.json();
+
+    assert.equal(getResponse.status, 200);
+    assert.equal(getBody.settleDelayMs, 1200);
+
+    const putResponse = await fetch(`${server.baseUrl}/settings/watch`, {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        settleDelayMs: 2200
+      })
+    });
+    const putBody = await putResponse.json();
+
+    assert.equal(putResponse.status, 200);
+    assert.equal(putBody.settleDelayMs, 2200);
+
+    const reloadedResponse = await fetch(`${server.baseUrl}/settings/watch`, {
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`
+      }
+    });
+    const reloadedBody = await reloadedResponse.json();
+
+    assert.equal(reloadedResponse.status, 200);
+    assert.equal(reloadedBody.settleDelayMs, 2200);
   } finally {
     await server.close();
   }
@@ -957,6 +1006,59 @@ test("rejects conflicting file deletes with 409", async () => {
     assert.equal(deleteResponse.status, 409);
     assert.equal(deleteBody.error.code, "conflict");
     assert.equal(mockFileSystem.exists("/mock/delete-conflict/root.txt"), true);
+  } finally {
+    await server.close();
+  }
+});
+
+test("resolves a file conflict by accepting canonical server state", async () => {
+  const mockFileSystem = createMockFileSystem();
+  mockFileSystem.addDirectory("/mock/resolve-main");
+  mockFileSystem.addFile("/mock/resolve-main/root.txt", { content: "server-v2\n" });
+  const server = await startTestServer({ filesystem: mockFileSystem });
+
+  try {
+    await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "resolve-main",
+        rootPath: "/mock/resolve-main"
+      })
+    });
+
+    server.journal.append({
+      workspaceId: "resolve-main",
+      operation: "file_updated",
+      path: "root.txt",
+      origin: "server-tool",
+      size: 10,
+      contentHash: "sha256:server-v2"
+    });
+
+    const resolveResponse = await fetch(`${server.baseUrl}/workspaces/resolve-main/conflicts/resolve`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        path: "root.txt",
+        resolution: "accept_server",
+        origin: "local-client"
+      })
+    });
+    const resolveBody = await resolveResponse.json();
+
+    assert.equal(resolveResponse.status, 200);
+    assert.equal(resolveBody.path, "root.txt");
+    assert.equal(resolveBody.resolution, "accept_server");
+    assert.equal(resolveBody.existsOnServer, true);
+    assert.equal(resolveBody.workspaceRevision, 1);
+    assert.equal(resolveBody.fileRevision, 1);
   } finally {
     await server.close();
   }

@@ -9,6 +9,8 @@ import type {
   MoveWorkspacePathResponse,
   PutWorkspaceFileRequest,
   PutWorkspaceFileResponse,
+  ResolveWorkspaceConflictRequest,
+  ResolveWorkspaceConflictResponse,
   WorkspaceRecord
 } from "@clio-fs/contracts";
 import type { ChangeJournal } from "@clio-fs/database";
@@ -170,6 +172,39 @@ export const parseMoveWorkspacePathRequest = (value: unknown): MoveWorkspacePath
     oldPath: record.oldPath,
     newPath: record.newPath,
     operationId: typeof record.operationId === "string" ? record.operationId : undefined,
+    origin: record.origin
+  };
+};
+
+export const parseResolveWorkspaceConflictRequest = (
+  value: unknown
+): ResolveWorkspaceConflictRequest => {
+  if (typeof value !== "object" || value === null) {
+    throw new Error("request body must be a JSON object");
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (typeof record.path !== "string") {
+    throw new Error("path must be provided as a string");
+  }
+
+  if (record.resolution !== "accept_server" && record.resolution !== "accept_local") {
+    throw new Error("resolution must be accept_server or accept_local");
+  }
+
+  if (
+    record.origin !== "local-client" &&
+    record.origin !== "creatio" &&
+    record.origin !== "server-tool" &&
+    record.origin !== "unknown"
+  ) {
+    throw new Error("origin must be one of local-client, creatio, server-tool, unknown");
+  }
+
+  return {
+    path: record.path,
+    resolution: record.resolution,
     origin: record.origin
   };
 };
@@ -387,5 +422,44 @@ export const createWorkspaceDirectory = (
     path,
     workspaceRevision: event.revision,
     created: true
+  };
+};
+
+export const resolveWorkspaceConflict = (
+  workspace: WorkspaceRecord,
+  input: ResolveWorkspaceConflictRequest,
+  filesystem: FileSystemAdapter,
+  journal: ChangeJournal
+): ResolveWorkspaceConflictResponse => {
+  const path = ensureRelativeWorkspacePath(input.path);
+  const absolutePath = join(workspace.rootPath, path);
+  const latestEvent = journal.getLatestForPath(workspace.workspaceId, path);
+
+  if (!filesystem.exists(absolutePath)) {
+    return {
+      workspaceId: workspace.workspaceId,
+      path,
+      resolution: input.resolution,
+      workspaceRevision: workspace.currentRevision,
+      existsOnServer: false
+    };
+  }
+
+  const stats = filesystem.stat(absolutePath);
+
+  if (stats.kind !== "file") {
+    throw new Error("only file conflict resolution is currently supported");
+  }
+
+  const contentHash = sha256(filesystem.readFileText(absolutePath));
+
+  return {
+    workspaceId: workspace.workspaceId,
+    path,
+    resolution: input.resolution,
+    workspaceRevision: workspace.currentRevision,
+    existsOnServer: true,
+    fileRevision: latestEvent?.revision ?? workspace.currentRevision,
+    contentHash
   };
 };

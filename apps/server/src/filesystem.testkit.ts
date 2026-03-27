@@ -156,6 +156,17 @@ export class MockFileSystem implements FileSystemAdapter {
     }
   }
 
+  snapshot() {
+    return [...this.#nodes.values()]
+      .map((node) => ({
+        path: node.path,
+        kind: node.kind,
+        size: node.size,
+        content: node.content
+      }))
+      .sort((left, right) => left.path.localeCompare(right.path));
+  }
+
   #ensureParentDirectories(path: string) {
     const directoryChain: string[] = [];
     let current = dirname(toKey(path));
