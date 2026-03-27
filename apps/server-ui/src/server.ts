@@ -433,7 +433,7 @@ const renderDashboard = async (
   });
 
   return renderPage("Clio FS Server", body, {
-    topbarActions: `${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
+    topbarActions: `${renderHomeLink()}${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
     topbarSubtitle: "Server Control Plane"
   });
 };
@@ -545,11 +545,14 @@ const renderWorkspaceDetail = (
       </section>
     `,
     {
-      topbarActions: `${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
+      topbarActions: `${renderHomeLink()}${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
       topbarSubtitle: "Server Control Plane"
     }
   );
 };
+
+const renderHomeLink = () =>
+  `<a href="/" style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.375rem 0.875rem;border-radius:8px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.80);font-size:0.8125rem;font-weight:500;text-decoration:none;" onmouseover="this.style.background='rgba(255,255,255,0.14)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'">Home</a>`;
 
 const renderLogsLink = () =>
   `<a href="/logs" style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.375rem 0.875rem;border-radius:8px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.80);font-size:0.8125rem;font-weight:500;text-decoration:none;" onmouseover="this.style.background='rgba(255,255,255,0.14)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'">Logs</a>`;
@@ -613,7 +616,7 @@ const renderLogViewerPage = (watchSettings: ServerWatchSettings) =>
         };
       </script>
     `,
-    { topbarSubtitle: "Server Control Plane", topbarActions: `${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}` }
+    { topbarSubtitle: "Server Control Plane", topbarActions: `${renderHomeLink()}${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}` }
   );
 
 const renderTokensPage = (tokens: AuthTokenListItem[], watchSettings: ServerWatchSettings, notice?: { tone: "error" | "success"; message: string }) =>
@@ -810,7 +813,7 @@ const renderTokensPage = (tokens: AuthTokenListItem[], watchSettings: ServerWatc
       </script>
     `,
     {
-      topbarActions: `${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
+      topbarActions: `${renderHomeLink()}${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
       topbarSubtitle: "Server Control Plane"
     }
   );
