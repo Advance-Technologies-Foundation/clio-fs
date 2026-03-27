@@ -320,6 +320,35 @@ export interface WorkspaceSyncStatusResponse {
   staleSince?: string;
 }
 
+export interface AuthTokenListItem {
+  id: string;
+  label: string;
+  maskedToken: string;
+  createdAt: string;
+  readonly?: boolean;
+}
+
+export interface ListAuthTokensResponse {
+  items: AuthTokenListItem[];
+}
+
+export interface CreateAuthTokenRequest {
+  label: string;
+  token?: string;
+}
+
+export interface CreateAuthTokenResponse {
+  id: string;
+  label: string;
+  token: string;
+  maskedToken: string;
+  createdAt: string;
+}
+
+export interface UpdateAuthTokenRequest {
+  label: string;
+}
+
 export const DEFAULT_WORKSPACE_POLICIES: WorkspacePolicies = {
   allowGit: true,
   allowBinaryWrites: true,

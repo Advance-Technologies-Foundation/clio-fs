@@ -141,6 +141,7 @@ export interface AppConfig {
     workspaceRegistryFilePath: string;
     watchSettingsFilePath: string;
     changeJournalFilePath: string;
+    authTokensFilePath: string;
   };
   serverUi: {
     host: string;
@@ -204,6 +205,11 @@ export const readAppConfig = (
         runtimeEnv,
         "CLIO_FS_SERVER_CHANGE_JOURNAL_FILE",
         ".clio-fs/server/change-journal.json"
+      ),
+      authTokensFilePath: readString(
+        runtimeEnv,
+        "CLIO_FS_SERVER_AUTH_TOKENS_FILE",
+        ".clio-fs/server/auth-tokens.json"
       )
     },
     serverUi: {

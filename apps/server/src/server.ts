@@ -3,6 +3,11 @@ import { URL } from "node:url";
 import { healthSummary } from "@clio-fs/sync-core";
 import {
   type ApiErrorShape,
+  type AuthTokenListItem,
+  type ListAuthTokensResponse,
+  type CreateAuthTokenRequest,
+  type CreateAuthTokenResponse,
+  type UpdateAuthTokenRequest,
   type GetWorkspaceFileResponse,
   type GetWorkspaceTreeResponse,
   type GitDiffRequest,
@@ -25,6 +30,7 @@ import {
   type WorkspaceRegistry,
   type ChangeJournal,
   type ServerWatchSettingsStore,
+  type AuthTokenStore,
   createInMemoryChangeJournal,
   WorkspaceRegistryError
 } from "@clio-fs/database";
@@ -69,6 +75,7 @@ export interface WorkspaceServerOptions {
   filesystem?: FileSystemAdapter;
   workspaceWatcher?: WorkspaceChangeWatcher;
   logger?: Logger;
+  tokenStore?: AuthTokenStore;
   /** Internal: populated by createWorkspaceServer, do not set manually */
   clientActivity?: Map<string, WorkspaceClientActivity>;
 }
@@ -147,13 +154,12 @@ const normalizeAuthTokens = (options: Pick<WorkspaceServerOptions, "authToken" |
   return ["dev-token"];
 };
 
-const isAuthorized = (request: IncomingMessage, authTokens: string[], url?: URL) => {
+const isAuthorized = (request: IncomingMessage, authTokens: string[], url?: URL, tokenStore?: AuthTokenStore) => {
   const header = request.headers.authorization;
-  if (typeof header === "string" && authTokens.includes(header.replace(/^Bearer\s+/u, ""))) {
-    return true;
-  }
+  const bearerToken = typeof header === "string" ? header.replace(/^Bearer\s+/u, "") : undefined;
   const queryToken = url?.searchParams.get("token");
-  return typeof queryToken === "string" && authTokens.includes(queryToken);
+  const candidate = bearerToken ?? queryToken ?? "";
+  return authTokens.includes(candidate) || (tokenStore?.has(candidate) ?? false);
 };
 
 const writeHtml = (response: ServerResponse, statusCode: number, body: string) => {
@@ -300,6 +306,11 @@ connect();
 </script>
 </body>
 </html>`;
+
+const maskToken = (token: string) => {
+  if (token.length <= 8) return "****";
+  return `${token.slice(0, 4)}${"*".repeat(Math.max(4, token.length - 8))}${token.slice(-4)}`;
+};
 
 /** Client is considered live if it polled within this window */
 const LIVE_THRESHOLD_MS = 10_000;
@@ -459,7 +470,7 @@ button{background:#1f6feb;border:none;color:#fff;padding:8px;border-radius:6px;c
     return;
   }
 
-  if (!isAuthorized(request, authTokens, url)) {
+  if (!isAuthorized(request, authTokens, url, options.tokenStore)) {
     writeError(response, 401, "unauthorized", "Missing or invalid bearer token");
     return;
   }
@@ -701,6 +712,82 @@ button{background:#1f6feb;border:none;color:#fff;padding:8px;border-radius:6px;c
     });
 
     response.write(`data: ${JSON.stringify({ timestamp: new Date().toISOString(), level: "info", event: "log_stream_connected" })}\n\n`);
+    return;
+  }
+
+  if (method === "GET" && pathname === "/admin/tokens") {
+    const store = options.tokenStore;
+    const configItems: AuthTokenListItem[] = (options.authTokens ?? []).map((t) => ({
+      id: `config:${t}`,
+      label: "Built-in (config)",
+      maskedToken: maskToken(t),
+      createdAt: "",
+      readonly: true
+    }));
+    const storeItems: AuthTokenListItem[] = (store?.list() ?? []).map((r) => ({
+      id: r.id,
+      label: r.label,
+      maskedToken: maskToken(r.token),
+      createdAt: r.createdAt
+    }));
+    const body: ListAuthTokensResponse = { items: [...configItems, ...storeItems] };
+    json(response, 200, body);
+    return;
+  }
+
+  if (method === "POST" && pathname === "/admin/tokens") {
+    const store = options.tokenStore;
+    if (!store) {
+      writeError(response, 503, "not_configured", "Token store is not configured");
+      return;
+    }
+    const input = (await readJsonBody(request)) as CreateAuthTokenRequest;
+    const label = typeof input.label === "string" ? input.label : "New token";
+    const record = store.add(label, typeof input.token === "string" && input.token.trim() ? input.token.trim() : undefined);
+    (options.logger ?? noopLogger).audit("token_created", { id: record.id, label: record.label });
+    const body: CreateAuthTokenResponse = {
+      id: record.id,
+      label: record.label,
+      token: record.token,
+      maskedToken: maskToken(record.token),
+      createdAt: record.createdAt
+    };
+    json(response, 201, body);
+    return;
+  }
+
+  if (method === "PATCH" && pathname.startsWith("/admin/tokens/")) {
+    const store = options.tokenStore;
+    const tokenId = pathname.slice("/admin/tokens/".length);
+    if (!store || !tokenId) {
+      writeError(response, 404, "not_found", "Token not found");
+      return;
+    }
+    const input = (await readJsonBody(request)) as UpdateAuthTokenRequest;
+    const updated = store.updateLabel(tokenId, typeof input.label === "string" ? input.label : "");
+    if (!updated) {
+      writeError(response, 404, "not_found", "Token not found", { id: tokenId });
+      return;
+    }
+    (options.logger ?? noopLogger).audit("token_updated", { id: tokenId });
+    json(response, 200, { ok: true });
+    return;
+  }
+
+  if (method === "DELETE" && pathname.startsWith("/admin/tokens/")) {
+    const store = options.tokenStore;
+    const tokenId = pathname.slice("/admin/tokens/".length);
+    if (!store || !tokenId) {
+      writeError(response, 404, "not_found", "Token not found");
+      return;
+    }
+    const removed = store.remove(tokenId);
+    if (!removed) {
+      writeError(response, 404, "not_found", "Token not found", { id: tokenId });
+      return;
+    }
+    (options.logger ?? noopLogger).audit("token_deleted", { id: tokenId });
+    json(response, 200, { ok: true });
     return;
   }
 

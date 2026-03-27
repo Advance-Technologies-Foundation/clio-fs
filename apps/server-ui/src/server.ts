@@ -5,6 +5,11 @@ import { promisify } from "node:util";
 import { URL } from "node:url";
 import type {
   ApiErrorShape,
+  AuthTokenListItem,
+  ListAuthTokensResponse,
+  CreateAuthTokenRequest,
+  CreateAuthTokenResponse,
+  UpdateAuthTokenRequest,
   RegisterWorkspaceRequest,
   ServerHealthResponse,
   ServerWatchSettings,
@@ -52,6 +57,10 @@ interface ControlPlaneClient {
   registerWorkspace: (authToken: string, input: RegisterWorkspaceRequest) => Promise<{ workspaceId: string }>;
   deleteWorkspace: (authToken: string, workspaceId: string) => Promise<void>;
   updateWatchSettings: (authToken: string, input: ServerWatchSettings) => Promise<ServerWatchSettings>;
+  listTokens: (authToken: string) => Promise<ListAuthTokensResponse>;
+  createToken: (authToken: string, input: CreateAuthTokenRequest) => Promise<CreateAuthTokenResponse>;
+  updateToken: (authToken: string, id: string, input: UpdateAuthTokenRequest) => Promise<{ ok: boolean }>;
+  deleteToken: (authToken: string, id: string) => Promise<{ ok: boolean }>;
 }
 
 const UI_SESSION_COOKIE_NAME = "clio_fs_server_ui_session";
@@ -331,6 +340,32 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
         },
         body: JSON.stringify(input)
       });
+    },
+    async listTokens(authToken: string) {
+      return request<ListAuthTokensResponse>(authToken, "/admin/tokens");
+    },
+    async createToken(authToken: string, input: CreateAuthTokenRequest) {
+      return request<CreateAuthTokenResponse>(authToken, "/admin/tokens", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(input)
+      });
+    },
+    async updateToken(authToken: string, id: string, input: UpdateAuthTokenRequest) {
+      return request<{ ok: boolean }>(authToken, `/admin/tokens/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(input)
+      });
+    },
+    async deleteToken(authToken: string, id: string) {
+      return request<{ ok: boolean }>(authToken, `/admin/tokens/${encodeURIComponent(id)}`, {
+        method: "DELETE"
+      });
     }
   };
 };
@@ -383,7 +418,7 @@ const renderDashboard = async (
   });
 
   return renderPage("Clio FS Server", body, {
-    topbarActions: `${renderLogsLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
+    topbarActions: `${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
     topbarSubtitle: "Server Control Plane"
   });
 };
@@ -501,6 +536,9 @@ const renderWorkspaceDetail = (
 const renderLogsLink = () =>
   `<a href="/logs" style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.375rem 0.875rem;border-radius:8px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.80);font-size:0.8125rem;font-weight:500;text-decoration:none;" onmouseover="this.style.background='rgba(255,255,255,0.14)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'">Logs</a>`;
 
+const renderAdminLink = () =>
+  `<a href="/admin/tokens" style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.375rem 0.875rem;border-radius:8px;background:rgba(255,255,255,0.08);color:rgba(255,255,255,0.80);font-size:0.8125rem;font-weight:500;text-decoration:none;" onmouseover="this.style.background='rgba(255,255,255,0.14)'" onmouseout="this.style.background='rgba(255,255,255,0.08)'">Admin</a>`;
+
 const renderLogViewerPage = () =>
   renderPage(
     "Live Logs | Clio FS Server",
@@ -562,6 +600,100 @@ const renderLogViewerPage = () =>
       </script>
     `,
     { topbarSubtitle: "Server Control Plane" }
+  );
+
+const renderTokensPage = (tokens: AuthTokenListItem[], notice?: { tone: "error" | "success"; message: string }) =>
+  renderPage(
+    "Token Management | Clio FS Server",
+    `
+      <div class="nav"><a href="/">← Back to dashboard</a></div>
+      <section class="hero">
+        <div class="eyebrow">Administration</div>
+        <h1>Access Tokens</h1>
+        <p class="lede">Manage server authentication tokens. Built-in tokens (from config) cannot be deleted here.</p>
+      </section>
+      ${notice ? `<div style="max-width:900px;margin:0 auto 1.5rem;">${renderNotice(notice.tone, notice.message)}</div>` : ""}
+      <section class="panel stack" style="max-width:900px;margin:0 auto 2rem;">
+        <h2 style="font-size:1rem;font-weight:600;padding:1.25rem 1.5rem 0;">Add New Token</h2>
+        <form action="/admin/tokens" method="post" class="stack" style="padding:1rem 1.5rem 1.5rem;gap:1rem;">
+          <div style="display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap;">
+            <div class="form-field" style="flex:1;min-width:180px;margin:0;">
+              <label for="new-label">Label</label>
+              <input id="new-label" name="label" type="text" placeholder="e.g. CI pipeline" required />
+            </div>
+            <div class="form-field" style="flex:2;min-width:220px;margin:0;">
+              <label for="new-token">Token value <span style="color:var(--color-muted);font-weight:400;">(leave blank to auto-generate)</span></label>
+              <input id="new-token" name="token" type="text" placeholder="auto-generated" autocomplete="off" />
+            </div>
+            <button type="submit" class="primary-button" style="flex-shrink:0;margin-bottom:1px;">Add Token</button>
+          </div>
+        </form>
+      </section>
+      <section class="panel" style="max-width:900px;margin:0 auto 2rem;padding:0;overflow:hidden;">
+        <table style="width:100%;border-collapse:collapse;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--color-border);">
+              <th style="text-align:left;padding:0.75rem 1.5rem;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--color-muted);">Label</th>
+              <th style="text-align:left;padding:0.75rem 1rem;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--color-muted);">Token</th>
+              <th style="text-align:left;padding:0.75rem 1rem;font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--color-muted);">Created</th>
+              <th style="padding:0.75rem 1.5rem;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tokens.length === 0 ? `<tr><td colspan="4" style="padding:2rem 1.5rem;color:var(--color-muted);text-align:center;">No tokens configured.</td></tr>` : tokens.map((t) => `
+            <tr style="border-bottom:1px solid var(--color-border);" data-token-id="${t.id}">
+              <td style="padding:0.75rem 1.5rem;">
+                ${t.readonly
+                  ? `<span style="font-weight:500;">${escapeHtml(t.label)}</span> <span style="display:inline-block;padding:1px 6px;border-radius:4px;background:var(--color-border);font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">built-in</span>`
+                  : `<span class="token-label-display" style="font-weight:500;">${escapeHtml(t.label)}</span>
+                     <form class="token-rename-form" action="/admin/tokens/${encodeURIComponent(t.id)}/rename" method="post" style="display:none;gap:0.5rem;align-items:center;">
+                       <input class="token-label-input" name="label" type="text" value="${escapeHtml(t.label)}" style="flex:1;" />
+                       <button type="submit" class="primary-button" style="padding:0.25rem 0.75rem;font-size:0.8rem;">Save</button>
+                       <button type="button" class="secondary-button token-cancel-rename" style="padding:0.25rem 0.75rem;font-size:0.8rem;">Cancel</button>
+                     </form>`
+                }
+              </td>
+              <td style="padding:0.75rem 1rem;font-family:monospace;font-size:0.875rem;color:var(--color-muted);">${escapeHtml(t.maskedToken)}</td>
+              <td style="padding:0.75rem 1rem;font-size:0.8rem;color:var(--color-muted);">${t.createdAt ? new Date(t.createdAt).toLocaleDateString() : "—"}</td>
+              <td style="padding:0.75rem 1.5rem;text-align:right;white-space:nowrap;">
+                ${t.readonly ? "" : `
+                  <button type="button" class="secondary-button token-edit-btn" data-id="${t.id}" style="padding:0.25rem 0.75rem;font-size:0.8rem;margin-right:0.5rem;">Rename</button>
+                  <form action="/admin/tokens/${encodeURIComponent(t.id)}/delete" method="post" style="display:inline;" onsubmit="return confirm('Delete token \\'${escapeHtml(t.label).replace(/'/g, "\\'")}\\'? This cannot be undone.');">
+                    <button type="submit" style="padding:0.25rem 0.75rem;font-size:0.8rem;border-radius:6px;border:1px solid #e53e3e;background:transparent;color:#e53e3e;cursor:pointer;">Delete</button>
+                  </form>
+                `}
+              </td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </section>
+      <script>
+      document.querySelectorAll('.token-edit-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const row = btn.closest('tr');
+          row.querySelector('.token-label-display').style.display = 'none';
+          const form = row.querySelector('.token-rename-form');
+          form.style.display = 'flex';
+          form.querySelector('.token-label-input').focus();
+          btn.style.display = 'none';
+          row.querySelector('form[action*="delete"]').style.display = 'none';
+        });
+      });
+      document.querySelectorAll('.token-cancel-rename').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const row = btn.closest('tr');
+          row.querySelector('.token-label-display').style.display = '';
+          row.querySelector('.token-rename-form').style.display = 'none';
+          row.querySelector('.token-edit-btn').style.display = '';
+          row.querySelector('form[action*="delete"]').style.display = 'inline';
+        });
+      });
+      </script>
+    `,
+    {
+      topbarActions: `${renderLogsLink()}${renderAdminLink()}${renderServerSettingsButton()}${renderLogoutButton()}`,
+      topbarSubtitle: "Server Control Plane"
+    }
   );
 
 const renderNotFound = () =>
@@ -924,6 +1056,62 @@ export const createServerUi = (options: ServerUiOptions) => {
         }
 
         response.end();
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/admin/tokens") {
+        const tokens = await client.listTokens(authenticatedToken);
+        writeHtml(response, 200, renderTokensPage(tokens.items));
+        return;
+      }
+
+      if (method === "POST" && url.pathname === "/admin/tokens") {
+        const form = await readFormBody(request);
+        const label = form.get("label")?.toString().trim() ?? "New token";
+        const tokenValue = form.get("token")?.toString().trim() ?? "";
+        try {
+          const created = await client.createToken(authenticatedToken, {
+            label,
+            token: tokenValue.length > 0 ? tokenValue : undefined
+          });
+          const tokens = await client.listTokens(authenticatedToken);
+          writeHtml(response, 201, renderTokensPage(tokens.items, {
+            tone: "success",
+            message: `Token "${created.label}" created. Value: ${created.token}`
+          }));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to create token";
+          const tokens = await client.listTokens(authenticatedToken);
+          writeHtml(response, 400, renderTokensPage(tokens.items, { tone: "error", message }));
+        }
+        return;
+      }
+
+      if (method === "POST" && url.pathname.startsWith("/admin/tokens/") && url.pathname.endsWith("/rename")) {
+        const id = url.pathname.slice("/admin/tokens/".length, -"/rename".length);
+        const form = await readFormBody(request);
+        const label = form.get("label")?.toString().trim() ?? "";
+        try {
+          await client.updateToken(authenticatedToken, id, { label });
+          redirect(response, "/admin/tokens");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to rename token";
+          const tokens = await client.listTokens(authenticatedToken);
+          writeHtml(response, 400, renderTokensPage(tokens.items, { tone: "error", message }));
+        }
+        return;
+      }
+
+      if (method === "POST" && url.pathname.startsWith("/admin/tokens/") && url.pathname.endsWith("/delete")) {
+        const id = url.pathname.slice("/admin/tokens/".length, -"/delete".length);
+        try {
+          await client.deleteToken(authenticatedToken, id);
+          redirect(response, "/admin/tokens");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to delete token";
+          const tokens = await client.listTokens(authenticatedToken);
+          writeHtml(response, 400, renderTokensPage(tokens.items, { tone: "error", message }));
+        }
         return;
       }
 

@@ -1,5 +1,6 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import {
   DEFAULT_SERVER_WATCH_SETTINGS,
   DEFAULT_WORKSPACE_POLICIES,
@@ -562,3 +563,116 @@ export const createFileChangeJournal = (
   filePath: string,
   maxEventsPerWorkspace?: number
 ) => new FileChangeJournal(registry, filePath, maxEventsPerWorkspace);
+
+// ── Auth Token Store ──────────────────────────────────────────────────────────
+
+export interface AuthTokenRecord {
+  id: string;
+  label: string;
+  token: string;
+  createdAt: string;
+}
+
+export interface AuthTokenStore {
+  list(): AuthTokenRecord[];
+  add(label: string, token?: string): AuthTokenRecord;
+  updateLabel(id: string, label: string): boolean;
+  remove(id: string): boolean;
+  has(token: string): boolean;
+}
+
+export class InMemoryAuthTokenStore implements AuthTokenStore {
+  readonly #records: AuthTokenRecord[] = [];
+
+  list() {
+    return [...this.#records];
+  }
+
+  add(label: string, token?: string): AuthTokenRecord {
+    const record: AuthTokenRecord = {
+      id: randomUUID(),
+      label: label.trim() || "Unnamed token",
+      token: token ?? randomUUID().replace(/-/g, ""),
+      createdAt: new Date().toISOString()
+    };
+    this.#records.push(record);
+    return record;
+  }
+
+  updateLabel(id: string, label: string): boolean {
+    const record = this.#records.find((r) => r.id === id);
+    if (!record) return false;
+    record.label = label.trim() || record.label;
+    return true;
+  }
+
+  remove(id: string): boolean {
+    const index = this.#records.findIndex((r) => r.id === id);
+    if (index === -1) return false;
+    this.#records.splice(index, 1);
+    return true;
+  }
+
+  has(token: string): boolean {
+    return this.#records.some((r) => r.token === token);
+  }
+}
+
+export const createInMemoryAuthTokenStore = () => new InMemoryAuthTokenStore();
+
+interface AuthTokenFileShape {
+  tokens: AuthTokenRecord[];
+}
+
+const loadAuthTokenFile = (filePath: string): AuthTokenRecord[] => {
+  if (!existsSync(filePath)) return [];
+  try {
+    const raw = JSON.parse(readFileSync(filePath, "utf8")) as AuthTokenFileShape;
+    return Array.isArray(raw.tokens) ? raw.tokens : [];
+  } catch {
+    return [];
+  }
+};
+
+export class FileAuthTokenStore extends InMemoryAuthTokenStore {
+  readonly #filePath: string;
+
+  constructor(filePath: string) {
+    super();
+    this.#filePath = resolve(filePath);
+    for (const record of loadAuthTokenFile(this.#filePath)) {
+      super.add(record.label, record.token);
+      // Fix the id and createdAt that add() would have randomized
+      const last = this.list().at(-1)!;
+      Object.assign(last, { id: record.id, createdAt: record.createdAt });
+    }
+  }
+
+  override add(label: string, token?: string): AuthTokenRecord {
+    const record = super.add(label, token);
+    this.#flush();
+    return record;
+  }
+
+  override updateLabel(id: string, label: string): boolean {
+    const result = super.updateLabel(id, label);
+    if (result) this.#flush();
+    return result;
+  }
+
+  override remove(id: string): boolean {
+    const result = super.remove(id);
+    if (result) this.#flush();
+    return result;
+  }
+
+  #flush() {
+    mkdirSync(dirname(this.#filePath), { recursive: true });
+    const temp = `${this.#filePath}.tmp`;
+    const payload: AuthTokenFileShape = { tokens: this.list() };
+    writeFileSync(temp, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+    renameSync(temp, this.#filePath);
+  }
+}
+
+export const createFileAuthTokenStore = (filePath: string) => new FileAuthTokenStore(filePath);

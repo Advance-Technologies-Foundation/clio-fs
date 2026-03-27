@@ -5,7 +5,8 @@ import { appConfig } from "@clio-fs/config";
 import {
   createFileChangeJournal,
   createFileServerWatchSettingsStore,
-  createFileWorkspaceRegistry
+  createFileWorkspaceRegistry,
+  createFileAuthTokenStore
 } from "@clio-fs/database";
 import { nodeFileSystem } from "./filesystem.js";
 import { createLogger } from "./logger.js";
@@ -26,6 +27,9 @@ export const startDefaultWorkspaceServer = () => {
     registry,
     resolve(workspaceRoot, appConfig.server.changeJournalFilePath)
   );
+  const tokenStore = createFileAuthTokenStore(
+    resolve(workspaceRoot, appConfig.server.authTokensFilePath)
+  );
   const workspaceWatcher = createPollingWorkspaceChangeWatcher({
     registry,
     journal,
@@ -43,6 +47,7 @@ export const startDefaultWorkspaceServer = () => {
     watchSettingsStore,
     workspaceWatcher,
     logger,
+    tokenStore,
     serverPlatform: detectServerPlatform()
   });
 };
