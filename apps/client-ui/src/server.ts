@@ -352,6 +352,13 @@ const renderPlusIcon = () => `
   </svg>
 `;
 
+const renderRefreshIcon = () => `
+  <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+    <path d="M21 3v6h-6"></path>
+  </svg>
+`;
+
 const renderPumaMascot = () => `
   <svg aria-hidden="true" viewBox="0 0 240 180" class="blank-slate-mascot">
     <defs>
@@ -477,14 +484,12 @@ const renderAddTargetModal = (remoteWorkspaces: ClientUiRemoteWorkspace[]) => `
                     .map((workspace) => `<option value="${escapeHtml(workspace.workspaceId)}">${escapeHtml(workspace.displayName ?? workspace.workspaceId)}</option>`)
                     .join("")}
                 </select>
-                <button class="secondary-button" type="button" data-load-remote-workspaces>Load Workspaces</button>
+                <button class="icon-button" type="button" data-load-remote-workspaces aria-label="Reload workspaces">
+                  ${renderRefreshIcon()}
+                </button>
               </div>
-              <datalist id="client-workspace-options" hidden>
-                ${remoteWorkspaces
-                  .map((workspace) => `<option value="${escapeHtml(workspace.workspaceId)}">${escapeHtml(workspace.displayName ?? workspace.workspaceId)}</option>`)
-                  .join("")}
-              </datalist>
-              <span class="helper-text">Load the registry from the selected server and choose one workspace.</span>
+              <datalist id="client-workspace-options" hidden></datalist>
+              <span class="helper-text">Workspaces reload automatically when server URL or token changes. Use refresh if you need to reload manually.</span>
             </div>
             <div class="form-field">
               <label for="mirrorRoot">Local Mirror Path</label>
@@ -589,6 +594,7 @@ const renderClientPage = (
         const getWorkspaceList = () => document.getElementById("client-workspace-options");
         const getWorkspaceSelect = () => document.getElementById("workspaceSelect");
         const getDeleteForm = () => document.querySelector("[data-delete-target-form]");
+        let workspaceReloadTimer = null;
 
         const setInlineError = (selector, message) => {
           const node = document.querySelector(selector);
@@ -684,6 +690,39 @@ const renderClientPage = (
           }
         };
 
+        const resetRemoteWorkspaceOptions = () => {
+          const workspaceList = getWorkspaceList();
+          const workspaceSelect = getWorkspaceSelect();
+          const workspaceIdInput = document.getElementById("workspaceId");
+
+          if (workspaceList instanceof HTMLDataListElement) {
+            workspaceList.innerHTML = "";
+          }
+
+          if (workspaceSelect instanceof HTMLSelectElement) {
+            workspaceSelect.innerHTML = '<option value="">Select a workspace</option>';
+            workspaceSelect.value = "";
+          }
+
+          if (workspaceIdInput instanceof HTMLInputElement) {
+            workspaceIdInput.value = "";
+          }
+        };
+
+        const scheduleRemoteWorkspaceReload = () => {
+          if (workspaceReloadTimer) {
+            clearTimeout(workspaceReloadTimer);
+          }
+
+          workspaceReloadTimer = setTimeout(async () => {
+            try {
+              await loadRemoteWorkspaces();
+            } catch (error) {
+              setInlineError("[data-add-target-error]", error instanceof Error ? error.message : "Failed to load workspaces");
+            }
+          }, 250);
+        };
+
         const refreshDashboard = async () => {
           const shell = getShell();
 
@@ -728,6 +767,11 @@ const renderClientPage = (
           }
 
           setInlineError("[data-add-target-error]", "");
+
+          if (!serverBaseUrl.value.trim() || !authToken.value.trim()) {
+            resetRemoteWorkspaceOptions();
+            return;
+          }
 
           const response = await fetch("/targets/load-workspaces", {
             method: "POST",
@@ -1032,11 +1076,19 @@ const renderClientPage = (
             return;
           }
 
-          try {
-            await loadRemoteWorkspaces();
-          } catch (error) {
-            setInlineError("[data-add-target-error]", error instanceof Error ? error.message : "Failed to load workspaces");
+          resetRemoteWorkspaceOptions();
+          scheduleRemoteWorkspaceReload();
+        });
+
+        document.addEventListener("input", (event) => {
+          const input = event.target instanceof HTMLInputElement ? event.target : null;
+
+          if (!(input instanceof HTMLInputElement) || (input.id !== "serverBaseUrl" && input.id !== "authToken")) {
+            return;
           }
+
+          resetRemoteWorkspaceOptions();
+          scheduleRemoteWorkspaceReload();
         });
       })();
     </script>`
