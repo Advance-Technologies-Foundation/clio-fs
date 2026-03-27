@@ -21,7 +21,9 @@ import {
   FileWriteConflictError,
   parseCreateWorkspaceDirectoryRequest,
   parseDeleteWorkspaceFileRequest,
+  parseMoveWorkspacePathRequest,
   parsePutWorkspaceFileRequest,
+  moveWorkspacePath,
   putWorkspaceFile
 } from "./file-write.js";
 import { createWorkspaceSnapshot, materializeWorkspaceFiles } from "./snapshot.js";
@@ -285,6 +287,37 @@ const routeRequest = async (
     } catch (error) {
       const message = error instanceof Error ? error.message : "Invalid directory create request";
       writeError(response, 400, "invalid_request", message, { workspaceId, path });
+      return;
+    }
+  }
+
+  if (method === "POST" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/move")) {
+    const [, , workspaceId] = url.pathname.split("/");
+
+    if (!workspaceId) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    const workspace = options.registry.get(workspaceId);
+
+    if (!workspace) {
+      writeError(response, 404, "not_found", "Workspace not found", { workspaceId });
+      return;
+    }
+
+    try {
+      const payload = await readJsonBody(request);
+      const input = parseMoveWorkspacePathRequest(payload);
+      json(
+        response,
+        200,
+        moveWorkspacePath(workspace, input, options.filesystem ?? nodeFileSystem, options.journal!)
+      );
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid move request";
+      writeError(response, 400, "invalid_request", message, { workspaceId });
       return;
     }
   }

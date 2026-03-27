@@ -115,6 +115,37 @@ export class MockFileSystem implements FileSystemAdapter {
     return this.#nodes.has(toKey(path));
   }
 
+  movePath(fromPath: string, toPath: string) {
+    const fromKey = toKey(fromPath);
+    const toKeyPath = toKey(toPath);
+
+    this.#ensureParentDirectories(toKeyPath);
+
+    const moved = [...this.#nodes.entries()].filter(
+      ([nodePath]) =>
+        nodePath === fromKey ||
+        nodePath.startsWith(`${fromKey}/`) ||
+        nodePath.startsWith(`${fromKey}\\`)
+    );
+
+    if (moved.length === 0) {
+      throw new Error(`Mock path not found: ${fromPath}`);
+    }
+
+    for (const [nodePath] of moved) {
+      this.#nodes.delete(nodePath);
+    }
+
+    for (const [nodePath, node] of moved) {
+      const suffix = nodePath.slice(fromKey.length).replace(/^[/\\]/, "");
+      const nextPath = suffix.length > 0 ? join(toKeyPath, suffix) : toKeyPath;
+      this.#nodes.set(toKey(nextPath), {
+        ...node,
+        path: toKey(nextPath)
+      });
+    }
+  }
+
   removePath(path: string) {
     const key = toKey(path);
 

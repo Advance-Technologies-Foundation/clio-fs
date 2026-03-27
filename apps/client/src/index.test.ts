@@ -11,6 +11,7 @@ const createFetchStub = () => {
   const putCalls: Array<{ path: string | null; baseFileRevision?: number; content: string }> = [];
   const deleteCalls: Array<{ path: string | null; baseFileRevision?: number }> = [];
   const mkdirCalls: Array<{ path: string | null }> = [];
+  const moveCalls: Array<{ oldPath: string; newPath: string }> = [];
 
   const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
@@ -141,6 +142,31 @@ const createFetchStub = () => {
     }
 
     if (
+      url.pathname === "/workspaces/demo-workspace/move" &&
+      (init?.method ?? "GET") === "POST"
+    ) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        oldPath: string;
+        newPath: string;
+      };
+      moveCalls.push({
+        oldPath: body.oldPath,
+        newPath: body.newPath
+      });
+
+      return new Response(
+        JSON.stringify({
+          workspaceId: "demo-workspace",
+          oldPath: body.oldPath,
+          newPath: body.newPath,
+          workspaceRevision: 3,
+          moved: true
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    if (
       url.pathname === "/workspaces/demo-workspace/mkdir" &&
       (init?.method ?? "GET") === "POST"
     ) {
@@ -238,6 +264,7 @@ const createFetchStub = () => {
 
   return Object.assign(fetchImpl, {
     getMkdirCalls: () => mkdirCalls,
+    getMoveCalls: () => moveCalls,
     getPutCalls: () => putCalls,
     getDeleteCalls: () => deleteCalls
   });
@@ -293,6 +320,111 @@ test("pollOnce applies server-originated changes and advances bind state", async
     "alpha-updated-v2\n"
   );
   assert.equal(filesystem.exists("/mirror/demo-workspace/root.txt"), false);
+});
+
+test("pollOnce applies server-originated path moves without full rehydrate", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+
+    if (url.pathname === "/workspaces/demo-workspace/snapshot") {
+      return new Response(
+        JSON.stringify({
+          workspaceId: "demo-workspace",
+          currentRevision: 2,
+          items: [
+            {
+              path: "packages",
+              kind: "directory",
+              mtime: "2026-03-27T00:00:00.000Z",
+              workspaceRevision: 2
+            },
+            {
+              path: "packages/Gamma",
+              kind: "directory",
+              mtime: "2026-03-27T00:00:00.000Z",
+              workspaceRevision: 2
+            },
+            {
+              path: "packages/Gamma/new.txt",
+              kind: "file",
+              mtime: "2026-03-27T00:00:00.000Z",
+              size: 12,
+              workspaceRevision: 2,
+              fileRevision: 2
+            }
+          ]
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    if (url.pathname === "/workspaces/demo-workspace/snapshot-materialize") {
+      return new Response(
+        JSON.stringify({
+          workspaceId: "demo-workspace",
+          currentRevision: 2,
+          files: [
+            {
+              path: "packages/Gamma/new.txt",
+              content: "gamma-seed\n",
+              fileRevision: 2,
+              workspaceRevision: 2
+            }
+          ]
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    if (url.pathname === "/workspaces/demo-workspace/changes") {
+      return new Response(
+        JSON.stringify({
+          workspaceId: "demo-workspace",
+          fromRevision: 2,
+          toRevision: 3,
+          hasMore: false,
+          items: [
+            {
+              workspaceId: "demo-workspace",
+              revision: 3,
+              timestamp: "2026-03-27T00:00:03.000Z",
+              operation: "path_moved",
+              path: "packages/Gamma/renamed.txt",
+              oldPath: "packages/Gamma/new.txt",
+              origin: "server-tool",
+              contentHash: null,
+              size: null,
+              operationId: null
+            }
+          ]
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    throw new Error(`Unexpected request: ${url.pathname} ${(init?.method ?? "GET")}`);
+  };
+
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchImpl as typeof fetch
+    }
+  });
+
+  await client.bind();
+  const nextState = await client.pollOnce();
+
+  assert.equal(nextState.lastAppliedRevision, 3);
+  assert.equal(filesystem.exists("/mirror/demo-workspace/packages/Gamma/new.txt"), false);
+  assert.equal(filesystem.readFileText("/mirror/demo-workspace/packages/Gamma/renamed.txt"), "gamma-seed\n");
 });
 
 test("pushFile sends a conditional write and advances local bind state", async () => {
@@ -372,6 +504,39 @@ test("createDirectory sends a directory create request and advances local bind s
   assert.deepEqual(fetchStub.getMkdirCalls(), [
     {
       path: "packages/Gamma"
+    }
+  ]);
+});
+
+test("movePath sends a move request and advances local bind state", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+  const fetchStub = createFetchStub();
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "test-token",
+      fetchImpl: fetchStub as unknown as typeof fetch
+    }
+  });
+
+  await client.bind();
+  const nextState = await client.movePath("packages/Alpha/readme.txt", "packages/Alpha/renamed.txt");
+
+  assert.equal(nextState.lastAppliedRevision, 3);
+  assert.equal(filesystem.exists("/mirror/demo-workspace/packages/Alpha/readme.txt"), false);
+  assert.equal(
+    filesystem.readFileText("/mirror/demo-workspace/packages/Alpha/renamed.txt"),
+    "alpha-seed-v1\n"
+  );
+  assert.deepEqual(fetchStub.getMoveCalls(), [
+    {
+      oldPath: "packages/Alpha/readme.txt",
+      newPath: "packages/Alpha/renamed.txt"
     }
   ]);
 });

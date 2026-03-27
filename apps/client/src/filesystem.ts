@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, normalize } from "node:path";
 
 export type ClientEntryKind = "file" | "directory";
@@ -11,6 +11,7 @@ export interface ClientDirectoryEntry {
 export interface ClientFileSystemAdapter {
   ensureDirectory: (path: string) => void;
   writeFileText: (path: string, content: string) => void;
+  movePath: (fromPath: string, toPath: string) => void;
   removePath: (path: string) => void;
   removeDirectoryContents: (path: string) => void;
   readdir: (path: string) => ClientDirectoryEntry[];
@@ -25,6 +26,10 @@ export const nodeClientFileSystem: ClientFileSystemAdapter = {
   writeFileText(path, content) {
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, content, "utf8");
+  },
+  movePath(fromPath, toPath) {
+    mkdirSync(dirname(toPath), { recursive: true });
+    renameSync(fromPath, toPath);
   },
   removePath(path) {
     try {
@@ -99,6 +104,33 @@ export class InMemoryClientFileSystem implements ClientFileSystemAdapter {
     const key = normalizeKey(path);
     this.#ensureParents(key);
     this.#nodes.set(key, { kind: "file", content });
+  }
+
+  movePath(fromPath: string, toPath: string) {
+    const fromKey = normalizeKey(fromPath);
+    const toKeyPath = normalizeKey(toPath);
+    const moved = [...this.#nodes.entries()].filter(
+      ([nodePath]) =>
+        nodePath === fromKey ||
+        nodePath.startsWith(`${fromKey}/`) ||
+        nodePath.startsWith(`${fromKey}\\`)
+    );
+
+    if (moved.length === 0) {
+      throw new Error(`Path not found: ${fromPath}`);
+    }
+
+    this.#ensureParents(toKeyPath);
+
+    for (const [nodePath] of moved) {
+      this.#nodes.delete(nodePath);
+    }
+
+    for (const [nodePath, node] of moved) {
+      const suffix = nodePath.slice(fromKey.length).replace(/^[/\\]/, "");
+      const nextPath = suffix.length > 0 ? join(toKeyPath, suffix) : toKeyPath;
+      this.#nodes.set(normalizeKey(nextPath), node);
+    }
   }
 
   removePath(path: string) {

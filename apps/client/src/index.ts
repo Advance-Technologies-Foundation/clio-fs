@@ -36,6 +36,7 @@ export interface MirrorClient {
   pollOnce: () => Promise<ClientBindState>;
   pushFile: (path: string, content: string, options?: { baseFileRevision?: number }) => Promise<ClientBindState>;
   createDirectory: (path: string) => Promise<ClientBindState>;
+  movePath: (oldPath: string, newPath: string) => Promise<ClientBindState>;
   deleteFile: (path: string, options?: { baseFileRevision?: number }) => Promise<ClientBindState>;
   startLocalWatchLoop: () => Promise<void>;
   stopLocalWatchLoop: () => void;
@@ -159,13 +160,22 @@ const applyChanges = async (
     }
 
     if (change.operation === "path_moved") {
-      nextState = await ensureHydratedMirror(
-        controlPlane,
-        filesystem,
-        stateStore,
-        state.workspaceId,
-        state.mirrorRoot
+      if (!change.oldPath) {
+        nextState = await ensureHydratedMirror(
+          controlPlane,
+          filesystem,
+          stateStore,
+          state.workspaceId,
+          state.mirrorRoot
+        );
+        continue;
+      }
+
+      filesystem.movePath(
+        join(state.mirrorRoot, change.oldPath),
+        join(state.mirrorRoot, change.path)
       );
+      nextState = { ...nextState, lastAppliedRevision: change.revision };
     }
   }
 
@@ -317,6 +327,28 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       filesystem.ensureDirectory(join(bound.mirrorRoot, path));
 
       const result = await controlPlane.createDirectory(bound.workspaceId, path, {
+        origin: "local-client"
+      });
+      const nextState = {
+        ...bound,
+        lastAppliedRevision: result.workspaceRevision
+      };
+
+      stateStore.save(nextState);
+      return nextState;
+    },
+    async movePath(oldPath, newPath) {
+      const bound = (await client.bind()) ?? stateStore.load(options.workspaceId);
+
+      if (!bound) {
+        throw new Error(`Workspace is not bound: ${options.workspaceId}`);
+      }
+
+      filesystem.movePath(join(bound.mirrorRoot, oldPath), join(bound.mirrorRoot, newPath));
+
+      const result = await controlPlane.movePath(bound.workspaceId, {
+        oldPath,
+        newPath,
         origin: "local-client"
       });
       const nextState = {

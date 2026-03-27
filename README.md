@@ -108,6 +108,7 @@ Implemented today:
 - conditional server-side utf8 file write endpoint with optimistic concurrency
 - conditional server-side delete endpoint for files and directories with revision-aware conflict checks
 - server-side directory create endpoint for revisioned directory bootstrap
+- server-side move endpoint for file and directory renames
 - optional `displayName`; most workspaces can rely on `workspaceId` alone
 - file-backed workspace registry stored in `.clio-fs/server/workspaces.json`
 - integration tests covering health, auth, registration, validation, and duplicate detection
@@ -128,6 +129,7 @@ Implemented today:
 - initial client mirror slice with bind state, snapshot hydrate, and polling-based change application
 - client-side push API for conditional text file writes
 - client-side directory create API
+- client-side move API
 - client-side delete API for conditional file removal
 - file-backed client bind state store at `.clio-fs/client/state.json`
 - local watcher-driven push loop for file create/update/delete events
@@ -179,13 +181,14 @@ Current client behavior:
 - polls `changes?since=` and applies server-originated create, update, and delete events
 - can push a conditional utf8 file write through the control plane
 - can create directories through the control plane
+- can move files and directory subtrees through the control plane
 - can push a conditional delete through the control plane
 - can watch the local mirror and push changed and deleted files automatically
 
 Current client limitations:
 
 - local watcher-driven empty-directory creation is not implemented yet
-- `path_moved` currently falls back to a full rehydrate
+- local watcher-driven move and rename propagation is not implemented yet
 
 ## Opt-In Local Sync Scenario
 

@@ -4,6 +4,8 @@ import type {
   CreateWorkspaceDirectoryResponse,
   DeleteWorkspaceFileRequest,
   DeleteWorkspaceFileResponse,
+  MoveWorkspacePathRequest,
+  MoveWorkspacePathResponse,
   PutWorkspaceFileRequest,
   PutWorkspaceFileResponse,
   SnapshotMaterializeRequest,
@@ -100,6 +102,22 @@ export class ClientControlPlane {
       },
       body: JSON.stringify(input)
     });
+  }
+
+  async movePath(
+    workspaceId: string,
+    input: MoveWorkspacePathRequest
+  ): Promise<MoveWorkspacePathResponse> {
+    return this.#request<MoveWorkspacePathResponse>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/move`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(input)
+      }
+    );
   }
 
   async getChanges(

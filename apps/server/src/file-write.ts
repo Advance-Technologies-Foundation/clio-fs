@@ -5,6 +5,8 @@ import type {
   CreateWorkspaceDirectoryResponse,
   DeleteWorkspaceFileRequest,
   DeleteWorkspaceFileResponse,
+  MoveWorkspacePathRequest,
+  MoveWorkspacePathResponse,
   PutWorkspaceFileRequest,
   PutWorkspaceFileResponse,
   WorkspaceRecord
@@ -140,6 +142,38 @@ export const parseCreateWorkspaceDirectoryRequest = (
   };
 };
 
+export const parseMoveWorkspacePathRequest = (value: unknown): MoveWorkspacePathRequest => {
+  if (typeof value !== "object" || value === null) {
+    throw new Error("request body must be a JSON object");
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (typeof record.oldPath !== "string" || typeof record.newPath !== "string") {
+    throw new Error("oldPath and newPath must be provided as strings");
+  }
+
+  if (
+    record.origin !== "local-client" &&
+    record.origin !== "creatio" &&
+    record.origin !== "server-tool" &&
+    record.origin !== "unknown"
+  ) {
+    throw new Error("origin must be one of local-client, creatio, server-tool, unknown");
+  }
+
+  if (typeof record.operationId !== "undefined" && typeof record.operationId !== "string") {
+    throw new Error("operationId must be omitted or a string");
+  }
+
+  return {
+    oldPath: record.oldPath,
+    newPath: record.newPath,
+    operationId: typeof record.operationId === "string" ? record.operationId : undefined,
+    origin: record.origin
+  };
+};
+
 export const putWorkspaceFile = (
   workspace: WorkspaceRecord,
   rawPath: string,
@@ -267,6 +301,52 @@ export const deleteWorkspacePath = (
     path,
     workspaceRevision: event.revision,
     deleted: true
+  };
+};
+
+export const moveWorkspacePath = (
+  workspace: WorkspaceRecord,
+  input: MoveWorkspacePathRequest,
+  filesystem: FileSystemAdapter,
+  journal: ChangeJournal
+): MoveWorkspacePathResponse => {
+  const oldPath = ensureRelativeWorkspacePath(input.oldPath);
+  const newPath = ensureRelativeWorkspacePath(input.newPath);
+
+  if (oldPath === newPath) {
+    throw new Error("oldPath and newPath must differ");
+  }
+
+  const oldAbsolutePath = join(workspace.rootPath, oldPath);
+  const newAbsolutePath = join(workspace.rootPath, newPath);
+
+  if (!filesystem.exists(oldAbsolutePath)) {
+    throw new Error("source path does not exist");
+  }
+
+  if (filesystem.exists(newAbsolutePath)) {
+    throw new Error("target path already exists");
+  }
+
+  filesystem.movePath(oldAbsolutePath, newAbsolutePath);
+
+  const event = journal.append({
+    workspaceId: workspace.workspaceId,
+    operation: "path_moved",
+    path: newPath,
+    oldPath,
+    origin: input.origin,
+    contentHash: null,
+    size: null,
+    operationId: input.operationId
+  });
+
+  return {
+    workspaceId: workspace.workspaceId,
+    oldPath,
+    newPath,
+    workspaceRevision: event.revision,
+    moved: true
   };
 };
 

@@ -3,6 +3,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   statSync,
   writeFileSync
@@ -29,6 +30,7 @@ export interface FileSystemAdapter {
   writeFileText: (path: string, content: string) => void;
   ensureDirectory: (path: string) => void;
   exists: (path: string) => boolean;
+  movePath: (fromPath: string, toPath: string) => void;
   removePath: (path: string) => void;
 }
 
@@ -62,6 +64,10 @@ export const nodeFileSystem: FileSystemAdapter = {
   },
   exists(path) {
     return existsSync(path);
+  },
+  movePath(fromPath, toPath) {
+    mkdirSync(dirname(toPath), { recursive: true });
+    renameSync(fromPath, toPath);
   },
   removePath(path) {
     rmSync(path, { recursive: true, force: true });

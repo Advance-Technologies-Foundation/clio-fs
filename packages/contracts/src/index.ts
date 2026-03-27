@@ -109,6 +109,21 @@ export interface CreateWorkspaceDirectoryResponse {
   created: true;
 }
 
+export interface MoveWorkspacePathRequest {
+  oldPath: string;
+  newPath: string;
+  operationId?: string;
+  origin: ChangeOrigin;
+}
+
+export interface MoveWorkspacePathResponse {
+  workspaceId: WorkspaceId;
+  oldPath: string;
+  newPath: string;
+  workspaceRevision: Revision;
+  moved: true;
+}
+
 export interface DeleteWorkspaceFileRequest {
   operationId?: string;
   baseFileRevision?: Revision;

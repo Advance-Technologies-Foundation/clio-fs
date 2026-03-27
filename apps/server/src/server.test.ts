@@ -644,6 +644,167 @@ test("rejects creating a directory when the path already exists", async () => {
   }
 });
 
+test("moves a file through the API and advances revisions", async () => {
+  const mockFileSystem = createMockFileSystem();
+  mockFileSystem.addDirectory("/mock/move-file-main");
+  mockFileSystem.addDirectory("/mock/move-file-main/packages");
+  mockFileSystem.addDirectory("/mock/move-file-main/packages/Alpha");
+  mockFileSystem.addFile("/mock/move-file-main/packages/Alpha/readme.txt", {
+    content: "alpha-seed-v1\n"
+  });
+  const server = await startTestServer({ filesystem: mockFileSystem });
+
+  try {
+    await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "move-file-main",
+        rootPath: "/mock/move-file-main"
+      })
+    });
+
+    const moveResponse = await fetch(`${server.baseUrl}/workspaces/move-file-main/move`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        oldPath: "packages/Alpha/readme.txt",
+        newPath: "packages/Alpha/renamed.txt",
+        origin: "local-client"
+      })
+    });
+    const moveBody = await moveResponse.json();
+
+    assert.equal(moveResponse.status, 200);
+    assert.equal(moveBody.moved, true);
+    assert.equal(moveBody.workspaceRevision, 1);
+    assert.equal(mockFileSystem.exists("/mock/move-file-main/packages/Alpha/readme.txt"), false);
+    assert.equal(
+      mockFileSystem.readFileText("/mock/move-file-main/packages/Alpha/renamed.txt"),
+      "alpha-seed-v1\n"
+    );
+    assert.deepEqual(server.journal.listSince({ workspaceId: "move-file-main", since: 0 }).items, [
+      {
+        workspaceId: "move-file-main",
+        revision: 1,
+        timestamp: server.journal.listSince({ workspaceId: "move-file-main", since: 0 }).items[0]?.timestamp,
+        operation: "path_moved",
+        path: "packages/Alpha/renamed.txt",
+        oldPath: "packages/Alpha/readme.txt",
+        origin: "local-client",
+        contentHash: null,
+        size: null,
+        operationId: null
+      }
+    ]);
+  } finally {
+    await server.close();
+  }
+});
+
+test("moves a directory subtree through the API", async () => {
+  const mockFileSystem = createMockFileSystem();
+  mockFileSystem.addDirectory("/mock/move-dir-main");
+  mockFileSystem.addDirectory("/mock/move-dir-main/packages");
+  mockFileSystem.addDirectory("/mock/move-dir-main/packages/Gamma");
+  mockFileSystem.addFile("/mock/move-dir-main/packages/Gamma/new.txt", {
+    content: "gamma-seed\n"
+  });
+  const server = await startTestServer({ filesystem: mockFileSystem });
+
+  try {
+    await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "move-dir-main",
+        rootPath: "/mock/move-dir-main"
+      })
+    });
+
+    const moveResponse = await fetch(`${server.baseUrl}/workspaces/move-dir-main/move`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        oldPath: "packages/Gamma",
+        newPath: "packages/Delta",
+        origin: "local-client"
+      })
+    });
+    const moveBody = await moveResponse.json();
+
+    assert.equal(moveResponse.status, 200);
+    assert.equal(moveBody.workspaceRevision, 1);
+    assert.equal(mockFileSystem.exists("/mock/move-dir-main/packages/Gamma"), false);
+    assert.equal(mockFileSystem.exists("/mock/move-dir-main/packages/Delta"), true);
+    assert.equal(
+      mockFileSystem.readFileText("/mock/move-dir-main/packages/Delta/new.txt"),
+      "gamma-seed\n"
+    );
+  } finally {
+    await server.close();
+  }
+});
+
+test("rejects moves when the target path already exists", async () => {
+  const mockFileSystem = createMockFileSystem();
+  mockFileSystem.addDirectory("/mock/move-conflict");
+  mockFileSystem.addDirectory("/mock/move-conflict/packages");
+  mockFileSystem.addFile("/mock/move-conflict/packages/source.txt", {
+    content: "source\n"
+  });
+  mockFileSystem.addFile("/mock/move-conflict/packages/target.txt", {
+    content: "target\n"
+  });
+  const server = await startTestServer({ filesystem: mockFileSystem });
+
+  try {
+    await fetch(`${server.baseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "move-conflict",
+        rootPath: "/mock/move-conflict"
+      })
+    });
+
+    const moveResponse = await fetch(`${server.baseUrl}/workspaces/move-conflict/move`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        oldPath: "packages/source.txt",
+        newPath: "packages/target.txt",
+        origin: "local-client"
+      })
+    });
+    const moveBody = await moveResponse.json();
+
+    assert.equal(moveResponse.status, 400);
+    assert.equal(moveBody.error.code, "invalid_request");
+    assert.match(moveBody.error.message, /target path already exists/i);
+  } finally {
+    await server.close();
+  }
+});
+
 test("rejects conflicting file writes with 409", async () => {
   const mockFileSystem = createMockFileSystem();
   mockFileSystem.addDirectory("/mock/write-conflict");

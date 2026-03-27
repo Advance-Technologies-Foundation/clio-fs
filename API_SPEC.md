@@ -694,6 +694,13 @@ Response `200`:
 }
 ```
 
+Current implementation note:
+
+- file and directory moves are implemented for workspace-relative paths
+- the change feed emits one `path_moved` event for the moved root
+- client-side remote move application now uses direct local path moves instead of a full rehydrate fallback
+- local watcher-driven rename propagation is not implemented yet
+
 ## Change Feed API
 
 ### GET /workspaces/{workspaceId}/changes
