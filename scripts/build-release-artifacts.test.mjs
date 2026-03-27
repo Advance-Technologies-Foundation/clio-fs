@@ -6,14 +6,14 @@ import { tmpdir } from "node:os";
 
 import {
   collectWorkspaceTargets,
-  createPublishManifest,
+  createBundleManifest,
   normalizeReleaseVersion,
-  resolveDistTag,
+  resolveArtifactsOutputDir,
   resolveReleaseVersion,
   sanitizePackageDirectoryName,
   selectReleaseTargets,
-  sortTargetsForPublish
-} from "./publish-release.mjs";
+  sortTargetsForRelease
+} from "./build-release-artifacts.mjs";
 
 const writeJson = (filePath, value) => {
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -68,7 +68,7 @@ test("selectReleaseTargets keeps the installable server and client app workspace
   );
 });
 
-test("sortTargetsForPublish orders internal dependencies before dependents", () => {
+test("sortTargetsForRelease orders internal dependencies before dependents", () => {
   const targets = [
     {
       packageName: "@clio-fs/server",
@@ -100,7 +100,7 @@ test("sortTargetsForPublish orders internal dependencies before dependents", () 
     }
   ];
 
-  const ordered = sortTargetsForPublish(targets);
+  const ordered = sortTargetsForRelease(targets);
 
   assert.deepEqual(
     ordered.map((target) => target.packageName),
@@ -108,44 +108,33 @@ test("sortTargetsForPublish orders internal dependencies before dependents", () 
   );
 });
 
-test("createPublishManifest rewrites workspace dependencies and bundles internal runtime deps", () => {
-  const publishManifest = createPublishManifest(
+test("createBundleManifest rewrites workspace dependencies and keeps executable bins", () => {
+  const bundleManifest = createBundleManifest(
     {
       name: "@clio-fs/server",
       version: "2.0.0",
       type: "module",
+      bin: {
+        "clio-fs-server": "./dist/cli.js"
+      },
       dependencies: {
-        "@clio-fs/contracts": "workspace:*",
-        undici: "^7.0.0"
+        "@clio-fs/contracts": "workspace:*"
       }
     },
     new Map([["@clio-fs/contracts", "2.0.0"]]),
     ["@clio-fs/contracts"]
   );
 
-  assert.equal(publishManifest.private, false);
-  assert.equal(publishManifest.main, "./dist/index.js");
-  assert.equal(publishManifest.types, "./dist/index.d.ts");
-  assert.deepEqual(publishManifest.dependencies, {
-    "@clio-fs/contracts": "2.0.0",
-    undici: "^7.0.0"
+  assert.equal(bundleManifest.private, false);
+  assert.equal(bundleManifest.main, "./dist/cli.js");
+  assert.equal(bundleManifest.types, "./dist/index.d.ts");
+  assert.deepEqual(bundleManifest.dependencies, {
+    "@clio-fs/contracts": "2.0.0"
   });
-  assert.deepEqual(publishManifest.exports, {
-    ".": {
-      types: "./dist/index.d.ts",
-      import: "./dist/index.js"
-    }
+  assert.deepEqual(bundleManifest.bin, {
+    "clio-fs-server": "./dist/cli.js"
   });
-  assert.deepEqual(publishManifest.publishConfig, {
-    access: "public"
-  });
-  assert.deepEqual(publishManifest.bundleDependencies, ["@clio-fs/contracts"]);
-});
-
-test("resolveDistTag prefers CLI override and otherwise maps prereleases to next", () => {
-  assert.equal(resolveDistTag(["--tag", "beta"]), "beta");
-  assert.equal(resolveDistTag([], { RELEASE_IS_PRERELEASE: "true" }), "next");
-  assert.equal(resolveDistTag([], { RELEASE_IS_PRERELEASE: "false" }), "latest");
+  assert.deepEqual(bundleManifest.bundleDependencies, ["@clio-fs/contracts"]);
 });
 
 test("normalizeReleaseVersion accepts v-prefixed semver tags", () => {
@@ -157,6 +146,17 @@ test("normalizeReleaseVersion accepts v-prefixed semver tags", () => {
 test("resolveReleaseVersion prefers CLI override and otherwise reads RELEASE_TAG", () => {
   assert.equal(resolveReleaseVersion(["--version", "v2.3.4"]), "2.3.4");
   assert.equal(resolveReleaseVersion([], { RELEASE_TAG: "v3.4.5" }), "3.4.5");
+});
+
+test("resolveArtifactsOutputDir prefers CLI override and falls back to release artifacts directory", () => {
+  assert.equal(
+    resolveArtifactsOutputDir("C:\\repo", ["--output-dir", "out"]),
+    join("C:\\repo", "out")
+  );
+  assert.equal(
+    resolveArtifactsOutputDir("C:\\repo", [], { RELEASE_ARTIFACTS_DIR: "artifacts" }),
+    join("C:\\repo", "artifacts")
+  );
 });
 
 test("sanitizePackageDirectoryName produces a filesystem-safe staging folder", () => {

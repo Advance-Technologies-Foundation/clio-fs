@@ -74,7 +74,7 @@ Root-level commands:
 - `corepack pnpm dev`
 - `corepack pnpm run server`
 - `corepack pnpm build`
-- `corepack pnpm run release:publish`
+- `corepack pnpm run release:artifacts`
 
 App-level examples:
 
@@ -85,42 +85,34 @@ App-level examples:
 
 ## Release Flow
 
-GitHub releases now drive npm publication.
+GitHub releases now produce downloadable runnable artifacts.
 
 - `.github/workflows/release.yml` runs when a GitHub release is published
-- the workflow installs dependencies, runs `check`, `test`, and `build`, then publishes staged npm artifacts
-- the published npm version is derived from the GitHub release tag, for example `v1.2.3` -> `1.2.3`
-- release targets are `@clio-fs/server` and `@clio-fs/client`
-- `@clio-fs/server` publishes the installable `clio-fs-server` command and bundles the operator UI runtime it needs
-- `@clio-fs/client` publishes the installable `clio-fs-client` command
-- internal workspaces under `packages/*`, plus `@clio-fs/server-ui`, are vendored into those app releases as bundled dependencies instead of being published separately
-- staged publish manifests are generated from built `dist/` output so local workspace development can continue using source-based exports
-- if a package version already exists on npm, the release script skips it instead of failing the whole publish job
-- GitHub prereleases publish with the npm dist-tag `next`; regular releases publish with `latest`
-
-Repository setup required for releases:
-
-- create a repository secret named `NPM_TOKEN`
-- use an npm automation token that can publish the `@clio-fs` scope
+- the workflow installs dependencies, runs `check`, `test`, and `build`, then builds release bundles under `.release-artifacts/`
+- the artifact version is derived from the GitHub release tag, for example `v1.2.3` -> `1.2.3`
+- release targets are the runnable `clio-fs-server` and `clio-fs-client` bundles
+- each artifact contains cross-platform launchers (`.cmd`, `.ps1`, and Unix shell) plus the built `dist/` output and vendored internal workspaces
+- internal workspaces under `packages/*`, plus `@clio-fs/server-ui`, are bundled into those release artifacts instead of being published separately
 - create GitHub releases with semver tags such as `v1.2.3` or `v1.2.3-beta.1`
 
-## Install Published Apps
+## Use Release Artifacts
 
-Global install example:
+Download the workflow artifacts created by the release workflow:
 
-```bash
-npm install --global @clio-fs/server @clio-fs/client
-```
+- `clio-fs-server-vX.Y.Z`
+- `clio-fs-client-vX.Y.Z`
 
-Server commands:
+Server commands from the extracted bundle:
 
-- `clio-fs-server` starts the control plane and operator UI together
-- `clio-fs-server api` starts only the control-plane API
-- `clio-fs-server ui` starts only the operator UI
+- `./clio-fs-server` on macOS or Linux
+- `clio-fs-server.cmd` on Windows Command Prompt
+- `.\clio-fs-server.ps1` on Windows PowerShell
 
-Client command:
+Client commands from the extracted bundle:
 
-- `clio-fs-client` starts the mirror client daemon
+- `./clio-fs-client` on macOS or Linux
+- `clio-fs-client.cmd` on Windows Command Prompt
+- `.\clio-fs-client.ps1` on Windows PowerShell
 
 Key runtime environment variables:
 

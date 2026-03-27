@@ -7,14 +7,11 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  publish:
+  release-artifacts:
     runs-on: ubuntu-latest
     env:
-      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
       RELEASE_TAG: ${{ github.event.release.tag_name }}
     steps:
       - name: Check out repository
@@ -29,7 +26,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
           cache: pnpm
 
       - name: Install dependencies
@@ -44,5 +40,17 @@ jobs:
       - name: Build
         run: corepack pnpm build
 
-      - name: Publish release artifacts
-        run: node scripts/publish-release.mjs
+      - name: Build release bundles
+        run: node scripts/build-release-artifacts.mjs
+
+      - name: Upload server artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clio-fs-server-${{ github.event.release.tag_name }}
+          path: .release-artifacts/clio-fs-server-*/
+
+      - name: Upload client artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clio-fs-client-${{ github.event.release.tag_name }}
+          path: .release-artifacts/clio-fs-client-*/

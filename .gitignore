@@ -24,3 +24,4 @@ coverage/
 tmp/
 .cache/
 .clio-fs/
+.release-artifacts/

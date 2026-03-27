@@ -1,19 +1,12 @@
-import { spawnSync } from "node:child_process";
-import {
-  cpSync,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync
-} from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const WORKSPACE_ROOTS = ["apps", "packages"];
-const RELEASE_TARGETS = new Set(["@clio-fs/server", "@clio-fs/client"]);
+const RELEASE_TARGETS = new Map([
+  ["@clio-fs/server", { command: "clio-fs-server", entrypoint: "./dist/cli.js" }],
+  ["@clio-fs/client", { command: "clio-fs-client", entrypoint: "./dist/index.js" }]
+]);
 const DEPENDENCY_FIELDS = ["dependencies", "optionalDependencies", "peerDependencies"];
 const MANIFEST_FIELDS = [
   "name",
@@ -31,12 +24,35 @@ const MANIFEST_FIELDS = [
   "engines"
 ];
 
-const isWindows = process.platform === "win32";
-
 const readJson = (filePath) => JSON.parse(readFileSync(filePath, "utf8"));
 
 const writeJson = (filePath, value) => {
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+};
+
+const writeText = (filePath, value) => {
+  writeFileSync(filePath, value, "utf8");
+};
+
+const copyDirectoryFiltered = (sourceDir, destinationDir, shouldSkipEntry) => {
+  mkdirSync(destinationDir, { recursive: true });
+
+  for (const entry of readdirSync(sourceDir)) {
+    const sourcePath = join(sourceDir, entry);
+    const destinationPath = join(destinationDir, entry);
+    const stat = statSync(sourcePath);
+
+    if (shouldSkipEntry(entry, sourcePath, stat.isDirectory())) {
+      continue;
+    }
+
+    if (stat.isDirectory()) {
+      copyDirectoryFiltered(sourcePath, destinationPath, shouldSkipEntry);
+      continue;
+    }
+
+    cpSync(sourcePath, destinationPath);
+  }
 };
 
 export const sanitizePackageDirectoryName = (packageName) =>
@@ -130,7 +146,7 @@ const collectDirectInternalDependencyNames = (manifest, workspaceNames) =>
     left.localeCompare(right)
   );
 
-export const sortTargetsForPublish = (targets) => {
+export const sortTargetsForRelease = (targets) => {
   const workspaceNames = new Set(targets.map((target) => target.packageName));
   const byName = new Map(targets.map((target) => [target.packageName, target]));
   const inDegree = new Map(targets.map((target) => [target.packageName, 0]));
@@ -190,7 +206,7 @@ const rewriteDependencyField = (fieldValue, versionsByName) => {
 
       if (!version) {
         throw new Error(
-          `Cannot publish workspace dependency ${dependencyName} because it does not map to a release target version.`
+          `Cannot bundle workspace dependency ${dependencyName} because it does not map to a release version.`
         );
       }
 
@@ -203,63 +219,68 @@ const rewriteDependencyField = (fieldValue, versionsByName) => {
   return Object.fromEntries(rewrittenEntries);
 };
 
-export const createPublishManifest = (manifest, versionsByName, bundleDependencies = []) => {
-  const publishManifest = Object.fromEntries(
+export const createBundleManifest = (manifest, versionsByName, bundleDependencies = []) => {
+  const releaseTarget = RELEASE_TARGETS.get(manifest.name);
+  const entrypoint = releaseTarget?.entrypoint ?? "./dist/index.js";
+  const command = releaseTarget?.command;
+  const bundleManifest = Object.fromEntries(
     MANIFEST_FIELDS
       .filter((field) => manifest[field] !== undefined)
       .map((field) => [field, manifest[field]])
   );
 
-  publishManifest.private = false;
-  publishManifest.main = "./dist/index.js";
-  publishManifest.types = "./dist/index.d.ts";
-  publishManifest.exports = {
+  bundleManifest.private = false;
+  bundleManifest.main = entrypoint;
+  bundleManifest.types = "./dist/index.d.ts";
+  bundleManifest.exports = {
     ".": {
       types: "./dist/index.d.ts",
-      import: "./dist/index.js"
+      import: entrypoint
     }
   };
-  publishManifest.publishConfig = {
-    ...(manifest.publishConfig ?? {}),
-    access: manifest.publishConfig?.access ?? "public"
-  };
+
+  if (command) {
+    bundleManifest.bin = {
+      [command]: entrypoint
+    };
+  }
 
   for (const field of DEPENDENCY_FIELDS) {
     const rewritten = rewriteDependencyField(manifest[field], versionsByName);
 
     if (rewritten && Object.keys(rewritten).length > 0) {
-      publishManifest[field] = rewritten;
+      bundleManifest[field] = rewritten;
     }
   }
 
   if (manifest.peerDependenciesMeta) {
-    publishManifest.peerDependenciesMeta = manifest.peerDependenciesMeta;
+    bundleManifest.peerDependenciesMeta = manifest.peerDependenciesMeta;
   }
 
   if (bundleDependencies.length > 0) {
-    publishManifest.bundleDependencies = bundleDependencies;
+    bundleManifest.bundleDependencies = bundleDependencies;
   }
 
-  return publishManifest;
+  return bundleManifest;
 };
 
 const parseCliArgs = (argv) => {
   const args = {
-    distTag: undefined,
+    outputDir: undefined,
     version: undefined
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index];
 
-    if (value === "--tag") {
-      args.distTag = argv[index + 1];
+    if (value === "--version") {
+      args.version = argv[index + 1];
       index += 1;
       continue;
     }
 
-    if (value === "--version") {
-      args.version = argv[index + 1];
+    if (value === "--output-dir") {
+      args.outputDir = argv[index + 1];
       index += 1;
       continue;
     }
@@ -268,16 +289,6 @@ const parseCliArgs = (argv) => {
   }
 
   return args;
-};
-
-export const resolveDistTag = (argv, env = process.env) => {
-  const args = parseCliArgs(argv);
-
-  if (args.distTag) {
-    return args.distTag;
-  }
-
-  return env.RELEASE_IS_PRERELEASE === "true" ? "next" : "latest";
 };
 
 export const resolveReleaseVersion = (argv, env = process.env) => {
@@ -290,36 +301,18 @@ export const resolveReleaseVersion = (argv, env = process.env) => {
   return normalizeReleaseVersion(env.RELEASE_TAG);
 };
 
-const runCommand = (command, args, options = {}) => {
-  const result = spawnSync(command, args, {
-    encoding: "utf8",
-    shell: isWindows,
-    ...options
-  });
+export const resolveArtifactsOutputDir = (rootDir, argv, env = process.env) => {
+  const args = parseCliArgs(argv);
 
-  if (result.error) {
-    throw result.error;
+  if (args.outputDir) {
+    return resolve(rootDir, args.outputDir);
   }
 
-  return result;
-};
-
-const npmVersionExists = (packageName, version) => {
-  const result = runCommand("npm", ["view", `${packageName}@${version}`, "version", "--json"]);
-
-  if ((result.status ?? 1) === 0) {
-    return true;
+  if (env.RELEASE_ARTIFACTS_DIR) {
+    return resolve(rootDir, env.RELEASE_ARTIFACTS_DIR);
   }
 
-  const output = `${result.stdout}\n${result.stderr}`;
-
-  if (output.includes("E404") || output.includes("404 Not Found")) {
-    return false;
-  }
-
-  throw new Error(
-    `npm view failed for ${packageName}@${version}:\n${output.trim() || "Unknown npm error."}`
-  );
+  return join(rootDir, ".release-artifacts");
 };
 
 const ensureBuildOutput = (packageName, workspaceDir) => {
@@ -348,7 +341,13 @@ const stageWorkspacePackage = ({
   const distDir = ensureBuildOutput(target.packageName, target.dir);
 
   mkdirSync(destinationDir, { recursive: true });
-  cpSync(distDir, join(destinationDir, "dist"), { recursive: true });
+  copyDirectoryFiltered(distDir, join(destinationDir, "dist"), (entryName, _entryPath, isDirectory) => {
+    if (isDirectory) {
+      return false;
+    }
+
+    return entryName.includes(".test.");
+  });
 
   const workspaceReadmePath = join(target.dir, "README.md");
   const readmePath = existsSync(workspaceReadmePath) ? workspaceReadmePath : rootReadmePath;
@@ -359,7 +358,7 @@ const stageWorkspacePackage = ({
 
   writeJson(
     join(destinationDir, "package.json"),
-    createPublishManifest(
+    createBundleManifest(
       target.manifest,
       versionsByName,
       includeBundleDependencies ? directInternalDependencyNames : []
@@ -386,65 +385,123 @@ const stageWorkspacePackage = ({
   return destinationDir;
 };
 
-const publishStagedWorkspace = (packageName, stagedDir, distTag) => {
-  const result = spawnSync(
-    "npm",
-    ["publish", stagedDir, "--access", "public", "--tag", distTag, "--provenance"],
-    {
-      stdio: "inherit",
-      shell: isWindows
-    }
-  );
+const createUnixLauncher = (command, relativeEntrypoint) => `#!/usr/bin/env sh
+set -eu
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec node "$SCRIPT_DIR/${relativeEntrypoint}" "$@"
+`;
 
-  if ((result.status ?? 1) !== 0) {
-    throw new Error(`npm publish failed for ${packageName}.`);
+const createWindowsLauncher = (relativeEntrypoint) => `@echo off
+set SCRIPT_DIR=%~dp0
+node "%SCRIPT_DIR%${relativeEntrypoint.replaceAll("/", "\\")}" %*
+`;
+
+const createPowerShellLauncher = (relativeEntrypoint) => `$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+& node (Join-Path $scriptDir "${relativeEntrypoint.replaceAll("/", "\\")}") @args
+exit $LASTEXITCODE
+`;
+
+const createBundleReadme = (packageName, command, version) => `# ${packageName}
+
+Release version: ${version}
+
+Run on macOS or Linux:
+
+\`\`\`bash
+./${command}
+\`\`\`
+
+Run on Windows Command Prompt:
+
+\`\`\`bat
+${command}.cmd
+\`\`\`
+
+Run on Windows PowerShell:
+
+\`\`\`powershell
+.\\${command}.ps1
+\`\`\`
+`;
+
+const createArtifactBundle = ({
+  target,
+  artifactDir,
+  versionsByName,
+  workspacesByName,
+  rootReadmePath,
+  releaseVersion
+}) => {
+  const releaseTarget = RELEASE_TARGETS.get(target.packageName);
+
+  if (!releaseTarget) {
+    throw new Error(`Missing release target metadata for ${target.packageName}.`);
   }
+
+  const packageDir = join(artifactDir, "package");
+  const command = releaseTarget.command;
+  const relativeEntrypoint = `package/${releaseTarget.entrypoint.replace(/^\.\//, "")}`;
+
+  rmSync(artifactDir, { recursive: true, force: true });
+  mkdirSync(artifactDir, { recursive: true });
+
+  stageWorkspacePackage({
+    target,
+    destinationDir: packageDir,
+    versionsByName,
+    workspacesByName,
+    rootReadmePath,
+    includeBundleDependencies: true
+  });
+
+  writeText(join(artifactDir, command), createUnixLauncher(command, relativeEntrypoint));
+  chmodSync(join(artifactDir, command), 0o755);
+  writeText(join(artifactDir, `${command}.cmd`), createWindowsLauncher(relativeEntrypoint));
+  writeText(join(artifactDir, `${command}.ps1`), createPowerShellLauncher(relativeEntrypoint));
+  writeText(join(artifactDir, "VERSION.txt"), `${releaseVersion}\n`);
+  writeText(join(artifactDir, "README.txt"), createBundleReadme(target.packageName, command, releaseVersion));
+
+  return artifactDir;
 };
 
 export const main = async ({ rootDir = process.cwd(), argv = process.argv.slice(2) } = {}) => {
-  const distTag = resolveDistTag(argv);
   const releaseVersion = resolveReleaseVersion(argv);
-  const stagingRoot = join(rootDir, ".release-staging");
+  const artifactsRoot = resolveArtifactsOutputDir(rootDir, argv);
   const rootReadmePath = join(rootDir, "README.md");
   const workspaces = collectWorkspaceTargets(rootDir);
   const workspacesByName = new Map(workspaces.map((target) => [target.packageName, target]));
-  const targets = sortTargetsForPublish(selectReleaseTargets(workspaces));
+  const targets = sortTargetsForRelease(selectReleaseTargets(workspaces));
   const versionsByName = new Map(workspaces.map((target) => [target.packageName, releaseVersion]));
+  const bundlePaths = [];
 
-  console.log(`Release dist-tag: ${distTag}`);
   console.log(`Release version: ${releaseVersion}`);
+  console.log(`Artifacts directory: ${artifactsRoot}`);
 
-  rmSync(stagingRoot, { recursive: true, force: true });
-  mkdirSync(stagingRoot, { recursive: true });
+  rmSync(artifactsRoot, { recursive: true, force: true });
+  mkdirSync(artifactsRoot, { recursive: true });
 
-  try {
-    for (const target of targets) {
-      const { packageName } = target;
-      const version = versionsByName.get(packageName);
+  for (const target of targets) {
+    const releaseTarget = RELEASE_TARGETS.get(target.packageName);
 
-      if (!version) {
-        throw new Error(`Missing resolved release version for ${packageName}.`);
-      }
-
-      if (npmVersionExists(packageName, version)) {
-        console.log(`Skipping ${packageName}@${version}; version already exists on npm.`);
-        continue;
-      }
-
-      console.log(`Publishing ${packageName}@${version} from ${target.dir}`);
-      const stagedDir = stageWorkspacePackage({
-        target,
-        destinationDir: join(stagingRoot, sanitizePackageDirectoryName(target.packageName)),
-        versionsByName,
-        workspacesByName,
-        rootReadmePath,
-        includeBundleDependencies: true
-      });
-      publishStagedWorkspace(packageName, stagedDir, distTag);
+    if (!releaseTarget) {
+      continue;
     }
-  } finally {
-    rmSync(stagingRoot, { recursive: true, force: true });
+
+    const artifactName = `${releaseTarget.command}-${releaseVersion}`;
+    const artifactDir = join(artifactsRoot, artifactName);
+    createArtifactBundle({
+      target,
+      artifactDir,
+      versionsByName,
+      workspacesByName,
+      rootReadmePath,
+      releaseVersion
+    });
+    bundlePaths.push(artifactDir);
+    console.log(`Prepared ${artifactName}`);
   }
+
+  return bundlePaths;
 };
 
 const entryPath = process.argv[1] ? resolve(process.argv[1]) : null;
