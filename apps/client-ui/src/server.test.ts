@@ -19,8 +19,12 @@ const createMirrorClientStub = () => {
     workspaceId: "demo-main",
     mirrorRoot: "/tmp/demo-main",
     hydrated: true,
-    lastAppliedRevision: 11
+    lastAppliedRevision: 11,
+    pendingOperations: [] as Array<{ id: string }>,
+    conflicts: [] as Array<{ path: string; serverArtifactPath?: string; message?: string }>
   };
+  const resolvedConflicts: Array<{ path: string; resolution: string }> = [];
+  const resyncActions: Array<"server" | "local"> = [];
 
   return {
     factory: (options: {
@@ -47,6 +51,34 @@ const createMirrorClientStub = () => {
         };
         return state;
       },
+      async resolveConflict(path: string, resolution = "accept_server") {
+        resolvedConflicts.push({ path, resolution });
+        state = {
+          ...state,
+          conflicts: state.conflicts.filter((conflict) => conflict.path !== path)
+        };
+        return state;
+      },
+      async resyncFromServer() {
+        resyncActions.push("server");
+        state = {
+          ...state,
+          lastAppliedRevision: state.lastAppliedRevision + 1,
+          pendingOperations: [],
+          conflicts: []
+        };
+        return state;
+      },
+      async resyncFromLocal() {
+        resyncActions.push("local");
+        state = {
+          ...state,
+          lastAppliedRevision: state.lastAppliedRevision + 1,
+          pendingOperations: [],
+          conflicts: []
+        };
+        return state;
+      },
       async startLocalWatchLoop() {},
       stopLocalWatchLoop() {},
       getState() {
@@ -54,6 +86,9 @@ const createMirrorClientStub = () => {
       }
     }),
     getStartedTarget: () => startedTarget
+    ,
+    getResolvedConflicts: () => resolvedConflicts,
+    getResyncActions: () => resyncActions
   };
 };
 
@@ -61,7 +96,7 @@ const createFetchStub = () =>
   (async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
 
-    if (url.pathname === "/workspaces") {
+    if (url.pathname === "/api/workspaces") {
       return new Response(
         JSON.stringify({
           items: [{ workspaceId: "demo-main", displayName: "Demo Main", currentRevision: 3 }]
@@ -128,7 +163,7 @@ const startTestUi = async (
 
 const seedTarget = (overrides: Partial<ClientSyncTarget> = {}): ClientSyncTarget => ({
   targetId: "target-1",
-  serverBaseUrl: "http://127.0.0.1:4010",
+  serverBaseUrl: "http://127.0.0.1:4020",
   authToken: "dev-token",
   workspaceId: "demo-main",
   mirrorRoot: "/tmp/demo-main",
@@ -163,6 +198,8 @@ test("renders metrics and registry when sync targets exist", async () => {
 
     assert.equal(response.status, 200);
     assert.match(html, /Sync Targets/);
+    assert.match(html, /From Server/);
+    assert.match(html, /From Local/);
     assert.match(html, /Details/);
     assert.match(html, /Delete demo-main/);
     assert.match(html, /Targets/);
@@ -186,7 +223,7 @@ test("adds a sync target and persists it", async () => {
         "x-clio-ui-request": "1"
       },
       body: new URLSearchParams({
-        serverBaseUrl: "http://127.0.0.1:4010",
+        serverBaseUrl: "http://127.0.0.1:4020",
         authToken: "dev-token",
         workspaceId: "demo-main",
         mirrorRoot: "/tmp/demo-main"
@@ -227,6 +264,7 @@ test("starts and pauses synchronization for a saved target", async () => {
     assert.equal(startPayload.ok, true);
     assert.equal(targetStore.get("target-1")?.enabled, true);
     assert.equal(mirrorClientStub.getStartedTarget()?.workspaceId, "demo-main");
+    assert.equal(mirrorClientStub.getStartedTarget()?.serverBaseUrl, "http://127.0.0.1:4020/api/");
 
     const pauseResponse = await fetch(`${baseUrl}/targets/target-1/pause`, {
       method: "POST",
@@ -244,6 +282,93 @@ test("starts and pauses synchronization for a saved target", async () => {
   }
 });
 
+test("reports live sync status including unsynced object count", async () => {
+  const targetStore = new InMemoryClientSyncTargetStore();
+  targetStore.save(seedTarget());
+  const { baseUrl, close } = await startTestUi({
+    createMirrorClientImpl: (() => ({
+      async bind() {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 12,
+          pendingOperations: [{ id: "pending-1" }],
+          conflicts: [{ path: "packages/A/readme.txt" }]
+        };
+      },
+      async pollOnce() {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 13,
+          pendingOperations: [{ id: "pending-1" }],
+          conflicts: [{ path: "packages/A/readme.txt" }]
+        };
+      },
+      async resolveConflict() {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 13,
+          pendingOperations: [{ id: "pending-1" }],
+          conflicts: []
+        };
+      },
+      async resyncFromServer() {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 13,
+          pendingOperations: [],
+          conflicts: []
+        };
+      },
+      async resyncFromLocal() {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 13,
+          pendingOperations: [],
+          conflicts: []
+        };
+      },
+      async startLocalWatchLoop() {},
+      stopLocalWatchLoop() {},
+      getState() {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 13,
+          pendingOperations: [{ id: "pending-1" }],
+          conflicts: [{ path: "packages/A/readme.txt" }]
+        };
+      }
+    })) as Parameters<typeof createClientUi>[0]["createMirrorClientImpl"],
+    targetStore
+  });
+
+  try {
+    await fetch(`${baseUrl}/targets/target-1/start`, {
+      method: "POST",
+      headers: {
+        "x-clio-ui-request": "1"
+      }
+    });
+
+    const response = await fetch(`${baseUrl}/sync-status`);
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.running, true);
+    assert.equal(payload.lastAppliedRevision, 13);
+    assert.equal(payload.pendingOperationCount, 1);
+    assert.equal(payload.conflictCount, 1);
+    assert.equal(payload.unsyncedObjectCount, 2);
+  } finally {
+    await close();
+  }
+});
+
 test("renders sync target detail page", async () => {
   const targetStore = new InMemoryClientSyncTargetStore();
   targetStore.save(seedTarget());
@@ -256,9 +381,242 @@ test("renders sync target detail page", async () => {
     assert.equal(response.status, 200);
     assert.match(html, /Sync Target Detail/);
     assert.match(html, /demo-main/);
-    assert.match(html, /http:\/\/127\.0\.0\.1:4010/);
+    assert.match(html, /http:\/\/127\.0\.0\.1:4020/);
+    assert.match(html, /Resync From Server/);
+    assert.match(html, /Resync From Local/);
   } finally {
     await server.close();
+  }
+});
+
+test("renders conflict resolution actions on target detail page for active conflicts", async () => {
+  const targetStore = new InMemoryClientSyncTargetStore();
+  targetStore.save(seedTarget());
+  const { baseUrl, close } = await startTestUi({
+    createMirrorClientImpl: (() => ({
+      async bind() {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 12,
+          pendingOperations: [],
+          conflicts: [
+            {
+              path: "README.md",
+              serverArtifactPath: "/tmp/demo-main/README.md.conflict-server",
+              message: "File has changed since the provided base revision"
+            }
+          ]
+        };
+      },
+      async pollOnce() {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 12,
+          pendingOperations: [],
+          conflicts: [
+            {
+              path: "README.md",
+              serverArtifactPath: "/tmp/demo-main/README.md.conflict-server",
+              message: "File has changed since the provided base revision"
+            }
+          ]
+        };
+      },
+      async resolveConflict(path: string, resolution = "accept_server") {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 13,
+          pendingOperations: [],
+          conflicts: path === "README.md" ? [] : [],
+          resolution
+        } as never;
+      },
+      async resyncFromServer() {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 13,
+          pendingOperations: [],
+          conflicts: []
+        };
+      },
+      async resyncFromLocal() {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 13,
+          pendingOperations: [],
+          conflicts: []
+        };
+      },
+      async startLocalWatchLoop() {},
+      stopLocalWatchLoop() {},
+      getState() {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 12,
+          pendingOperations: [],
+          conflicts: [
+            {
+              path: "README.md",
+              serverArtifactPath: "/tmp/demo-main/README.md.conflict-server",
+              message: "File has changed since the provided base revision"
+            }
+          ]
+        };
+      }
+    })) as Parameters<typeof createClientUi>[0]["createMirrorClientImpl"],
+    targetStore
+  });
+
+  try {
+    await fetch(`${baseUrl}/targets/target-1/start`, {
+      method: "POST",
+      headers: { "x-clio-ui-request": "1" }
+    });
+
+    const response = await fetch(`${baseUrl}/targets/target-1`);
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /Conflict Resolution/);
+    assert.match(html, /Accept Server/);
+    assert.match(html, /Accept Local/);
+    assert.match(html, /README\.md/);
+  } finally {
+    await close();
+  }
+});
+
+test("resolves a conflict through the client-ui endpoint", async () => {
+  const targetStore = new InMemoryClientSyncTargetStore();
+  targetStore.save(seedTarget());
+  const { baseUrl, close } = await startTestUi({
+    createMirrorClientImpl: (() => ({
+      async bind() {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 12,
+          pendingOperations: [],
+          conflicts: [{ path: "README.md", message: "conflict" }]
+        };
+      },
+      async pollOnce() {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 12,
+          pendingOperations: [],
+          conflicts: [{ path: "README.md", message: "conflict" }]
+        };
+      },
+      async resolveConflict(path: string, resolution = "accept_server") {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 13,
+          pendingOperations: [],
+          conflicts: [],
+          path,
+          resolution
+        } as never;
+      },
+      async resyncFromServer() {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 13,
+          pendingOperations: [],
+          conflicts: []
+        };
+      },
+      async resyncFromLocal() {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 13,
+          pendingOperations: [],
+          conflicts: []
+        };
+      },
+      async startLocalWatchLoop() {},
+      stopLocalWatchLoop() {},
+      getState() {
+        return {
+          workspaceId: "demo-main",
+          mirrorRoot: "/tmp/demo-main",
+          lastAppliedRevision: 12,
+          pendingOperations: [],
+          conflicts: [{ path: "README.md", message: "conflict" }]
+        };
+      }
+    })) as Parameters<typeof createClientUi>[0]["createMirrorClientImpl"],
+    targetStore
+  });
+
+  try {
+    await fetch(`${baseUrl}/targets/target-1/start`, {
+      method: "POST",
+      headers: { "x-clio-ui-request": "1" }
+    });
+
+    const response = await fetch(`${baseUrl}/targets/target-1/conflicts/resolve`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-clio-ui-request": "1"
+      },
+      body: new URLSearchParams({
+        path: "README.md",
+        resolution: "accept_local"
+      }).toString()
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+  } finally {
+    await close();
+  }
+});
+
+test("runs a full resync from the selected source through the client-ui endpoint", async () => {
+  const targetStore = new InMemoryClientSyncTargetStore();
+  targetStore.save(seedTarget());
+  const { baseUrl, mirrorClientStub, close } = await startTestUi({
+    targetStore
+  });
+
+  try {
+    await fetch(`${baseUrl}/targets/target-1/start`, {
+      method: "POST",
+      headers: { "x-clio-ui-request": "1" }
+    });
+
+    const serverResponse = await fetch(`${baseUrl}/targets/target-1/resync/server`, {
+      method: "POST",
+      headers: { "x-clio-ui-request": "1" }
+    });
+    const serverPayload = await serverResponse.json();
+
+    const localResponse = await fetch(`${baseUrl}/targets/target-1/resync/local`, {
+      method: "POST",
+      headers: { "x-clio-ui-request": "1" }
+    });
+    const localPayload = await localResponse.json();
+
+    assert.equal(serverResponse.status, 200);
+    assert.equal(serverPayload.ok, true);
+    assert.equal(localResponse.status, 200);
+    assert.equal(localPayload.ok, true);
+    assert.deepEqual(mirrorClientStub.getResyncActions(), ["server", "local"]);
+  } finally {
+    await close();
   }
 });
 
@@ -315,7 +673,7 @@ test("loads workspace options from selected server", async () => {
         "x-clio-ui-request": "1"
       },
       body: new URLSearchParams({
-        serverBaseUrl: "http://127.0.0.1:4010",
+        serverBaseUrl: "http://127.0.0.1:4020",
         authToken: "dev-token"
       }).toString()
     });

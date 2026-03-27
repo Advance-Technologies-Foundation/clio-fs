@@ -50,6 +50,8 @@ export interface MirrorClient {
     path: string,
     resolution?: "accept_server" | "accept_local"
   ) => Promise<ClientBindState>;
+  resyncFromServer: () => Promise<ClientBindState>;
+  resyncFromLocal: () => Promise<ClientBindState>;
   startLocalWatchLoop: () => Promise<void>;
   stopLocalWatchLoop: () => void;
   getState: () => ClientBindState | undefined;
@@ -82,6 +84,40 @@ const collectFilePaths = (
 
   return results;
 };
+
+const collectDirectoryPaths = (
+  filesystem: ClientFileSystemAdapter,
+  rootPath: string,
+  directoryPath = rootPath,
+  results: string[] = []
+) => {
+  if (!filesystem.exists(directoryPath)) {
+    return results;
+  }
+
+  for (const entry of filesystem.readdir(directoryPath)) {
+    if (entry.kind !== "directory") {
+      continue;
+    }
+
+    const absolutePath = join(directoryPath, entry.name);
+    const relativePath = absolutePath
+      .slice(rootPath.length)
+      .replace(/^[/\\]/, "")
+      .replaceAll("\\", "/");
+
+    results.push(relativePath);
+    collectDirectoryPaths(filesystem, rootPath, absolutePath, results);
+  }
+
+  return results;
+};
+
+const shouldIgnoreResyncPath = (path: string) =>
+  path === ".git" ||
+  path.startsWith(".git/") ||
+  path.includes(".conflict-server-") ||
+  path.includes(".conflict-merged-");
 
 const ensureHydratedMirror = async (
   controlPlane: ClientControlPlane,
@@ -172,6 +208,32 @@ const moveTrackedPaths = (state: ClientBindState, oldPath: string, newPath: stri
 
 const getTrackedFile = (state: ClientBindState, path: string) =>
   state.trackedFiles?.find((file) => file.path === path);
+
+const canReuseHydratedState = (
+  filesystem: ClientFileSystemAdapter,
+  state: ClientBindState,
+  mirrorRoot: string
+) => {
+  if (!state.hydrated) {
+    return false;
+  }
+
+  if (state.mirrorRoot !== mirrorRoot) {
+    return false;
+  }
+
+  if (!filesystem.exists(mirrorRoot)) {
+    return false;
+  }
+
+  const trackedFiles = state.trackedFiles ?? [];
+
+  if (trackedFiles.length === 0) {
+    return true;
+  }
+
+  return trackedFiles.every((file) => filesystem.exists(join(mirrorRoot, file.path)));
+};
 
 const applyMaterializedFiles = async (
   controlPlane: ClientControlPlane,
@@ -297,6 +359,9 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
   const suppressedDeletes = new Set<string>();
   const suppressedMoves = new Set<string>();
   let watcher = options.watcher;
+  let initialBindValidated = false;
+  let localWatchLoopActive = false;
+  let watchLoopListener: ((event: MirrorWatcherEvent) => void) | undefined;
 
   const getMoveSignature = (oldPath: string, newPath: string) => `${oldPath}->${newPath}`;
   const isConflictBlocked = (path: string, state?: ClientBindState) =>
@@ -598,6 +663,25 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
     return watcher;
   };
 
+  const runWithWatchLoopPaused = async <T>(operation: () => Promise<T>) => {
+    const shouldResume = localWatchLoopActive;
+
+    if (shouldResume) {
+      watcher?.stop();
+    }
+
+    try {
+      return await operation();
+    } finally {
+      if (shouldResume) {
+        const activeWatcher = await ensureWatcher();
+        if (watchLoopListener) {
+          activeWatcher.start(watchLoopListener);
+        }
+      }
+    }
+  };
+
   const applyWatcherEvent = async (event: MirrorWatcherEvent) => {
     const bound = stateStore.load(options.workspaceId);
 
@@ -729,7 +813,12 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
     async bind() {
       const existing = stateStore.load(options.workspaceId);
 
-      if (existing?.hydrated) {
+      if (existing?.hydrated && initialBindValidated) {
+        return existing;
+      }
+
+      if (existing && canReuseHydratedState(filesystem, existing, options.mirrorRoot)) {
+        initialBindValidated = true;
         return existing;
       }
 
@@ -741,6 +830,7 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
         options.mirrorRoot
       );
 
+      initialBindValidated = true;
       refreshSuppressionFromMirror(nextState.mirrorRoot);
       return nextState;
     },
@@ -1095,16 +1185,130 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       stateStore.save(nextState);
       return nextState;
     },
+    async resyncFromServer() {
+      return runWithWatchLoopPaused(async () => {
+        const nextState = await ensureHydratedMirror(
+          controlPlane,
+          filesystem,
+          stateStore,
+          options.workspaceId,
+          options.mirrorRoot
+        );
+
+        refreshSuppressionFromMirror(nextState.mirrorRoot);
+        initialBindValidated = true;
+        return nextState;
+      });
+    },
+    async resyncFromLocal() {
+      const bound = (await client.bind()) ?? stateStore.load(options.workspaceId);
+
+      if (!bound) {
+        throw new Error(`Workspace is not bound: ${options.workspaceId}`);
+      }
+
+      return runWithWatchLoopPaused(async () => {
+        const snapshot = await controlPlane.getSnapshot(bound.workspaceId);
+        const serverFiles = new Map(
+          snapshot.items
+            .filter(isFileEntry)
+            .map((item) => [item.path, item])
+        );
+        const serverDirectories = new Set(
+          snapshot.items
+            .filter((item) => item.kind === "directory")
+            .map((item) => item.path)
+            .filter((path) => path.length > 0)
+        );
+
+        const localDirectories = collectDirectoryPaths(filesystem, bound.mirrorRoot)
+          .filter((path) => !shouldIgnoreResyncPath(path))
+          .sort((left, right) => left.localeCompare(right));
+        const localFiles = collectFilePaths(filesystem, bound.mirrorRoot)
+          .filter((path) => !shouldIgnoreResyncPath(path))
+          .sort((left, right) => left.localeCompare(right));
+        const localFileSet = new Set(localFiles);
+        const localDirectorySet = new Set(localDirectories);
+
+        for (const directoryPath of localDirectories.sort((left, right) => left.split("/").length - right.split("/").length)) {
+          if (serverDirectories.has(directoryPath)) {
+            continue;
+          }
+
+          await controlPlane.createDirectory(bound.workspaceId, directoryPath, {
+            origin: "local-client"
+          });
+        }
+
+        for (const filePath of localFiles) {
+          const bytes = filesystem.readFileBytes(join(bound.mirrorRoot, filePath));
+          const encoded = encodeTransferContent(bytes);
+          const existingServerFile = serverFiles.get(filePath);
+
+          await controlPlane.putFile(bound.workspaceId, filePath, {
+            baseFileRevision: existingServerFile?.fileRevision ?? 0,
+            encoding: encoded.encoding,
+            content: encoded.content,
+            origin: "local-client"
+          });
+        }
+
+        const serverFilePathsDescending = [...serverFiles.values()]
+          .map((file) => file.path)
+          .filter((path) => !shouldIgnoreResyncPath(path))
+          .filter((path) => !localFileSet.has(path))
+          .sort((left, right) => right.localeCompare(left));
+
+        for (const filePath of serverFilePathsDescending) {
+          const existingServerFile = serverFiles.get(filePath);
+
+          await controlPlane.deleteFile(bound.workspaceId, filePath, {
+            baseFileRevision: existingServerFile?.fileRevision ?? 0,
+            origin: "local-client"
+          });
+        }
+
+        const serverDirectoriesDescending = [...serverDirectories]
+          .filter((path) => !shouldIgnoreResyncPath(path))
+          .filter((path) => !localDirectorySet.has(path))
+          .sort(
+            (left, right) =>
+              right.split("/").length - left.split("/").length || right.localeCompare(left)
+          );
+
+        for (const directoryPath of serverDirectoriesDescending) {
+          await controlPlane.deleteFile(bound.workspaceId, directoryPath, {
+            baseFileRevision: 0,
+            origin: "local-client"
+          });
+        }
+
+        const nextState = await ensureHydratedMirror(
+          controlPlane,
+          filesystem,
+          stateStore,
+          bound.workspaceId,
+          bound.mirrorRoot
+        );
+
+        refreshSuppressionFromMirror(nextState.mirrorRoot);
+        initialBindValidated = true;
+        return nextState;
+      });
+    },
     async startLocalWatchLoop() {
       await client.bind();
       const activeWatcher = await ensureWatcher();
-      activeWatcher.start((event) => {
+      watchLoopListener = (event) => {
         applyWatcherEvent(event).catch((error) => {
           console.error("[client] local watcher push failed:", error);
         });
-      });
+      };
+      localWatchLoopActive = true;
+      activeWatcher.start(watchLoopListener);
     },
     stopLocalWatchLoop() {
+      localWatchLoopActive = false;
       watcher?.stop();
     },
     getState() {

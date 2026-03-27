@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const WORKSPACE_ROOTS = ["apps", "packages"];
 const RELEASE_TARGETS = new Map([
   ["@clio-fs/server", { command: "clio-fs-server", entrypoint: "./dist/cli.js" }],
-  ["@clio-fs/client", { command: "clio-fs-client", entrypoint: "./dist/index.js" }]
+  ["@clio-fs/client-ui", { command: "clio-fs-client", entrypoint: "./dist/index.js" }]
 ]);
 const DEPENDENCY_FIELDS = ["dependencies", "optionalDependencies", "peerDependencies"];
 const MANIFEST_FIELDS = [
@@ -405,6 +405,12 @@ const createBundleReadme = (packageName, command, version) => `# ${packageName}
 
 Release version: ${version}
 
+Configuration:
+
+- copy config/*.conf.example to config/*.conf
+- edit the values before first start
+- launch the command from this extracted directory so config/*.conf is discovered automatically
+
 Run on macOS or Linux:
 
 \`\`\`bash
@@ -425,6 +431,7 @@ Run on Windows PowerShell:
 `;
 
 const createArtifactBundle = ({
+  rootDir,
   target,
   artifactDir,
   versionsByName,
@@ -461,6 +468,12 @@ const createArtifactBundle = ({
   writeText(join(artifactDir, "VERSION.txt"), `${releaseVersion}\n`);
   writeText(join(artifactDir, "README.txt"), createBundleReadme(target.packageName, command, releaseVersion));
 
+  const configDir = join(rootDir, "config");
+
+  if (existsSync(configDir)) {
+    copyDirectoryFiltered(configDir, join(artifactDir, "config"), (entry) => entry === ".DS_Store");
+  }
+
   return artifactDir;
 };
 
@@ -490,6 +503,7 @@ export const main = async ({ rootDir = process.cwd(), argv = process.argv.slice(
     const artifactName = `${releaseTarget.command}-${releaseVersion}`;
     const artifactDir = join(artifactsRoot, artifactName);
     createArtifactBundle({
+      rootDir,
       target,
       artifactDir,
       versionsByName,

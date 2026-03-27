@@ -8,7 +8,8 @@ export const startDefaultServerUi = () =>
     host: appConfig.serverUi.host,
     port: appConfig.serverUi.port,
     controlPlaneBaseUrl: appConfig.serverUi.controlPlaneBaseUrl,
-    controlPlaneAuthToken: appConfig.serverUi.controlPlaneAuthToken
+    controlPlaneAuthToken: appConfig.serverUi.controlPlaneAuthToken,
+    allowedUiTokens: appConfig.server.authTokens
   });
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

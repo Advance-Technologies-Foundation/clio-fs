@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createServerUi } from "./server.js";
 
+const TEST_UI_TOKEN = "test-token";
+
 const createFetchStub = (
   workspaces: Array<{
     workspaceId: string;
@@ -120,7 +122,8 @@ const startTestServer = async (
     host: "127.0.0.1",
     port: 0,
     controlPlaneBaseUrl: "http://127.0.0.1:4010",
-    controlPlaneAuthToken: "test-token",
+    controlPlaneAuthToken: TEST_UI_TOKEN,
+    allowedUiTokens: [TEST_UI_TOKEN, "backup-token"],
     fetchImpl: createFetchStub(workspaces) as typeof fetch,
     selectDirectory: async () => "/srv/clio/picked-from-dialog"
   });
@@ -137,6 +140,25 @@ const startTestServer = async (
 
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
+    login: async (token = TEST_UI_TOKEN) => {
+      const response = await fetch(`http://127.0.0.1:${address.port}/login`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded"
+        },
+        body: new URLSearchParams({
+          authToken: token
+        }),
+        redirect: "manual"
+      });
+
+      const cookieHeader = response.headers.get("set-cookie");
+
+      return {
+        response,
+        cookie: cookieHeader ? cookieHeader.split(";", 1)[0] : ""
+      };
+    },
     close: () =>
       new Promise<void>((resolve, reject) => {
         server.close((error) => (error ? reject(error) : resolve()));
@@ -144,18 +166,57 @@ const startTestServer = async (
   };
 };
 
+const withCookie = (cookie: string, headers?: HeadersInit): HeadersInit => ({
+  ...(headers ?? {}),
+  cookie
+});
+
+test("renders login page before authentication", async () => {
+  const server = await startTestServer();
+
+  try {
+    const response = await fetch(`${server.baseUrl}/login`);
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /Server operator login/i);
+    assert.match(html, /Access Token/i);
+  } finally {
+    await server.close();
+  }
+});
+
+test("proxies api requests on the same public origin", async () => {
+  const server = await startTestServer();
+
+  try {
+    const response = await fetch(`${server.baseUrl}/api/workspaces`, {
+      headers: {
+        authorization: `Bearer ${TEST_UI_TOKEN}`
+      }
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.items[0]?.workspaceId, "demo-main");
+  } finally {
+    await server.close();
+  }
+});
+
 test("renders dashboard with workspace content", async () => {
   const server = await startTestServer();
 
   try {
-    const response = await fetch(`${server.baseUrl}/`);
+    const { cookie } = await server.login();
+    const response = await fetch(`${server.baseUrl}/`, {
+      headers: withCookie(cookie)
+    });
     const html = await response.text();
 
     assert.equal(response.status, 200);
-    assert.match(html, /Manage workspace sync from a single control plane/i);
-    assert.match(html, /Operations Console/i);
+    assert.match(html, /Workspaces/i);
     assert.match(html, /Demo Main/);
-    assert.match(html, /sync-core ready; workspaces=1/);
     assert.match(html, /Demo Main \(demo-main\)/);
     assert.match(html, />Details</);
     assert.match(html, /aria-label="Add workspace"/);
@@ -165,7 +226,7 @@ test("renders dashboard with workspace content", async () => {
     assert.match(html, /Add Workspace/);
     assert.match(html, /Close add workspace dialog/);
     assert.match(html, /class="dashboard-hero"/);
-    assert.match(html, /class="dashboard-hero-visual"/);
+    assert.doesNotMatch(html, /class="dashboard-hero-visual"/);
     assert.match(html, /class="dashboard-hero-grid"/);
     assert.match(html, /aria-label="Open server settings"/);
     assert.match(html, /Server Settings/);
@@ -183,9 +244,11 @@ test("updates server watch settings in JSON mode", async () => {
   const server = await startTestServer();
 
   try {
+    const { cookie } = await server.login();
     const response = await fetch(`${server.baseUrl}/settings/watch`, {
       method: "POST",
       headers: {
+        ...withCookie(cookie),
         "content-type": "application/x-www-form-urlencoded",
         "x-clio-ui-request": "1"
       },
@@ -199,7 +262,9 @@ test("updates server watch settings in JSON mode", async () => {
     assert.equal(body.ok, true);
     assert.equal(body.settleDelayMs, 2400);
 
-    const dashboard = await fetch(`${server.baseUrl}/`);
+    const dashboard = await fetch(`${server.baseUrl}/`, {
+      headers: withCookie(cookie)
+    });
     const html = await dashboard.text();
 
     assert.match(html, /value="2400"/);
@@ -212,8 +277,10 @@ test("returns a native-picked folder path", async () => {
   const server = await startTestServer();
 
   try {
+    const { cookie } = await server.login();
     const response = await fetch(`${server.baseUrl}/native/select-directory`, {
-      method: "POST"
+      method: "POST",
+      headers: withCookie(cookie)
     });
     const body = (await response.json()) as { path: string };
 
@@ -228,8 +295,10 @@ test("deletes workspace from the UI and redirects to dashboard", async () => {
   const server = await startTestServer();
 
   try {
+    const { cookie } = await server.login();
     const response = await fetch(`${server.baseUrl}/workspaces/demo-main/delete`, {
       method: "POST",
+      headers: withCookie(cookie),
       redirect: "manual"
     });
 
@@ -244,8 +313,10 @@ test("returns a dashboard fragment for client-side refresh", async () => {
   const server = await startTestServer();
 
   try {
+    const { cookie } = await server.login();
     const response = await fetch(`${server.baseUrl}/dashboard-fragment`, {
       headers: {
+        ...withCookie(cookie),
         "x-clio-ui-request": "1"
       }
     });
@@ -264,9 +335,11 @@ test("submits workspace registration form and redirects to dashboard", async () 
   const server = await startTestServer();
 
   try {
+    const { cookie } = await server.login();
     const response = await fetch(`${server.baseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
+        ...withCookie(cookie),
         "content-type": "application/x-www-form-urlencoded"
       },
       body: new URLSearchParams({
@@ -288,9 +361,11 @@ test("submits workspace registration form in JSON mode", async () => {
   const server = await startTestServer();
 
   try {
+    const { cookie } = await server.login();
     const response = await fetch(`${server.baseUrl}/workspaces/register`, {
       method: "POST",
       headers: {
+        ...withCookie(cookie),
         "content-type": "application/x-www-form-urlencoded",
         "x-clio-ui-request": "1"
       },
@@ -314,9 +389,11 @@ test("deletes workspace in JSON mode", async () => {
   const server = await startTestServer();
 
   try {
+    const { cookie } = await server.login();
     const response = await fetch(`${server.baseUrl}/workspaces/demo-main/delete`, {
       method: "POST",
       headers: {
+        ...withCookie(cookie),
         "x-clio-ui-request": "1"
       }
     });
@@ -333,7 +410,11 @@ test("allows omitting display name in workspace registration form", async () => 
   const server = await startTestServer();
 
   try {
-    const response = await fetch(`${server.baseUrl}/`, { method: "GET" });
+    const { cookie } = await server.login();
+    const response = await fetch(`${server.baseUrl}/`, {
+      method: "GET",
+      headers: withCookie(cookie)
+    });
     const html = await response.text();
 
     assert.equal(response.status, 200);
@@ -352,7 +433,10 @@ test("renders a blank slate when there are no workspaces", async () => {
   const server = await startTestServer([]);
 
   try {
-    const response = await fetch(`${server.baseUrl}/`);
+    const { cookie } = await server.login();
+    const response = await fetch(`${server.baseUrl}/`, {
+      headers: withCookie(cookie)
+    });
     const html = await response.text();
 
     assert.equal(response.status, 200);
@@ -374,7 +458,10 @@ test("renders workspace detail page", async () => {
   const server = await startTestServer();
 
   try {
-    const response = await fetch(`${server.baseUrl}/workspaces/demo-main`);
+    const { cookie } = await server.login();
+    const response = await fetch(`${server.baseUrl}/workspaces/demo-main`, {
+      headers: withCookie(cookie)
+    });
     const html = await response.text();
 
     assert.equal(response.status, 200);
@@ -390,7 +477,10 @@ test("renders not found page for unknown workspaces", async () => {
   const server = await startTestServer();
 
   try {
-    const response = await fetch(`${server.baseUrl}/workspaces/missing`);
+    const { cookie } = await server.login();
+    const response = await fetch(`${server.baseUrl}/workspaces/missing`, {
+      headers: withCookie(cookie)
+    });
     const html = await response.text();
 
     assert.equal(response.status, 404);

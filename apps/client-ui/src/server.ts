@@ -45,11 +45,25 @@ export interface MirrorClientOptions {
 }
 
 export interface MirrorClient {
-  bind: () => Promise<{ workspaceId: string; mirrorRoot: string; lastAppliedRevision: number }>;
-  pollOnce: () => Promise<{ lastAppliedRevision: number }>;
+  bind: () => Promise<MirrorClientStateSnapshot>;
+  pollOnce: () => Promise<MirrorClientStateSnapshot>;
+  resolveConflict: (
+    path: string,
+    resolution?: "accept_server" | "accept_local"
+  ) => Promise<MirrorClientStateSnapshot>;
+  resyncFromServer: () => Promise<MirrorClientStateSnapshot>;
+  resyncFromLocal: () => Promise<MirrorClientStateSnapshot>;
   startLocalWatchLoop: () => Promise<void>;
   stopLocalWatchLoop: () => void;
-  getState: () => { lastAppliedRevision: number } | undefined;
+  getState: () => MirrorClientStateSnapshot | undefined;
+}
+
+interface MirrorClientStateSnapshot {
+  workspaceId: string;
+  mirrorRoot: string;
+  lastAppliedRevision: number;
+  conflicts?: Array<{ path: string; serverArtifactPath?: string; message?: string }>;
+  pendingOperations?: Array<{ id: string }>;
 }
 
 interface ClientUiRemoteWorkspace {
@@ -64,6 +78,10 @@ interface ClientSyncManagerStatus {
   mirrorRoot?: string;
   serverBaseUrl?: string;
   lastAppliedRevision?: number;
+  pendingOperationCount?: number;
+  conflictCount?: number;
+  unsyncedObjectCount?: number;
+  conflicts?: MirrorClientStateSnapshot["conflicts"];
   lastError?: string;
 }
 
@@ -71,6 +89,15 @@ interface ClientSyncManager {
   getStatus: () => ClientSyncManagerStatus;
   start: (target: ClientSyncTarget) => Promise<ClientSyncManagerStatus>;
   stop: () => Promise<ClientSyncManagerStatus>;
+  resolveConflict: (
+    targetId: string,
+    path: string,
+    resolution: "accept_server" | "accept_local"
+  ) => Promise<ClientSyncManagerStatus>;
+  resyncTarget: (
+    targetId: string,
+    source: "server" | "local"
+  ) => Promise<ClientSyncManagerStatus>;
   restore: (target?: ClientSyncTarget) => Promise<void>;
 }
 
@@ -285,8 +312,12 @@ const createRemoteWorkspaceClient = (
   serverBaseUrl: string,
   authToken: string
 ) => {
+  const controlPlaneBaseUrl = normalizeClientUiControlPlaneBaseUrl(serverBaseUrl);
+  const resolveControlPlaneUrl = (path: string) =>
+    new URL(path.startsWith("/") ? `.${path}` : path, controlPlaneBaseUrl);
+
   const request = async <T>(path: string): Promise<T> => {
-    const response = await fetchImpl(new URL(path, serverBaseUrl), {
+    const response = await fetchImpl(resolveControlPlaneUrl(path), {
       headers: {
         authorization: `Bearer ${authToken}`
       }
@@ -311,6 +342,29 @@ const createRemoteWorkspaceClient = (
         .sort((left, right) => left.workspaceId.localeCompare(right.workspaceId));
     }
   };
+};
+
+const normalizeServerBaseUrl = (input: string) => {
+  const url = new URL(input);
+  url.hash = "";
+
+  if (url.pathname !== "/") {
+    url.pathname = url.pathname.replace(/\/+$/u, "") || "/";
+  }
+
+  return url.toString();
+};
+
+const normalizeClientUiControlPlaneBaseUrl = (input: string) => {
+  const url = new URL(input);
+  const normalizedPath = url.pathname.replace(/\/+$/u, "");
+
+  if (normalizedPath.length === 0 || normalizedPath === "/api") {
+    url.pathname = "/api/";
+  }
+
+  url.hash = "";
+  return url.toString();
 };
 
 const validateTargetInput = (input: {
@@ -375,10 +429,102 @@ const renderPumaMascot = () => `
   </svg>
 `;
 
+const getMetricToneClass = (key: string) => {
+  let hash = 0;
+
+  for (const character of key) {
+    hash = (hash * 31 + character.charCodeAt(0)) % 4;
+  }
+
+  return `metric-card metric-tone-${hash + 1}`;
+};
+
 const renderMetricCard = (label: string, value: string) => `
-  <section class="panel" style="margin-bottom:0;">
+  <section class="panel ${getMetricToneClass(label)}" style="margin-bottom:0;">
     <div class="metric">${escapeHtml(label)}</div>
     <div class="metric-value">${escapeHtml(value)}</div>
+  </section>
+`;
+
+const renderConflictResolutionPanel = (
+  target: ClientSyncTarget,
+  status: ClientSyncManagerStatus
+) => {
+  const isActive = status.running && status.targetId === target.targetId;
+  const conflicts = isActive ? status.conflicts ?? [] : [];
+
+  if (!isActive) {
+    return `
+      <section class="panel stack">
+        <div class="metric">Conflict Resolution</div>
+        <p class="lede" style="margin:0;">Start this sync target to inspect and resolve blocked paths.</p>
+      </section>
+    `;
+  }
+
+  if (conflicts.length === 0) {
+    return `
+      <section class="panel stack">
+        <div class="metric">Conflict Resolution</div>
+        <p class="lede" style="margin:0;">No blocked paths. This sync target currently has no unresolved conflicts.</p>
+      </section>
+    `;
+  }
+
+  return `
+    <section class="panel stack">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+        <div>
+          <div class="metric">Conflict Resolution</div>
+          <p class="lede" style="margin:0.4rem 0 0;">Choose whether each blocked path should accept the canonical server version or replay the local version back to the server.</p>
+        </div>
+        <div class="metric-value">${escapeHtml(String(conflicts.length))}</div>
+      </div>
+      <div class="stack" style="gap:0.9rem;">
+        ${conflicts
+          .map(
+            (conflict) => `
+              <article class="panel" style="margin:0;padding:1rem 1.1rem;">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap;">
+                  <div class="stack" style="gap:0.4rem;">
+                    <div class="metric-value" style="font-size:1.1rem;">${escapeHtml(conflict.path)}</div>
+                    <div class="helper-text">${escapeHtml(conflict.message ?? "This path is blocked until you choose a resolution.")}</div>
+                    ${
+                      conflict.serverArtifactPath
+                        ? `<div class="helper-text">Server artifact: ${escapeHtml(conflict.serverArtifactPath)}</div>`
+                        : ""
+                    }
+                  </div>
+                  <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;">
+                    <form action="/targets/${encodeURIComponent(target.targetId)}/conflicts/resolve" method="post" style="margin:0;">
+                      <input type="hidden" name="path" value="${escapeHtml(conflict.path)}" />
+                      <input type="hidden" name="resolution" value="accept_server" />
+                      <button class="secondary-button" type="submit">Accept Server</button>
+                    </form>
+                    <form action="/targets/${encodeURIComponent(target.targetId)}/conflicts/resolve" method="post" style="margin:0;">
+                      <input type="hidden" name="path" value="${escapeHtml(conflict.path)}" />
+                      <input type="hidden" name="resolution" value="accept_local" />
+                      <button class="primary-button" type="submit">Accept Local</button>
+                    </form>
+                  </div>
+                </div>
+              </article>
+            `
+          )
+          .join("")}
+      </div>
+    </section>
+  `;
+};
+
+const renderLiveMetricCard = (
+  label: string,
+  value: string,
+  metricKey: "targets" | "running" | "lastRevision" | "unsyncedObjects"
+) => `
+  <section class="panel ${getMetricToneClass(metricKey)}" style="margin-bottom:0;">
+    <div class="metric">${escapeHtml(label)}</div>
+    <div class="metric-value" data-sync-metric="${escapeHtml(metricKey)}">${escapeHtml(value)}</div>
   </section>
 `;
 
@@ -406,20 +552,48 @@ const renderTargetTable = (targets: ClientSyncTarget[], status: ClientSyncManage
           .map((target) => {
             const isRunning = status.running && status.targetId === target.targetId;
             return `
-              <tr>
+              <tr data-target-row="${escapeHtml(target.targetId)}">
                 <td>${escapeHtml(formatTargetLabel(target))}</td>
                 <td>${escapeHtml(target.serverBaseUrl)}</td>
-                <td>${isRunning ? "Running" : target.enabled ? "Ready" : "Paused"}</td>
-                <td>${isRunning ? escapeHtml(String(status.lastAppliedRevision ?? "n/a")) : "n/a"}</td>
+                <td data-target-status="${escapeHtml(target.targetId)}">${isRunning ? "Running" : target.enabled ? "Ready" : "Paused"}</td>
+                <td data-target-revision="${escapeHtml(target.targetId)}">${isRunning ? escapeHtml(String(status.lastAppliedRevision ?? "n/a")) : "n/a"}</td>
                 <td>
                   <form action="/targets/${encodeURIComponent(target.targetId)}/${isRunning ? "pause" : "start"}" method="post" data-target-sync-form style="margin:0;">
-                    <button class="${isRunning ? "secondary-button" : "primary-button"}" type="submit">
+                    <button
+                      class="${isRunning ? "secondary-button" : "primary-button"}"
+                      type="submit"
+                      data-target-sync-button="${escapeHtml(target.targetId)}"
+                      data-start-action="/targets/${encodeURIComponent(target.targetId)}/start"
+                      data-pause-action="/targets/${encodeURIComponent(target.targetId)}/pause"
+                    >
                       ${isRunning ? "Pause" : "Start"}
                     </button>
                   </form>
                 </td>
                 <td>
                   <div class="table-actions">
+                    <button
+                      class="secondary-button"
+                      type="button"
+                      data-open-resync-target
+                      data-resync-target-id="${escapeHtml(target.targetId)}"
+                      data-resync-target-name="${escapeHtml(formatTargetLabel(target))}"
+                      data-resync-source="server"
+                      data-resync-action="/targets/${encodeURIComponent(target.targetId)}/resync/server"
+                    >
+                      From Server
+                    </button>
+                    <button
+                      class="secondary-button"
+                      type="button"
+                      data-open-resync-target
+                      data-resync-target-id="${escapeHtml(target.targetId)}"
+                      data-resync-target-name="${escapeHtml(formatTargetLabel(target))}"
+                      data-resync-source="local"
+                      data-resync-action="/targets/${encodeURIComponent(target.targetId)}/resync/local"
+                    >
+                      From Local
+                    </button>
                     <a class="secondary-button" href="/targets/${encodeURIComponent(target.targetId)}">Details</a>
                     <button
                       class="icon-button danger"
@@ -469,7 +643,7 @@ const renderAddTargetModal = (remoteWorkspaces: ClientUiRemoteWorkspace[]) => `
           <div class="form-grid">
             <div class="form-field">
               <label for="serverBaseUrl">Server URL</label>
-              <input id="serverBaseUrl" name="serverBaseUrl" type="url" required placeholder="http://127.0.0.1:4010" />
+              <input id="serverBaseUrl" name="serverBaseUrl" type="url" required placeholder="http://127.0.0.1:4020" />
             </div>
             <div class="form-field">
               <label for="authToken">Bearer Token</label>
@@ -539,6 +713,31 @@ const renderDeleteTargetModal = () => `
   </dialog>
 `;
 
+const renderResyncTargetModal = () => `
+  <dialog class="dialog" data-resync-target-dialog>
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <p class="table-card-label" style="margin-bottom:0.35rem;">Full Resync</p>
+          <h2 class="modal-title">Confirm Resync</h2>
+        </div>
+        <button class="modal-close" type="button" data-close-resync-target aria-label="Close resync dialog">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="lede" style="margin-top:0;">Run <span data-resync-source-label>this resync</span> for <span data-resync-target-name>this target</span>?</p>
+        <p class="helper-text" data-resync-summary></p>
+        <div data-resync-target-error hidden class="modal-inline-error"></div>
+      </div>
+      <div class="modal-actions">
+        <form action="" method="post" data-resync-target-form>
+          <button class="secondary-button" type="button" data-close-resync-target>Cancel</button>
+          <button class="primary-button" type="submit">Run Resync</button>
+        </form>
+      </div>
+    </div>
+  </dialog>
+`;
+
 const renderDashboardBody = (
   targets: ClientSyncTarget[],
   status: ClientSyncManagerStatus,
@@ -551,29 +750,34 @@ const renderDashboardBody = (
       ${renderEmptyState()}
       ${renderAddTargetModal(remoteWorkspaces)}
       ${renderDeleteTargetModal()}
+      ${renderResyncTargetModal()}
     `;
   }
 
   return `
-    <section class="dashboard-hero">
-      <div class="dashboard-hero-content">
-        <div class="dashboard-hero-copy">
-          <div class="eyebrow">Client Console</div>
-          <h1>Manage client sync targets from one local console.</h1>
-          <p class="lede">Review configured sync targets, inspect details, and control which workspace mirror is actively running on this machine.</p>
+    <section class="dashboard-shell">
+      <section class="dashboard-hero">
+        <div class="dashboard-hero-content">
+          <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:1rem;flex-wrap:wrap;margin-bottom:1rem;">
+            <div>
+              <div class="eyebrow">Active Workspace</div>
+              <h1 data-sync-metric="activeWorkspace" style="margin:0;">${escapeHtml(status.workspaceId ?? "None")}</h1>
+            </div>
+          </div>
+          <div class="dashboard-hero-grid" style="grid-template-columns:repeat(4,minmax(0,1fr));">
+            ${renderLiveMetricCard("Targets", String(targets.length), "targets")}
+            ${renderLiveMetricCard("Running", status.running ? "1" : "0", "running")}
+            ${renderLiveMetricCard("Unsynced Objects", String(status.unsyncedObjectCount ?? 0), "unsyncedObjects")}
+            ${renderLiveMetricCard("Last Revision", typeof status.lastAppliedRevision === "number" ? String(status.lastAppliedRevision) : "n/a", "lastRevision")}
+          </div>
         </div>
-        <div class="dashboard-hero-grid">
-          ${renderMetricCard("Targets", String(targets.length))}
-          ${renderMetricCard("Running", status.running ? "1" : "0")}
-          ${renderMetricCard("Active Workspace", status.workspaceId ?? "None")}
-          ${renderMetricCard("Last Revision", typeof status.lastAppliedRevision === "number" ? String(status.lastAppliedRevision) : "n/a")}
-        </div>
-      </div>
+      </section>
+      ${notice ? renderNotice(notice.tone, notice.message) : ""}
+      ${renderTargetTable(targets, status)}
+      ${renderAddTargetModal(remoteWorkspaces)}
+      ${renderDeleteTargetModal()}
+      ${renderResyncTargetModal()}
     </section>
-    ${notice ? renderNotice(notice.tone, notice.message) : ""}
-    ${renderTargetTable(targets, status)}
-    ${renderAddTargetModal(remoteWorkspaces)}
-    ${renderDeleteTargetModal()}
   `;
 };
 
@@ -584,17 +788,20 @@ const renderClientPage = (
   notice?: { tone: "success" | "error"; message: string }
 ) =>
   renderPage(
-    "Clio FS Client Console",
+    "Clio FS Client",
     `${renderDashboardBody(targets, status, remoteWorkspaces, notice)}
     <script>
       (() => {
         const getAddDialog = () => document.querySelector("[data-add-target-dialog]");
         const getDeleteDialog = () => document.querySelector("[data-delete-target-dialog]");
+        const getResyncDialog = () => document.querySelector("[data-resync-target-dialog]");
         const getShell = () => document.querySelector("main.shell");
         const getWorkspaceList = () => document.getElementById("client-workspace-options");
         const getWorkspaceSelect = () => document.getElementById("workspaceSelect");
         const getDeleteForm = () => document.querySelector("[data-delete-target-form]");
+        const getResyncForm = () => document.querySelector("[data-resync-target-form]");
         let workspaceReloadTimer = null;
+        let statusPollTimer = null;
 
         const setInlineError = (selector, message) => {
           const node = document.querySelector(selector);
@@ -749,6 +956,98 @@ const renderClientPage = (
           shell.innerHTML = payload.html;
           bindDialogBackdropClose(getAddDialog());
           bindDialogBackdropClose(getDeleteDialog());
+          bindDialogBackdropClose(getResyncDialog());
+          startStatusPolling();
+        };
+
+        const applyLiveStatus = (payload) => {
+          const metric = (key) => document.querySelector('[data-sync-metric="' + key + '"]');
+          const runningValue = payload?.running ? "1" : "0";
+          const activeWorkspaceValue = payload?.workspaceId ?? "None";
+          const lastRevisionValue =
+            typeof payload?.lastAppliedRevision === "number" ? String(payload.lastAppliedRevision) : "n/a";
+          const unsyncedValue = String(payload?.unsyncedObjectCount ?? 0);
+
+          if (metric("running") instanceof HTMLElement) {
+            metric("running").textContent = runningValue;
+          }
+
+          if (metric("activeWorkspace") instanceof HTMLElement) {
+            metric("activeWorkspace").textContent = activeWorkspaceValue;
+          }
+
+          if (metric("lastRevision") instanceof HTMLElement) {
+            metric("lastRevision").textContent = lastRevisionValue;
+          }
+
+          if (metric("unsyncedObjects") instanceof HTMLElement) {
+            metric("unsyncedObjects").textContent = unsyncedValue;
+          }
+
+          const activeTargetId = typeof payload?.targetId === "string" ? payload.targetId : null;
+          document.querySelectorAll("[data-target-status]").forEach((node) => {
+            if (!(node instanceof HTMLElement)) {
+              return;
+            }
+
+            const targetId = node.getAttribute("data-target-status");
+            node.textContent = activeTargetId && targetId === activeTargetId && payload?.running ? "Running" : "Paused";
+          });
+
+          document.querySelectorAll("[data-target-revision]").forEach((node) => {
+            if (!(node instanceof HTMLElement)) {
+              return;
+            }
+
+            const targetId = node.getAttribute("data-target-revision");
+            node.textContent =
+              activeTargetId && targetId === activeTargetId && payload?.running && typeof payload?.lastAppliedRevision === "number"
+                ? String(payload.lastAppliedRevision)
+                : "n/a";
+          });
+
+          document.querySelectorAll("[data-target-sync-button]").forEach((node) => {
+            if (!(node instanceof HTMLButtonElement)) {
+              return;
+            }
+
+            const targetId = node.getAttribute("data-target-sync-button");
+            const form = node.closest("form");
+            const isActive = activeTargetId && targetId === activeTargetId && payload?.running;
+
+            node.textContent = isActive ? "Pause" : "Start";
+            node.className = isActive ? "secondary-button" : "primary-button";
+
+            if (form instanceof HTMLFormElement) {
+              form.action = isActive
+                ? node.getAttribute("data-pause-action") ?? form.action
+                : node.getAttribute("data-start-action") ?? form.action;
+            }
+          });
+        };
+
+        const pollSyncStatus = async () => {
+          const response = await fetch("/sync-status", {
+            headers: {
+              "x-clio-ui-request": "1"
+            }
+          });
+
+          if (!response.ok) {
+            throw new Error("Failed to load sync status");
+          }
+
+          applyLiveStatus(await response.json());
+        };
+
+        const startStatusPolling = () => {
+          if (statusPollTimer) {
+            clearInterval(statusPollTimer);
+          }
+
+          statusPollTimer = setInterval(() => {
+            void pollSyncStatus().catch(() => {});
+          }, 1000);
         };
 
         const loadRemoteWorkspaces = async () => {
@@ -837,10 +1136,12 @@ const renderClientPage = (
 
         bindDialogBackdropClose(getAddDialog());
         bindDialogBackdropClose(getDeleteDialog());
+        bindDialogBackdropClose(getResyncDialog());
+        startStatusPolling();
 
         document.addEventListener("click", async (event) => {
           const trigger = event.target instanceof Element
-            ? event.target.closest("[data-open-add-target], [data-close-add-target], [data-client-root-picker], [data-open-delete-target], [data-close-delete-target]")
+            ? event.target.closest("[data-open-add-target], [data-close-add-target], [data-client-root-picker], [data-open-delete-target], [data-close-delete-target], [data-open-resync-target], [data-close-resync-target]")
             : null;
 
           if (!(trigger instanceof HTMLElement)) {
@@ -860,6 +1161,11 @@ const renderClientPage = (
 
           if (trigger.matches("[data-close-delete-target]")) {
             closeDialog(getDeleteDialog());
+            return;
+          }
+
+          if (trigger.matches("[data-close-resync-target]")) {
+            closeDialog(getResyncDialog());
             return;
           }
 
@@ -939,6 +1245,43 @@ const renderClientPage = (
             }
 
             showDialog(dialog);
+            return;
+          }
+
+          if (trigger.matches("[data-open-resync-target]")) {
+            const dialog = getResyncDialog();
+            const targetName = trigger.getAttribute("data-resync-target-name") ?? "this target";
+            const source = trigger.getAttribute("data-resync-source") === "local" ? "local" : "server";
+            const action = trigger.getAttribute("data-resync-action") ?? "";
+            const form = getResyncForm();
+            const targetLabel = document.querySelector("[data-resync-target-name]");
+            const sourceLabel = document.querySelector("[data-resync-source-label]");
+            const summary = document.querySelector("[data-resync-summary]");
+
+            setInlineError("[data-resync-target-error]", "");
+
+            if (targetLabel instanceof HTMLElement) {
+              targetLabel.textContent = targetName;
+            }
+
+            if (sourceLabel instanceof HTMLElement) {
+              sourceLabel.textContent =
+                source === "local" ? "Resync From Local" : "Resync From Server";
+            }
+
+            if (summary instanceof HTMLElement) {
+              summary.textContent =
+                source === "local"
+                  ? "The local mirror will be treated as the source for the whole workspace and pushed back to the server."
+                  : "The local mirror will be replaced with the canonical server state for the whole workspace.";
+            }
+
+            if (form instanceof HTMLFormElement) {
+              form.action = action;
+            }
+
+            showDialog(dialog);
+            return;
           }
         });
 
@@ -1062,6 +1405,42 @@ const renderClientPage = (
 
             return;
           }
+
+          if (form.matches("[data-resync-target-form]")) {
+            event.preventDefault();
+            setInlineError("[data-resync-target-error]", "");
+            const submitButton = form.querySelector('button[type="submit"]');
+
+            if (submitButton instanceof HTMLButtonElement) {
+              submitButton.disabled = true;
+            }
+
+            try {
+              const response = await fetch(form.action, {
+                method: "POST",
+                headers: {
+                  "x-clio-ui-request": "1"
+                }
+              });
+
+              const payload = await response.json().catch(() => ({}));
+
+              if (!response.ok) {
+                throw new Error(payload?.error?.message ?? "Failed to run resync");
+              }
+
+              closeDialog(getResyncDialog());
+              await refreshDashboard();
+            } catch (error) {
+              setInlineError("[data-resync-target-error]", error instanceof Error ? error.message : "Failed to run resync");
+            } finally {
+              if (submitButton instanceof HTMLButtonElement) {
+                submitButton.disabled = false;
+              }
+            }
+
+            return;
+          }
         });
 
         document.addEventListener("change", async (event) => {
@@ -1091,12 +1470,15 @@ const renderClientPage = (
           scheduleRemoteWorkspaceReload();
         });
       })();
-    </script>`
+    </script>`,
+    {
+      topbarSubtitle: "Sync Client Control Plane"
+    }
   );
 
 const renderTargetDetail = (target: ClientSyncTarget, status: ClientSyncManagerStatus) =>
   renderPage(
-    `${escapeHtml(formatTargetLabel(target))} | Client Console`,
+    `${escapeHtml(formatTargetLabel(target))} | Clio FS Client`,
     `
       <div class="nav"><a href="/">← Back to dashboard</a></div>
       <section class="hero">
@@ -1107,8 +1489,8 @@ const renderTargetDetail = (target: ClientSyncTarget, status: ClientSyncManagerS
       <section class="grid">
         ${renderMetricCard("Status", status.running && status.targetId === target.targetId ? "Running" : target.enabled ? "Ready" : "Paused")}
         ${renderMetricCard("Revision", status.running && status.targetId === target.targetId ? String(status.lastAppliedRevision ?? "n/a") : "n/a")}
-        ${renderMetricCard("Server", target.serverBaseUrl)}
-        ${renderMetricCard("Local Path", target.mirrorRoot)}
+        ${renderMetricCard("Unsynced Objects", status.running && status.targetId === target.targetId ? String(status.unsyncedObjectCount ?? 0) : "0")}
+        ${renderMetricCard("Conflicts", status.running && status.targetId === target.targetId ? String(status.conflictCount ?? 0) : "0")}
       </section>
       <section class="panel" style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
         <form action="/targets/${encodeURIComponent(target.targetId)}/${status.running && status.targetId === target.targetId ? "pause" : "start"}" method="post">
@@ -1116,6 +1498,28 @@ const renderTargetDetail = (target: ClientSyncTarget, status: ClientSyncManagerS
             ${status.running && status.targetId === target.targetId ? "Pause Sync" : "Start Sync"}
           </button>
         </form>
+        <button
+          class="secondary-button"
+          type="button"
+          data-open-resync-target
+          data-resync-target-id="${escapeHtml(target.targetId)}"
+          data-resync-target-name="${escapeHtml(formatTargetLabel(target))}"
+          data-resync-source="server"
+          data-resync-action="/targets/${encodeURIComponent(target.targetId)}/resync/server"
+        >
+          Resync From Server
+        </button>
+        <button
+          class="secondary-button"
+          type="button"
+          data-open-resync-target
+          data-resync-target-id="${escapeHtml(target.targetId)}"
+          data-resync-target-name="${escapeHtml(formatTargetLabel(target))}"
+          data-resync-source="local"
+          data-resync-action="/targets/${encodeURIComponent(target.targetId)}/resync/local"
+        >
+          Resync From Local
+        </button>
       </section>
       <section class="panel stack">
         <dl class="meta-list">
@@ -1131,8 +1535,24 @@ const renderTargetDetail = (target: ClientSyncTarget, status: ClientSyncManagerS
           <dd>${escapeHtml(status.targetId === target.targetId ? status.lastError ?? "None" : "None")}</dd>
         </dl>
       </section>
-    `
+      ${renderConflictResolutionPanel(target, status)}
+    `,
+    {
+      topbarSubtitle: "Sync Client Control Plane"
+    }
   );
+
+const deriveStatusFromClientState = (
+  base: Pick<ClientSyncManagerStatus, "targetId" | "workspaceId" | "mirrorRoot" | "serverBaseUrl" | "running" | "lastError">,
+  snapshot?: MirrorClientStateSnapshot
+): ClientSyncManagerStatus => ({
+  ...base,
+  lastAppliedRevision: snapshot?.lastAppliedRevision,
+  pendingOperationCount: snapshot?.pendingOperations?.length ?? 0,
+  conflictCount: snapshot?.conflicts?.length ?? 0,
+  conflicts: snapshot?.conflicts ?? [],
+  unsyncedObjectCount: (snapshot?.pendingOperations?.length ?? 0) + (snapshot?.conflicts?.length ?? 0)
+});
 
 const createClientSyncManager = (
   createMirrorClientImpl: (options: MirrorClientOptions) => MirrorClient
@@ -1151,7 +1571,10 @@ const createClientSyncManager = (
     activeClient = undefined;
     status = {
       running: false,
-      lastAppliedRevision: status.lastAppliedRevision
+      lastAppliedRevision: status.lastAppliedRevision,
+      pendingOperationCount: 0,
+      conflictCount: 0,
+      unsyncedObjectCount: 0
     };
     return { ...status };
   };
@@ -1163,7 +1586,7 @@ const createClientSyncManager = (
       workspaceId: target.workspaceId,
       mirrorRoot: target.mirrorRoot,
       controlPlaneOptions: {
-        baseUrl: target.serverBaseUrl,
+        baseUrl: normalizeClientUiControlPlaneBaseUrl(target.serverBaseUrl),
         authToken: target.authToken
       }
     });
@@ -1171,25 +1594,33 @@ const createClientSyncManager = (
     await nextClient.bind();
     await nextClient.startLocalWatchLoop();
     activeClient = nextClient;
-    status = {
-      running: true,
-      targetId: target.targetId,
-      workspaceId: target.workspaceId,
-      mirrorRoot: target.mirrorRoot,
-      serverBaseUrl: target.serverBaseUrl,
-      lastAppliedRevision: nextClient.getState()?.lastAppliedRevision
-    };
+    status = deriveStatusFromClientState(
+      {
+        running: true,
+        targetId: target.targetId,
+        workspaceId: target.workspaceId,
+        mirrorRoot: target.mirrorRoot,
+        serverBaseUrl: target.serverBaseUrl,
+        lastError: undefined
+      },
+      nextClient.getState()
+    );
 
     activePollInterval = setInterval(() => {
       nextClient
         .pollOnce()
         .then((nextState) => {
-          status = {
-            ...status,
-            running: true,
-            lastAppliedRevision: nextState.lastAppliedRevision,
-            lastError: undefined
-          };
+          status = deriveStatusFromClientState(
+            {
+              running: true,
+              targetId: target.targetId,
+              workspaceId: target.workspaceId,
+              mirrorRoot: target.mirrorRoot,
+              serverBaseUrl: target.serverBaseUrl,
+              lastError: undefined
+            },
+            nextState
+          );
         })
         .catch((error: unknown) => {
           status = {
@@ -1204,9 +1635,71 @@ const createClientSyncManager = (
   };
 
   return {
-    getStatus: () => ({ ...status }),
+    getStatus: () => {
+      if (!activeClient) {
+        return { ...status };
+      }
+
+      status = deriveStatusFromClientState(
+        {
+          running: status.running,
+          targetId: status.targetId,
+          workspaceId: status.workspaceId,
+          mirrorRoot: status.mirrorRoot,
+          serverBaseUrl: status.serverBaseUrl,
+          lastError: status.lastError
+        },
+        activeClient.getState()
+      );
+
+      return { ...status };
+    },
     start,
     stop,
+    async resolveConflict(targetId, path, resolution) {
+      if (!activeClient || status.targetId !== targetId) {
+        throw new Error("Start this sync target before resolving conflicts.");
+      }
+
+      const nextState = await activeClient.resolveConflict(path, resolution);
+      status = deriveStatusFromClientState(
+        {
+          running: true,
+          targetId: status.targetId,
+          workspaceId: status.workspaceId,
+          mirrorRoot: status.mirrorRoot,
+          serverBaseUrl: status.serverBaseUrl,
+          lastError: undefined
+        },
+        nextState
+      );
+
+      return { ...status };
+    },
+    async resyncTarget(targetId, source) {
+      if (!activeClient || status.targetId !== targetId) {
+        throw new Error("Start this sync target before running a full resync.");
+      }
+
+      const nextState =
+        source === "local"
+          ? await activeClient.resyncFromLocal()
+          : await activeClient.resyncFromServer();
+
+      status = deriveStatusFromClientState(
+        {
+          running: true,
+          targetId: status.targetId,
+          workspaceId: status.workspaceId,
+          mirrorRoot: status.mirrorRoot,
+          serverBaseUrl: status.serverBaseUrl,
+          lastError: undefined
+        },
+        nextState
+      );
+
+      return { ...status };
+    },
     async restore(target) {
       if (!target?.enabled) {
         return;
@@ -1221,6 +1714,9 @@ const createClientSyncManager = (
           workspaceId: target.workspaceId,
           mirrorRoot: target.mirrorRoot,
           serverBaseUrl: target.serverBaseUrl,
+          pendingOperationCount: 0,
+          conflictCount: 0,
+          unsyncedObjectCount: 0,
           lastError: error instanceof Error ? error.message : String(error)
         };
       }
@@ -1263,6 +1759,11 @@ export const createClientUi = (options: ClientUiOptions) => {
         writeJson(response, 200, {
           html: renderDashboardBody(targetStore.list(), syncManager.getStatus(), [])
         });
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/sync-status") {
+        writeJson(response, 200, syncManager.getStatus());
         return;
       }
 
@@ -1313,6 +1814,7 @@ export const createClientUi = (options: ClientUiOptions) => {
           const target: ClientSyncTarget = {
             targetId: randomUUID(),
             ...input,
+            serverBaseUrl: normalizeServerBaseUrl(input.serverBaseUrl),
             enabled: false
           };
           targetStore.save(target);
@@ -1422,6 +1924,92 @@ export const createClientUi = (options: ClientUiOptions) => {
         return;
       }
 
+      if (method === "POST" && url.pathname.startsWith("/targets/") && url.pathname.endsWith("/conflicts/resolve")) {
+        const [, , targetId] = url.pathname.split("/");
+        const target = targetStore.get(targetId);
+
+        if (!target) {
+          writeJson(response, 404, { error: { code: "not_found", message: "Target not found" } });
+          return;
+        }
+
+        if (syncManager.getStatus().targetId !== targetId) {
+          const message = "Start this sync target before resolving conflicts.";
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 400, { error: { code: "target_not_running", message } });
+            return;
+          }
+
+          writeHtml(response, 400, renderTargetDetail(target, syncManager.getStatus()));
+          return;
+        }
+
+        const form = await readFormBody(request);
+        const path = form.get("path")?.toString().trim() ?? "";
+        const resolutionValue = form.get("resolution")?.toString().trim();
+        const resolution =
+          resolutionValue === "accept_local" ? "accept_local" : "accept_server";
+
+        if (!path) {
+          writeJson(response, 400, { error: { code: "invalid_conflict_path", message: "Conflict path is required." } });
+          return;
+        }
+
+        try {
+          await syncManager.resolveConflict(targetId, path, resolution);
+
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 200, { ok: true });
+            return;
+          }
+
+          redirect(response, `/targets/${encodeURIComponent(targetId)}`);
+          return;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to resolve conflict";
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 400, { error: { code: "conflict_resolution_failed", message } });
+            return;
+          }
+
+          writeHtml(response, 400, renderTargetDetail(target, syncManager.getStatus()));
+          return;
+        }
+      }
+
+      if (method === "POST" && url.pathname.startsWith("/targets/") && (url.pathname.endsWith("/resync/server") || url.pathname.endsWith("/resync/local"))) {
+        const [, , targetId, , source] = url.pathname.split("/");
+        const target = targetStore.get(targetId);
+
+        if (!target) {
+          writeJson(response, 404, { error: { code: "not_found", message: "Target not found" } });
+          return;
+        }
+
+        const mode = source === "local" ? "local" : "server";
+
+        try {
+          await syncManager.resyncTarget(targetId, mode);
+
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 200, { ok: true });
+            return;
+          }
+
+          redirect(response, `/targets/${encodeURIComponent(targetId)}`);
+          return;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to run full resync";
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 400, { error: { code: "target_resync_failed", message } });
+            return;
+          }
+
+          writeHtml(response, 400, renderTargetDetail(target, syncManager.getStatus()));
+          return;
+        }
+      }
+
       if (method === "GET" && url.pathname.startsWith("/targets/")) {
         const [, , targetId] = url.pathname.split("/");
         const target = targetStore.get(targetId);
@@ -1430,7 +2018,7 @@ export const createClientUi = (options: ClientUiOptions) => {
           writeHtml(
             response,
             404,
-            renderPage("Target Not Found", `<section class="panel error"><div class="metric">Not Found</div><div class="metric-value">Sync target not found</div></section>`)
+            renderPage("Target Not Found | Clio FS Client", `<section class="panel error"><div class="metric">Not Found</div><div class="metric-value">Sync target not found</div></section>`)
           );
           return;
         }
@@ -1462,7 +2050,7 @@ export const createClientUi = (options: ClientUiOptions) => {
         response,
         500,
         renderPage(
-          "Client UI Error",
+          "Client UI Error | Clio FS Client",
           renderNotice("error", error instanceof Error ? error.message : "Unknown client UI error")
         )
       );

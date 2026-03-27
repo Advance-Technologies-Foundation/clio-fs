@@ -13,6 +13,63 @@ The implementation target is:
 - a server-side control UI for operational visibility and administration
 - easy and predictable installation, verification, and run flows
 
+## Quick Start
+
+The fastest way to try `clio-fs` is through the GitHub Release bundles.
+
+### Server
+
+1. Download `clio-fs-server-X.Y.Z.tar.gz` from the GitHub Release page.
+2. Extract it.
+3. In the extracted folder, copy `config/server.conf.example` to `config/server.conf`.
+4. Edit at least:
+   - `CLIO_FS_SERVER_AUTH_TOKENS`
+   - `CLIO_FS_SERVER_HOST`
+   - `CLIO_FS_SERVER_PORT`
+5. Start the bundle from that extracted folder:
+   - macOS or Linux: `./clio-fs-server`
+   - Windows Command Prompt: `clio-fs-server.cmd`
+   - Windows PowerShell: `.\clio-fs-server.ps1`
+6. Open the operator UI at `http://<host>:4020` unless you changed the UI port.
+7. Use one configured token on the login page. The same public server address also exposes the API under `/api`.
+
+### Client
+
+1. Download `clio-fs-client-X.Y.Z.tar.gz` from the same GitHub Release page.
+2. Extract it.
+3. In the extracted folder, copy `config/client.conf.example` to `config/client.conf`.
+4. Edit at least:
+   - `CLIO_FS_CLIENT_CONTROL_PLANE_BASE_URL`
+   - `CLIO_FS_CLIENT_CONTROL_PLANE_AUTH_TOKEN`
+5. Start the bundle from that extracted folder:
+   - macOS or Linux: `./clio-fs-client`
+   - Windows Command Prompt: `clio-fs-client.cmd`
+   - Windows PowerShell: `.\clio-fs-client.ps1`
+6. Open the client UI at `http://127.0.0.1:4030` unless you changed the client UI port.
+7. Add a sync target:
+   - server URL
+   - bearer token
+   - workspace on the server
+   - local mirror path
+8. Enter the public server UI address, for example `http://127.0.0.1:4020`. The client automatically uses `/api` on that same origin.
+
+### Local Development
+
+```bash
+corepack pnpm install
+corepack pnpm run server
+corepack pnpm run client-ui
+```
+
+Default local URLs:
+
+- server API: `http://127.0.0.1:4010`
+- server UI: `http://127.0.0.1:4020`
+- client UI: `http://127.0.0.1:4030`
+- development bearer token: `dev-token`
+
+For user-facing flows, prefer the single public server origin `http://127.0.0.1:4020`. Both the browser UI and client setup can use that one address.
+
 ## Problem
 
 The target system needs to present a normal local directory to coding tools while preserving the server workspace as the single source of truth.
@@ -76,6 +133,31 @@ Root-level commands:
 - `corepack pnpm build`
 - `corepack pnpm run release:artifacts`
 
+## Configuration
+
+`clio-fs` supports both environment variables and `.conf` files.
+
+- environment variables always override values from config files
+- config files use `KEY=value` format
+- comments may start with `#` or `;`
+- quoted values are supported
+
+Conventional config files are loaded automatically from the current working directory:
+
+- `config/shared.conf`
+- `config/server.conf`
+- `config/server-ui.conf`
+- `config/client.conf`
+- `config/client-ui.conf`
+
+That means the simplest production setup is to keep a `config/` directory next to the extracted launcher from a GitHub Release.
+
+Detailed configuration reference:
+
+- [docs/CONFIGURATION.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/docs/CONFIGURATION.md)
+- [config/server.conf.example](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/config/server.conf.example)
+- [config/client.conf.example](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/config/client.conf.example)
+
 App-level examples:
 
 - `corepack pnpm --filter @clio-fs/server dev`
@@ -91,8 +173,10 @@ GitHub releases now publish one downloadable runnable archive per operating syst
 - the workflow installs dependencies, runs `check`, `test`, and `build`, then builds release bundles under `.release-artifacts/`
 - the artifact version is derived from the GitHub release tag, for example `v1.2.3` -> `1.2.3`
 - release targets are the runnable `clio-fs-server` and `clio-fs-client` bundles
-- each release archive contains both apps, their built `dist/` output, vendored internal workspaces, and the launchers needed for the target platform
-- internal workspaces under `packages/*`, plus `@clio-fs/server-ui`, are bundled into those release archives instead of being published separately
+- `clio-fs-server` starts the control plane plus operator UI
+- `clio-fs-client` starts the client setup UI backed by the local mirror engine
+- each release archive contains the launcher needed for the target platform plus the built `dist/` output and vendored internal workspaces
+- internal workspaces under `packages/*`, plus `@clio-fs/server-ui` and `@clio-fs/client`, are bundled into those release archives instead of being published separately
 - published releases attach these assets directly to the GitHub Release page:
   - `clio-fs-X.Y.Z-windows.zip`
   - `clio-fs-X.Y.Z-macos.tar.gz`
@@ -113,6 +197,12 @@ Download the release asset for your operating system from the GitHub Release pag
 
 Extract the archive, then run either app from the extracted folder.
 
+Each extracted bundle also contains a `config/` folder with `.conf.example` templates.
+Copy the matching template to a real `.conf` file before first start:
+
+- server bundle: `config/server.conf.example` -> `config/server.conf`
+- client bundle: `config/client.conf.example` -> `config/client.conf`
+
 Server commands from the extracted bundle:
 
 - `./clio-fs-server` on macOS or Linux
@@ -128,15 +218,23 @@ Client commands from the extracted bundle:
 Key runtime environment variables:
 
 - `CLIO_FS_SERVER_HOST` and `CLIO_FS_SERVER_PORT` control the API listener
-- `CLIO_FS_SERVER_AUTH_TOKEN` sets the bearer token used by the UI and client by default
+- `CLIO_FS_SERVER_AUTH_TOKEN` sets the primary bearer token used by the UI and client by default
+- `CLIO_FS_SERVER_AUTH_TOKENS` allows multiple comma-separated or newline-separated bearer tokens
 - `CLIO_FS_SERVER_WORKSPACE_REGISTRY_FILE` sets the file-backed workspace registry path
 - `CLIO_FS_SERVER_UI_HOST` and `CLIO_FS_SERVER_UI_PORT` control the operator UI listener
-- `CLIO_FS_SERVER_UI_CONTROL_PLANE_BASE_URL` overrides the UI target for the control plane
-- `CLIO_FS_CLIENT_CONTROL_PLANE_BASE_URL` points the client at the server API
+- `CLIO_FS_CLIENT_CONTROL_PLANE_BASE_URL` accepts either a direct API origin or the public server UI origin; when the path is empty it automatically resolves to `/api`
 - `CLIO_FS_CLIENT_CONTROL_PLANE_AUTH_TOKEN` overrides the client bearer token
 - `CLIO_FS_CLIENT_DEFAULT_WORKSPACE_ROOT` sets the default mirror root base directory
 - `CLIO_FS_CLIENT_STATE_FILE` sets the client state file path
 - `CLIO_FS_CLIENT_POLL_INTERVAL_MS` sets the polling interval
+
+If you prefer explicit config file locations instead of conventional `config/*.conf` files, you can point the runtime at them with:
+
+- `CLIO_FS_CONFIG_FILE`
+- `CLIO_FS_SERVER_CONFIG_FILE`
+- `CLIO_FS_SERVER_UI_CONFIG_FILE`
+- `CLIO_FS_CLIENT_CONFIG_FILE`
+- `CLIO_FS_CLIENT_UI_CONFIG_FILE`
 
 ## Current Implementation Status
 
@@ -256,13 +354,13 @@ If you prefer separate terminals:
 
 3. Open [http://127.0.0.1:4020](http://127.0.0.1:4020)
 
-By default the UI talks to the local control plane at `http://127.0.0.1:4010` using the development bearer token from [packages/config/src/index.ts](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/packages/config/src/index.ts).
+By default the UI is exposed on `http://127.0.0.1:4020` and proxies API traffic on the same origin under `/api`, so users and client setup only need one server address.
 Registered workspaces are persisted to [`.clio-fs/server/workspaces.json`](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/.clio-fs/server/workspaces.json) at the repository root once you create them through the UI or API.
 On the workspace registration form, `Choose Folder` opens the native directory picker on the machine running `server-ui` and fills `rootPath` with the selected absolute path.
 
-## Run The Client Slice Locally
+## Run The Headless Client Daemon Locally
 
-The current client slice is headless and driven through environment variables.
+The repository also keeps a headless daemon entrypoint for direct backend testing and low-level troubleshooting.
 
 Example:
 

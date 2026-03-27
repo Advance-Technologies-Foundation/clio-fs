@@ -1,0 +1,14 @@
+# clio-fs client configuration
+# Copy this file to config/client.conf and edit the values for your environment.
+
+CLIO_FS_CLIENT_CONTROL_PLANE_BASE_URL=http://127.0.0.1:4020
+CLIO_FS_CLIENT_CONTROL_PLANE_AUTH_TOKEN=change-me
+
+CLIO_FS_CLIENT_DEFAULT_WORKSPACE_ROOT=./workspaces
+CLIO_FS_CLIENT_SYNC_CONFIG_FILE=.clio-fs/client/config.json
+CLIO_FS_CLIENT_STATE_FILE=.clio-fs/client/state.json
+CLIO_FS_CLIENT_POLL_INTERVAL_MS=1000
+CLIO_FS_CLIENT_LOCAL_WATCH_SCAN_INTERVAL_MS=250
+
+CLIO_FS_CLIENT_UI_HOST=127.0.0.1
+CLIO_FS_CLIENT_UI_PORT=4030

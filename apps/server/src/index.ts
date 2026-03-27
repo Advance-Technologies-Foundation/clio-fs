@@ -34,7 +34,7 @@ export const startDefaultWorkspaceServer = () => {
   return startWorkspaceServer({
     host: appConfig.server.host,
     port: appConfig.server.port,
-    authToken: appConfig.server.authToken,
+    authTokens: appConfig.server.authTokens,
     registry,
     journal,
     watchSettingsStore,

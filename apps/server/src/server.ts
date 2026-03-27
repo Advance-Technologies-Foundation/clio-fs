@@ -43,7 +43,8 @@ import { detectServerPlatform, parseRegisterWorkspaceInput } from "./workspace.j
 export interface WorkspaceServerOptions {
   host: string;
   port: number;
-  authToken: string;
+  authToken?: string;
+  authTokens?: string[];
   registry: WorkspaceRegistry;
   watchSettingsStore: ServerWatchSettingsStore;
   journal?: ChangeJournal;
@@ -102,10 +103,23 @@ const writeError = (
   json(response, statusCode, body);
 };
 
-const isAuthorized = (request: IncomingMessage, authToken: string) => {
-  const header = request.headers.authorization;
+const normalizeAuthTokens = (options: Pick<WorkspaceServerOptions, "authToken" | "authTokens">) => {
+  const configuredTokens = (options.authTokens ?? []).map((token) => token.trim()).filter(Boolean);
 
-  return header === `Bearer ${authToken}`;
+  if (configuredTokens.length > 0) {
+    return configuredTokens;
+  }
+
+  if (options.authToken?.trim()) {
+    return [options.authToken.trim()];
+  }
+
+  return ["dev-token"];
+};
+
+const isAuthorized = (request: IncomingMessage, authTokens: string[]) => {
+  const header = request.headers.authorization;
+  return typeof header === "string" && authTokens.includes(header.replace(/^Bearer\s+/u, ""));
 };
 
 const publicWorkspaceShape = (workspace: WorkspaceRecord) => ({
@@ -147,8 +161,15 @@ const routeRequest = async (
 ) => {
   const method = request.method ?? "GET";
   const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  const pathname =
+    url.pathname === "/api"
+      ? "/"
+      : url.pathname.startsWith("/api/")
+        ? url.pathname.slice(4)
+        : url.pathname;
+  const authTokens = normalizeAuthTokens(options);
 
-  if (method === "GET" && url.pathname === "/health") {
+  if (method === "GET" && pathname === "/health") {
     const serverPlatform = options.serverPlatform ?? detectServerPlatform();
     json(response, 200, {
       status: "ok",
@@ -159,12 +180,12 @@ const routeRequest = async (
     return;
   }
 
-  if (!isAuthorized(request, options.authToken)) {
+  if (!isAuthorized(request, authTokens)) {
     writeError(response, 401, "unauthorized", "Missing or invalid bearer token");
     return;
   }
 
-  if (method === "GET" && url.pathname === "/diagnostics/summary") {
+  if (method === "GET" && pathname === "/diagnostics/summary") {
     const serverPlatform = options.serverPlatform ?? detectServerPlatform();
     const stats = options.journal?.getStats() ?? {
       totalEvents: 0,
@@ -186,13 +207,13 @@ const routeRequest = async (
     return;
   }
 
-  if (method === "GET" && url.pathname === "/settings/watch") {
+  if (method === "GET" && pathname === "/settings/watch") {
     const settings: ServerWatchSettingsResponse = options.watchSettingsStore.get();
     json(response, 200, settings);
     return;
   }
 
-  if (method === "PUT" && url.pathname === "/settings/watch") {
+  if (method === "PUT" && pathname === "/settings/watch") {
     try {
       const input = parseUpdateServerWatchSettingsRequest(await readJsonBody(request));
       json(response, 200, options.watchSettingsStore.update(input));
@@ -204,8 +225,8 @@ const routeRequest = async (
     }
   }
 
-  if (method === "GET" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/changes")) {
-    const [, , workspaceId] = url.pathname.split("/");
+  if (method === "GET" && pathname.startsWith("/workspaces/") && pathname.endsWith("/changes")) {
+    const [, , workspaceId] = pathname.split("/");
 
     if (!workspaceId) {
       writeError(response, 404, "not_found", "Workspace not found");
@@ -249,10 +270,10 @@ const routeRequest = async (
 
   if (
     method === "GET" &&
-    url.pathname.startsWith("/workspaces/") &&
-    url.pathname.endsWith("/changes/stream")
+    pathname.startsWith("/workspaces/") &&
+    pathname.endsWith("/changes/stream")
   ) {
-    const [, , workspaceId] = url.pathname.split("/");
+    const [, , workspaceId] = pathname.split("/");
 
     if (!workspaceId) {
       writeError(response, 404, "not_found", "Workspace not found");
@@ -318,15 +339,15 @@ const routeRequest = async (
     return;
   }
 
-  if (method === "GET" && url.pathname === "/workspaces") {
+  if (method === "GET" && pathname === "/workspaces") {
     json(response, 200, {
       items: options.registry.list().map(publicWorkspaceShape)
     });
     return;
   }
 
-  if (method === "GET" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/diagnostics")) {
-    const [, , workspaceId] = url.pathname.split("/");
+  if (method === "GET" && pathname.startsWith("/workspaces/") && pathname.endsWith("/diagnostics")) {
+    const [, , workspaceId] = pathname.split("/");
 
     if (!workspaceId) {
       writeError(response, 404, "not_found", "Workspace not found");
@@ -352,7 +373,7 @@ const routeRequest = async (
     return;
   }
 
-  if (method === "POST" && url.pathname === "/workspaces/register") {
+  if (method === "POST" && pathname === "/workspaces/register") {
     let input: RegisterWorkspaceInput;
 
     try {
@@ -386,10 +407,10 @@ const routeRequest = async (
 
   if (
     method === "POST" &&
-    url.pathname.startsWith("/workspaces/") &&
-    url.pathname.endsWith("/recovery/resync")
+    pathname.startsWith("/workspaces/") &&
+    pathname.endsWith("/recovery/resync")
   ) {
-    const [, , workspaceId] = url.pathname.split("/");
+    const [, , workspaceId] = pathname.split("/");
 
     if (!workspaceId) {
       writeError(response, 404, "not_found", "Workspace not found");
@@ -411,8 +432,8 @@ const routeRequest = async (
     return;
   }
 
-  if (method === "POST" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/snapshot-materialize")) {
-    const [, , workspaceId] = url.pathname.split("/");
+  if (method === "POST" && pathname.startsWith("/workspaces/") && pathname.endsWith("/snapshot-materialize")) {
+    const [, , workspaceId] = pathname.split("/");
 
     if (!workspaceId) {
       writeError(response, 404, "not_found", "Workspace not found");
@@ -443,8 +464,8 @@ const routeRequest = async (
     }
   }
 
-  if (method === "POST" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/mkdir")) {
-    const [, , workspaceId] = url.pathname.split("/");
+  if (method === "POST" && pathname.startsWith("/workspaces/") && pathname.endsWith("/mkdir")) {
+    const [, , workspaceId] = pathname.split("/");
     const path = url.searchParams.get("path");
 
     if (!workspaceId) {
@@ -489,8 +510,8 @@ const routeRequest = async (
     }
   }
 
-  if (method === "POST" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/move")) {
-    const [, , workspaceId] = url.pathname.split("/");
+  if (method === "POST" && pathname.startsWith("/workspaces/") && pathname.endsWith("/move")) {
+    const [, , workspaceId] = pathname.split("/");
 
     if (!workspaceId) {
       writeError(response, 404, "not_found", "Workspace not found");
@@ -523,10 +544,10 @@ const routeRequest = async (
 
   if (
     method === "POST" &&
-    url.pathname.startsWith("/workspaces/") &&
-    url.pathname.endsWith("/conflicts/resolve")
+    pathname.startsWith("/workspaces/") &&
+    pathname.endsWith("/conflicts/resolve")
   ) {
-    const [, , workspaceId] = url.pathname.split("/");
+    const [, , workspaceId] = pathname.split("/");
 
     if (!workspaceId) {
       writeError(response, 404, "not_found", "Workspace not found");
@@ -555,8 +576,8 @@ const routeRequest = async (
     }
   }
 
-  if (method === "PUT" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/file")) {
-    const [, , workspaceId] = url.pathname.split("/");
+  if (method === "PUT" && pathname.startsWith("/workspaces/") && pathname.endsWith("/file")) {
+    const [, , workspaceId] = pathname.split("/");
     const path = url.searchParams.get("path");
 
     if (!workspaceId) {
@@ -605,8 +626,8 @@ const routeRequest = async (
     }
   }
 
-  if (method === "DELETE" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/file")) {
-    const [, , workspaceId] = url.pathname.split("/");
+  if (method === "DELETE" && pathname.startsWith("/workspaces/") && pathname.endsWith("/file")) {
+    const [, , workspaceId] = pathname.split("/");
     const path = url.searchParams.get("path");
 
     if (!workspaceId) {
@@ -655,8 +676,8 @@ const routeRequest = async (
     }
   }
 
-  if (method === "GET" && url.pathname.startsWith("/workspaces/")) {
-    const [, , workspaceId, resource] = url.pathname.split("/");
+  if (method === "GET" && pathname.startsWith("/workspaces/")) {
+    const [, , workspaceId, resource] = pathname.split("/");
 
     if (!workspaceId) {
       writeError(response, 404, "not_found", "Workspace not found");
@@ -684,8 +705,8 @@ const routeRequest = async (
     return;
   }
 
-  if (method === "DELETE" && url.pathname.startsWith("/workspaces/")) {
-    const [, , workspaceId] = url.pathname.split("/");
+  if (method === "DELETE" && pathname.startsWith("/workspaces/")) {
+    const [, , workspaceId] = pathname.split("/");
 
     if (!workspaceId) {
       writeError(response, 404, "not_found", "Workspace not found");

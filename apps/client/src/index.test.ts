@@ -18,7 +18,7 @@ const createFetchStub = () => {
   const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
 
-    if (url.pathname === "/workspaces/demo-workspace/snapshot") {
+    if (url.pathname === "/api/workspaces/demo-workspace/snapshot") {
       snapshotCalls += 1;
 
       return new Response(
@@ -60,7 +60,7 @@ const createFetchStub = () => {
       );
     }
 
-    if (url.pathname === "/settings/watch") {
+    if (url.pathname === "/api/settings/watch") {
       watchSettingsCalls += 1;
 
       return new Response(
@@ -72,7 +72,7 @@ const createFetchStub = () => {
     }
 
     if (
-      url.pathname === "/workspaces/demo-workspace/snapshot-materialize" &&
+      url.pathname === "/api/workspaces/demo-workspace/snapshot-materialize" &&
       (init?.method ?? "GET") === "POST"
     ) {
       const body = JSON.parse(String(init?.body ?? "{}")) as { paths: string[] };
@@ -100,7 +100,7 @@ const createFetchStub = () => {
       );
     }
 
-    if (url.pathname === "/workspaces/demo-workspace/changes") {
+    if (url.pathname === "/api/workspaces/demo-workspace/changes") {
       changeCalls += 1;
       const since = Number(url.searchParams.get("since"));
 
@@ -155,7 +155,7 @@ const createFetchStub = () => {
     }
 
     if (
-      url.pathname === "/workspaces/demo-workspace/move" &&
+      url.pathname === "/api/workspaces/demo-workspace/move" &&
       (init?.method ?? "GET") === "POST"
     ) {
       const body = JSON.parse(String(init?.body ?? "{}")) as {
@@ -180,7 +180,7 @@ const createFetchStub = () => {
     }
 
     if (
-      url.pathname === "/workspaces/demo-workspace/mkdir" &&
+      url.pathname === "/api/workspaces/demo-workspace/mkdir" &&
       (init?.method ?? "GET") === "POST"
     ) {
       const path = url.searchParams.get("path");
@@ -198,7 +198,7 @@ const createFetchStub = () => {
     }
 
     if (
-      url.pathname === "/workspaces/demo-workspace/conflicts/resolve" &&
+      url.pathname === "/api/workspaces/demo-workspace/conflicts/resolve" &&
       (init?.method ?? "GET") === "POST"
     ) {
       const body = JSON.parse(String(init?.body ?? "{}")) as {
@@ -225,7 +225,7 @@ const createFetchStub = () => {
     }
 
     if (
-      url.pathname === "/workspaces/demo-workspace/file" &&
+      url.pathname === "/api/workspaces/demo-workspace/file" &&
       (init?.method ?? "GET") === "PUT"
     ) {
       const path = url.searchParams.get("path");
@@ -264,7 +264,7 @@ const createFetchStub = () => {
     }
 
     if (
-      url.pathname === "/workspaces/demo-workspace/file" &&
+      url.pathname === "/api/workspaces/demo-workspace/file" &&
       (init?.method ?? "GET") === "DELETE"
     ) {
       const path = url.searchParams.get("path");
@@ -303,6 +303,7 @@ const createFetchStub = () => {
   };
 
   return Object.assign(fetchImpl, {
+    getSnapshotCalls: () => snapshotCalls,
     getWatchSettingsCalls: () => watchSettingsCalls,
     getMkdirCalls: () => mkdirCalls,
     getMoveCalls: () => moveCalls,
@@ -370,7 +371,7 @@ test("pollOnce applies server-originated path moves without full rehydrate", asy
   const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
 
-    if (url.pathname === "/workspaces/demo-workspace/snapshot") {
+    if (url.pathname === "/api/workspaces/demo-workspace/snapshot") {
       return new Response(
         JSON.stringify({
           workspaceId: "demo-workspace",
@@ -402,7 +403,7 @@ test("pollOnce applies server-originated path moves without full rehydrate", asy
       );
     }
 
-    if (url.pathname === "/workspaces/demo-workspace/snapshot-materialize") {
+    if (url.pathname === "/api/workspaces/demo-workspace/snapshot-materialize") {
       return new Response(
         JSON.stringify({
           workspaceId: "demo-workspace",
@@ -420,7 +421,7 @@ test("pollOnce applies server-originated path moves without full rehydrate", asy
       );
     }
 
-    if (url.pathname === "/workspaces/demo-workspace/changes") {
+    if (url.pathname === "/api/workspaces/demo-workspace/changes") {
       return new Response(
         JSON.stringify({
           workspaceId: "demo-workspace",
@@ -467,6 +468,45 @@ test("pollOnce applies server-originated path moves without full rehydrate", asy
   assert.equal(nextState.lastAppliedRevision, 3);
   assert.equal(filesystem.exists("/mirror/demo-workspace/packages/Gamma/new.txt"), false);
   assert.equal(filesystem.readFileText("/mirror/demo-workspace/packages/Gamma/renamed.txt"), "gamma-seed\n");
+});
+
+test("bind rehydrates when persisted hydrated state exists but local mirror files are missing", async () => {
+  const fetchStub = createFetchStub();
+  const filesystem = createInMemoryClientFileSystem();
+  const stateStore = createInMemoryClientStateStore();
+
+  stateStore.save({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/tmp/demo-main",
+    lastAppliedRevision: 2,
+    hydrated: true,
+    trackedFiles: [
+      {
+        path: "packages/Alpha/readme.txt",
+        fileRevision: 2,
+        contentHash: "sha256:alpha"
+      }
+    ]
+  });
+
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/tmp/demo-main",
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4010",
+      authToken: "dev-token",
+      fetchImpl: fetchStub as typeof fetch
+    },
+    filesystem,
+    stateStore
+  });
+
+  const state = await client.bind();
+
+  assert.equal(state.hydrated, true);
+  assert.equal(filesystem.readFileText("/tmp/demo-main/root.txt"), "server-root-v1\n");
+  assert.equal(filesystem.readFileText("/tmp/demo-main/packages/Alpha/readme.txt"), "alpha-seed-v1\n");
+  assert.equal(fetchStub.getSnapshotCalls(), 1);
 });
 
 test("pushFile sends a conditional write and advances local bind state", async () => {
@@ -626,14 +666,14 @@ test("pollOnce retries queued pending operations and clears them on success", as
   const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
 
-    if (url.pathname === "/settings/watch") {
+    if (url.pathname === "/api/settings/watch") {
       return new Response(JSON.stringify({ settleDelayMs: 20 }), {
         status: 200,
         headers: { "content-type": "application/json" }
       });
     }
 
-    if (url.pathname === "/workspaces/demo-workspace/snapshot") {
+    if (url.pathname === "/api/workspaces/demo-workspace/snapshot") {
       return new Response(
         JSON.stringify({
           workspaceId: "demo-workspace",
@@ -645,7 +685,7 @@ test("pollOnce retries queued pending operations and clears them on success", as
     }
 
     if (
-      url.pathname === "/workspaces/demo-workspace/file" &&
+      url.pathname === "/api/workspaces/demo-workspace/file" &&
       (init?.method ?? "GET") === "PUT"
     ) {
       if (firstPut) {
@@ -673,7 +713,7 @@ test("pollOnce retries queued pending operations and clears them on success", as
       );
     }
 
-    if (url.pathname === "/workspaces/demo-workspace/changes") {
+    if (url.pathname === "/api/workspaces/demo-workspace/changes") {
       const since = Number(url.searchParams.get("since"));
       return new Response(
         JSON.stringify({
@@ -688,7 +728,7 @@ test("pollOnce retries queued pending operations and clears them on success", as
     }
 
     if (
-      url.pathname === "/workspaces/demo-workspace/snapshot-materialize" &&
+      url.pathname === "/api/workspaces/demo-workspace/snapshot-materialize" &&
       (init?.method ?? "GET") === "POST"
     ) {
       return new Response(

@@ -26,6 +26,18 @@ export interface ClientControlPlaneOptions {
   fetchImpl?: typeof fetch;
 }
 
+export const normalizeControlPlaneBaseUrl = (input: string) => {
+  const url = new URL(input);
+  const normalizedPath = url.pathname.replace(/\/+$/u, "");
+
+  if (normalizedPath.length === 0 || normalizedPath === "/api") {
+    url.pathname = "/api/";
+  }
+
+  url.hash = "";
+  return url.toString();
+};
+
 export class ControlPlaneRequestError extends Error {
   readonly status: number;
   readonly code: string;
@@ -46,9 +58,17 @@ export class ClientControlPlane {
   readonly #fetch: typeof fetch;
 
   constructor(options: ClientControlPlaneOptions) {
-    this.#baseUrl = options.baseUrl;
+    this.#baseUrl = normalizeControlPlaneBaseUrl(options.baseUrl);
     this.#authToken = options.authToken;
     this.#fetch = options.fetchImpl ?? fetch;
+  }
+
+  #resolveUrl(pathOrUrl: string | URL) {
+    if (pathOrUrl instanceof URL) {
+      return pathOrUrl;
+    }
+
+    return new URL(pathOrUrl.startsWith("/") ? `.${pathOrUrl}` : pathOrUrl, this.#baseUrl);
   }
 
   async getSnapshot(workspaceId: string): Promise<WorkspaceSnapshotResponse> {
@@ -92,7 +112,7 @@ export class ClientControlPlane {
     path: string,
     input: PutWorkspaceFileRequest
   ): Promise<PutWorkspaceFileResponse> {
-    const url = new URL(`/workspaces/${encodeURIComponent(workspaceId)}/file`, this.#baseUrl);
+    const url = this.#resolveUrl(`/workspaces/${encodeURIComponent(workspaceId)}/file`);
     url.searchParams.set("path", path);
 
     return this.#request<PutWorkspaceFileResponse>(url, {
@@ -109,7 +129,7 @@ export class ClientControlPlane {
     path: string,
     input: DeleteWorkspaceFileRequest
   ): Promise<DeleteWorkspaceFileResponse> {
-    const url = new URL(`/workspaces/${encodeURIComponent(workspaceId)}/file`, this.#baseUrl);
+    const url = this.#resolveUrl(`/workspaces/${encodeURIComponent(workspaceId)}/file`);
     url.searchParams.set("path", path);
 
     return this.#request<DeleteWorkspaceFileResponse>(url, {
@@ -126,7 +146,7 @@ export class ClientControlPlane {
     path: string,
     input: CreateWorkspaceDirectoryRequest
   ): Promise<CreateWorkspaceDirectoryResponse> {
-    const url = new URL(`/workspaces/${encodeURIComponent(workspaceId)}/mkdir`, this.#baseUrl);
+    const url = this.#resolveUrl(`/workspaces/${encodeURIComponent(workspaceId)}/mkdir`);
     url.searchParams.set("path", path);
 
     return this.#request<CreateWorkspaceDirectoryResponse>(url, {
@@ -158,10 +178,7 @@ export class ClientControlPlane {
     workspaceId: string,
     options: { since: number; limit?: number }
   ): Promise<WorkspaceChangesResponse> {
-    const url = new URL(
-      `/workspaces/${encodeURIComponent(workspaceId)}/changes`,
-      this.#baseUrl
-    );
+    const url = this.#resolveUrl(`/workspaces/${encodeURIComponent(workspaceId)}/changes`);
 
     url.searchParams.set("since", String(options.since));
     if (typeof options.limit === "number") {
@@ -195,10 +212,7 @@ export class ClientControlPlane {
       onEvent: (event: WorkspaceChangesStreamEvent) => void;
     }
   ): Promise<void> {
-    const url = new URL(
-      `/workspaces/${encodeURIComponent(workspaceId)}/changes/stream`,
-      this.#baseUrl
-    );
+    const url = this.#resolveUrl(`/workspaces/${encodeURIComponent(workspaceId)}/changes/stream`);
     url.searchParams.set("since", String(options.since));
 
     const response = await this.#fetch(url, {
@@ -258,7 +272,7 @@ export class ClientControlPlane {
 
   async #request<T>(pathOrUrl: string | URL, init?: RequestInit): Promise<T> {
     const response = await this.#fetch(
-      pathOrUrl instanceof URL ? pathOrUrl : new URL(pathOrUrl, this.#baseUrl),
+      this.#resolveUrl(pathOrUrl),
       {
         ...init,
         headers: {

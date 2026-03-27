@@ -49,8 +49,8 @@ test("selectReleaseTargets keeps the installable server and client app workspace
       packageName: "@clio-fs/server"
     },
     {
-      dir: join("C:", "repo", "apps", "client"),
-      packageName: "@clio-fs/client"
+      dir: join("C:", "repo", "apps", "client-ui"),
+      packageName: "@clio-fs/client-ui"
     },
     {
       dir: join("C:", "repo", "apps", "server-ui"),
@@ -64,7 +64,7 @@ test("selectReleaseTargets keeps the installable server and client app workspace
 
   assert.deepEqual(
     selectReleaseTargets(targets).map((target) => target.packageName),
-    ["@clio-fs/server", "@clio-fs/client"]
+    ["@clio-fs/server", "@clio-fs/client-ui"]
   );
 });
 

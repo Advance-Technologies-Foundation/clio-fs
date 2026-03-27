@@ -15,6 +15,16 @@ export const escapeHtml = (value: string) =>
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 
+const metricToneClass = (key: string) => {
+  let hash = 0;
+
+  for (const character of key) {
+    hash = (hash * 31 + character.charCodeAt(0)) % 4;
+  }
+
+  return `metric-card metric-tone-${hash + 1}`;
+};
+
 export const renderStatusBadge = (status: WorkspaceStatus) => {
   const s = badgeStyles[status] ?? { bg: "rgba(107,114,128,0.10)", color: "#374151" };
   return `<span style="display:inline-flex;align-items:center;padding:2px 10px;border-radius:9999px;background:${s.bg};color:${s.color};font-family:'Montserrat',sans-serif;font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;">${escapeHtml(status)}</span>`;
@@ -131,6 +141,7 @@ export const renderPage = (
   body: string,
   options?: {
     topbarActions?: string;
+    topbarSubtitle?: string;
   }
 ) => `<!doctype html>
 <html lang="en">
@@ -144,11 +155,17 @@ export const renderPage = (
     <style>
       :root {
         --color-brand-orange:    #F04E23;
+        --color-brand-orange-deep:#D9471F;
+        --color-brand-teal:      #00B4A0;
+        --color-brand-cyan:      #1D8FE1;
+        --color-brand-gold:      #FFB347;
+        --color-brand-navy:      #0C1733;
+        --color-brand-navy-soft: #15254A;
         --color-primary:         #1463C8;
         --color-primary-hover:   #1151A6;
         --color-primary-soft:    rgba(20,99,200,0.10);
         --color-surface-dark:    #14111F;
-        --color-surface-page:    #F5F6FA;
+        --color-surface-page:    #0C1733;
         --color-surface-card:    #FFFFFF;
         --color-surface-elevated:#FFFFFF;
         --color-border:          #E3E3E8;
@@ -179,7 +196,11 @@ export const renderPage = (
         font-size: 0.9375rem;
         line-height: 1.6;
         color: var(--color-text-primary);
-        background: var(--color-surface-page);
+        background:
+          radial-gradient(circle at top right, rgba(29,143,225,0.12), rgba(29,143,225,0) 30%),
+          radial-gradient(circle at left top, rgba(240,78,35,0.10), rgba(240,78,35,0) 24%),
+          linear-gradient(180deg, #13244A 0%, var(--color-surface-page) 18%, #091227 100%);
+        min-height: 100vh;
       }
       a { color: var(--color-text-link); text-decoration: none; }
       a:hover { text-decoration: underline; }
@@ -240,6 +261,11 @@ export const renderPage = (
         max-width: 1380px;
         margin: 0 auto;
         padding: calc(56px + 2rem) 1.5rem 3rem;
+      }
+      .dashboard-shell {
+        min-height: calc(100vh - 56px - 5rem);
+        display: flex;
+        flex-direction: column;
       }
       /* --- Hero --- */
       .hero {
@@ -381,6 +407,29 @@ export const renderPage = (
         color: var(--color-text-primary);
         line-height: 1.25;
       }
+      .metric-card {
+        border: none;
+        color: var(--color-text-inverse);
+        box-shadow: 0 16px 34px rgba(5,11,26,0.18);
+      }
+      .metric-card .metric {
+        color: rgba(255,255,255,0.76);
+      }
+      .metric-card .metric-value {
+        color: #FFFFFF;
+      }
+      .metric-tone-1 {
+        background: linear-gradient(135deg, var(--color-brand-orange) 0%, var(--color-brand-orange-deep) 100%);
+      }
+      .metric-tone-2 {
+        background: linear-gradient(135deg, var(--color-brand-teal) 0%, #0C8E8A 100%);
+      }
+      .metric-tone-3 {
+        background: linear-gradient(135deg, var(--color-brand-cyan) 0%, var(--color-primary) 100%);
+      }
+      .metric-tone-4 {
+        background: linear-gradient(135deg, var(--color-brand-gold) 0%, #F28A22 100%);
+      }
       /* --- Breadcrumb nav --- */
       .nav {
         margin-bottom: 1.5rem;
@@ -395,6 +444,12 @@ export const renderPage = (
         box-shadow: var(--shadow-card);
         overflow: hidden;
         margin-bottom: 1.5rem;
+      }
+      .dashboard-shell > .table-card:last-of-type {
+        flex: 1 1 auto;
+        margin-bottom: 0;
+        display: flex;
+        flex-direction: column;
       }
       .table-card-header {
         padding: 1rem 1.5rem;
@@ -496,9 +551,9 @@ export const renderPage = (
         transition: background 0.15s, border-color 0.15s, color 0.15s;
       }
       .icon-button:hover:not(:disabled) {
-        background: var(--color-surface-page);
+        background: var(--color-brand-navy-soft);
         border-color: var(--color-primary);
-        color: var(--color-primary);
+        color: #FFFFFF;
       }
       .icon-button.danger {
         border-color: rgba(196,28,28,0.22);
@@ -602,9 +657,13 @@ export const renderPage = (
         background: var(--color-surface-card); color: var(--color-text-primary);
         font-family: 'Montserrat', sans-serif; font-size: 0.8125rem; font-weight: 600;
         border: 1px solid var(--color-border-strong); border-radius: var(--radius-md); cursor: pointer;
-        transition: background 0.15s; white-space: nowrap; line-height: 1;
+        transition: background 0.15s, color 0.15s, border-color 0.15s; white-space: nowrap; line-height: 1;
       }
-      .secondary-button:hover:not(:disabled) { background: var(--color-surface-page); }
+      .secondary-button:hover:not(:disabled) {
+        background: var(--color-brand-navy-soft);
+        border-color: rgba(255,255,255,0.24);
+        color: #FFFFFF;
+      }
       .secondary-button:disabled { opacity: 0.5; cursor: not-allowed; }
       .danger-button {
         display: inline-flex; align-items: center; justify-content: center;
@@ -745,7 +804,7 @@ export const renderPage = (
         <div class="topbar-brand">
           <span class="topbar-dot"></span>
           <span class="topbar-title">Clio FS</span>
-          <span class="topbar-subtitle">Control Plane</span>
+          <span class="topbar-subtitle">${escapeHtml(options?.topbarSubtitle ?? "Control Plane")}</span>
         </div>
         <div class="topbar-actions">${options?.topbarActions ?? ""}</div>
       </div>
@@ -1115,7 +1174,7 @@ export const renderPage = (
 </html>`;
 
 export const renderMetricCard = (label: string, value: string) => `
-  <section class="panel" style="margin-bottom:0;">
+  <section class="panel ${metricToneClass(label)}" style="margin-bottom:0;">
     <div class="metric">${escapeHtml(label)}</div>
     <div class="metric-value">${escapeHtml(value)}</div>
   </section>

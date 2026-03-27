@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { createServer, type ServerResponse } from "node:http";
 import { promisify } from "node:util";
 import { URL } from "node:url";
@@ -30,6 +31,7 @@ export interface ServerUiOptions {
   port: number;
   controlPlaneBaseUrl: string;
   controlPlaneAuthToken: string;
+  allowedUiTokens?: string[];
   fetchImpl?: typeof fetch;
   selectDirectory?: () => Promise<string | null>;
 }
@@ -42,13 +44,15 @@ export interface StartedServerUi {
 
 interface ControlPlaneClient {
   getHealth: () => Promise<ServerHealthResponse>;
-  getWatchSettings: () => Promise<ServerWatchSettings>;
-  listWorkspaces: () => Promise<WorkspaceRecord[]>;
-  getWorkspace: (workspaceId: string) => Promise<WorkspaceRecord | null>;
-  registerWorkspace: (input: RegisterWorkspaceRequest) => Promise<{ workspaceId: string }>;
-  deleteWorkspace: (workspaceId: string) => Promise<void>;
-  updateWatchSettings: (input: ServerWatchSettings) => Promise<ServerWatchSettings>;
+  getWatchSettings: (authToken: string) => Promise<ServerWatchSettings>;
+  listWorkspaces: (authToken: string) => Promise<WorkspaceRecord[]>;
+  getWorkspace: (authToken: string, workspaceId: string) => Promise<WorkspaceRecord | null>;
+  registerWorkspace: (authToken: string, input: RegisterWorkspaceRequest) => Promise<{ workspaceId: string }>;
+  deleteWorkspace: (authToken: string, workspaceId: string) => Promise<void>;
+  updateWatchSettings: (authToken: string, input: ServerWatchSettings) => Promise<ServerWatchSettings>;
 }
+
+const UI_SESSION_COOKIE_NAME = "clio_fs_server_ui_session";
 
 const writeHtml = (response: ServerResponse, statusCode: number, html: string) => {
   response.writeHead(statusCode, { "content-type": "text/html; charset=utf-8" });
@@ -65,6 +69,10 @@ const redirect = (response: ServerResponse, location: string) => {
   response.end();
 };
 
+const setCookie = (response: ServerResponse, value: string) => {
+  response.setHeader("set-cookie", value);
+};
+
 const readFormBody = async (request: AsyncIterable<Buffer | string>) => {
   const chunks: Buffer[] = [];
 
@@ -76,6 +84,76 @@ const readFormBody = async (request: AsyncIterable<Buffer | string>) => {
 };
 
 const execFileAsync = promisify(execFile);
+
+const parseCookieHeader = (header?: string) =>
+  Object.fromEntries(
+    (header ?? "")
+      .split(/;\s*/u)
+      .filter(Boolean)
+      .map((entry) => {
+        const separatorIndex = entry.indexOf("=");
+        if (separatorIndex <= 0) {
+          return [entry.trim(), ""];
+        }
+
+        return [entry.slice(0, separatorIndex).trim(), decodeURIComponent(entry.slice(separatorIndex + 1).trim())];
+      })
+  );
+
+const createSessionCookieValue = (sessionId: string) =>
+  `${UI_SESSION_COOKIE_NAME}=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; SameSite=Lax`;
+
+const clearSessionCookieValue = () =>
+  `${UI_SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+
+const renderLogoutButton = () => `
+  <form action="/logout" method="post" style="margin:0;">
+    <button type="submit" class="secondary-button">Logout</button>
+  </form>
+`;
+
+const renderLoginMascot = () => `
+  <svg aria-hidden="true" viewBox="0 0 240 180" class="blank-slate-mascot">
+    <defs>
+      <linearGradient id="serverLoginPumaGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#F04E23"></stop>
+        <stop offset="100%" stop-color="#C93712"></stop>
+      </linearGradient>
+    </defs>
+    <circle cx="120" cy="90" r="74" fill="rgba(240,78,35,0.08)"></circle>
+    <path fill="url(#serverLoginPumaGlow)" d="M45 112c10-26 32-44 58-53l22-8c10-4 22-3 31 4l17 13c7 5 16 8 25 7l-8 17c-4 8-11 14-20 16l-18 4-14 18c-7 8-17 13-28 13h-20c-18 0-34-9-45-23z"></path>
+    <path fill="#14111F" opacity="0.14" d="M84 73l18-20 19 7-14 16z"></path>
+    <path fill="#FFFFFF" opacity="0.9" d="M153 81c0 5-4 9-9 9s-9-4-9-9 4-9 9-9 9 4 9 9z"></path>
+    <circle cx="146" cy="81" r="4" fill="#14111F"></circle>
+  </svg>
+`;
+
+const renderLoginPage = (notice?: { tone: "error" | "success"; message: string }) =>
+  renderPage(
+    "Clio FS Server",
+    `
+      <section class="blank-slate-shell">
+        <div class="blank-slate-card" style="max-width:560px;">
+          ${renderLoginMascot()}
+          <h1 class="blank-slate-title">Server operator login</h1>
+          <p class="blank-slate-copy">Paste a configured server token to unlock the Server Control Plane and its protected API actions.</p>
+          ${notice ? renderNotice(notice.tone, notice.message) : ""}
+          <form action="/login" method="post" class="stack" style="max-width:420px;margin:0 auto;">
+            <div class="form-field" style="text-align:left;">
+              <label for="authToken">Access Token</label>
+              <input id="authToken" name="authToken" type="password" autocomplete="current-password" required autofocus />
+            </div>
+            <div style="display:flex;justify-content:center;">
+              <button type="submit" class="primary-button">Login</button>
+            </div>
+          </form>
+        </div>
+      </section>
+    `,
+    {
+      topbarSubtitle: "Server Control Plane"
+    }
+  );
 
 const selectDirectoryWithNativeDialog = async (): Promise<string | null> => {
   if (process.platform === "darwin") {
@@ -141,11 +219,11 @@ const selectDirectoryWithNativeDialog = async (): Promise<string | null> => {
 const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient => {
   const fetchImpl = options.fetchImpl ?? fetch;
 
-  const request = async <T>(pathname: string, init?: RequestInit): Promise<T> => {
+  const request = async <T>(authToken: string, pathname: string, init?: RequestInit): Promise<T> => {
     const response = await fetchImpl(new URL(pathname, options.controlPlaneBaseUrl), {
       ...init,
       headers: {
-        authorization: `Bearer ${options.controlPlaneAuthToken}`,
+        authorization: `Bearer ${authToken}`,
         ...(init?.headers ?? {})
       }
     });
@@ -168,23 +246,23 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
 
       return (await response.json()) as ServerHealthResponse;
     },
-    async listWorkspaces() {
-      const response = await request<WorkspaceListResponse>("/workspaces");
+    async listWorkspaces(authToken) {
+      const response = await request<WorkspaceListResponse>(authToken, "/workspaces");
       const detailRequests = response.items.map((item) =>
-        request<WorkspaceRecord>(`/workspaces/${encodeURIComponent(item.workspaceId)}`)
+        request<WorkspaceRecord>(authToken, `/workspaces/${encodeURIComponent(item.workspaceId)}`)
       );
 
       return Promise.all(detailRequests);
     },
-    async getWatchSettings() {
-      return request<ServerWatchSettings>("/settings/watch");
+    async getWatchSettings(authToken) {
+      return request<ServerWatchSettings>(authToken, "/settings/watch");
     },
-    async getWorkspace(workspaceId: string) {
+    async getWorkspace(authToken: string, workspaceId: string) {
       const response = await fetchImpl(
         new URL(`/workspaces/${encodeURIComponent(workspaceId)}`, options.controlPlaneBaseUrl),
         {
           headers: {
-            authorization: `Bearer ${options.controlPlaneAuthToken}`
+            authorization: `Bearer ${authToken}`
           }
         }
       );
@@ -200,8 +278,8 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
 
       return (await response.json()) as WorkspaceRecord;
     },
-    async registerWorkspace(input: RegisterWorkspaceRequest) {
-      return request<{ workspaceId: string }>("/workspaces/register", {
+    async registerWorkspace(authToken: string, input: RegisterWorkspaceRequest) {
+      return request<{ workspaceId: string }>(authToken, "/workspaces/register", {
         method: "POST",
         headers: {
           "content-type": "application/json"
@@ -209,13 +287,13 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
         body: JSON.stringify(input)
       });
     },
-    async deleteWorkspace(workspaceId: string) {
+    async deleteWorkspace(authToken: string, workspaceId: string) {
       const response = await fetchImpl(
         new URL(`/workspaces/${encodeURIComponent(workspaceId)}`, options.controlPlaneBaseUrl),
         {
           method: "DELETE",
           headers: {
-            authorization: `Bearer ${options.controlPlaneAuthToken}`
+            authorization: `Bearer ${authToken}`
           }
         }
       );
@@ -227,8 +305,8 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
       const error = (await response.json()) as ApiErrorShape;
       throw new Error(error.error.message);
     },
-    async updateWatchSettings(input: ServerWatchSettings) {
-      return request<ServerWatchSettings>("/settings/watch", {
+    async updateWatchSettings(authToken: string, input: ServerWatchSettings) {
+      return request<ServerWatchSettings>(authToken, "/settings/watch", {
         method: "PUT",
         headers: {
           "content-type": "application/json"
@@ -239,8 +317,37 @@ const createControlPlaneClient = (options: ServerUiOptions): ControlPlaneClient 
   };
 };
 
+const readRequestBody = async (request: AsyncIterable<Buffer | string>) => {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks);
+};
+
+const copyUpstreamResponse = async (upstream: Response, response: ServerResponse) => {
+  response.writeHead(
+    upstream.status,
+    Object.fromEntries(upstream.headers.entries())
+  );
+
+  if (!upstream.body) {
+    response.end();
+    return;
+  }
+
+  for await (const chunk of upstream.body) {
+    response.write(chunk);
+  }
+
+  response.end();
+};
+
 const renderDashboard = async (
   client: ControlPlaneClient,
+  authToken: string,
   state?: {
     notice?: { tone: "error" | "success"; message: string };
     formValues?: Partial<RegisterWorkspaceRequest>;
@@ -249,16 +356,17 @@ const renderDashboard = async (
 ) => {
   const [health, workspaces, watchSettings] = await Promise.all([
     client.getHealth(),
-    client.listWorkspaces(),
-    state?.watchSettings ? Promise.resolve(state.watchSettings) : client.getWatchSettings()
+    client.listWorkspaces(authToken),
+    state?.watchSettings ? Promise.resolve(state.watchSettings) : client.getWatchSettings(authToken)
   ]);
   const body = renderDashboardBody(health, workspaces, {
     ...state,
     watchSettings
   });
 
-  return renderPage("Clio FS Control Plane", body, {
-    topbarActions: renderServerSettingsButton()
+  return renderPage("Clio FS Server", body, {
+    topbarActions: `${renderServerSettingsButton()}${renderLogoutButton()}`,
+    topbarSubtitle: "Server Control Plane"
   });
 };
 
@@ -289,40 +397,33 @@ const renderDashboardBody = (
   }
 
   return `
-    <section class="dashboard-hero">
-      ${renderControlPlaneHeroVisual()}
-      <div class="dashboard-hero-content">
-        <div class="dashboard-hero-copy">
-          <div class="eyebrow">Operations Console</div>
-          <h1>Manage workspace sync from a single control plane.</h1>
-          <p class="lede">Monitor service health, register workspaces, and inspect runtime state from one operator console built for day-to-day control of Clio FS.</p>
+    <section class="dashboard-shell">
+      <section class="dashboard-hero">
+        <div class="dashboard-hero-content">
+          <div class="eyebrow">Info</div>
+          <div class="dashboard-hero-grid">
+            ${renderMetricCard("Service", health.service)}
+            ${renderMetricCard("Health", health.status)}
+            ${renderMetricCard("Platform", health.platform)}
+            ${renderMetricCard("Workspaces", String(workspaces.length))}
+          </div>
         </div>
-        <div class="dashboard-hero-grid">
-          ${renderMetricCard("Service", health.service)}
-          ${renderMetricCard("Health", health.status)}
-          ${renderMetricCard("Platform", health.platform)}
-          ${renderMetricCard("Workspaces", String(workspaces.length))}
-        </div>
-        <section class="panel dashboard-hero-summary">
-          <div class="metric">Runtime Summary</div>
-          <p>${escapeHtml(health.summary)}</p>
-        </section>
-      </div>
+      </section>
+      ${
+        state?.notice ? renderNotice(state.notice.tone, state.notice.message) : ""
+      }
+      ${renderWorkspaceTable(workspaces)}
+      ${renderWorkspaceRegistrationModal(state?.formValues, {
+        openOnLoad: Boolean(state?.notice || state?.formValues)
+      })}
+      ${renderServerSettingsModal(watchSettings)}
     </section>
-    ${
-      state?.notice ? renderNotice(state.notice.tone, state.notice.message) : ""
-    }
-    ${renderWorkspaceTable(workspaces)}
-    ${renderWorkspaceRegistrationModal(state?.formValues, {
-      openOnLoad: Boolean(state?.notice || state?.formValues)
-    })}
-    ${renderServerSettingsModal(watchSettings)}
   `;
 };
 
 const renderWorkspaceDetail = (workspace: WorkspaceRecord) =>
   renderPage(
-    `${formatWorkspaceLabel(workspace)} | Clio FS`,
+    `${formatWorkspaceLabel(workspace)} | Clio FS Server`,
     `
       <div class="nav"><a href="/">← Back to dashboard</a></div>
       <section class="hero">
@@ -355,11 +456,15 @@ const renderWorkspaceDetail = (workspace: WorkspaceRecord) =>
         </dl>
       </section>
     `
+    ,
+    {
+      topbarSubtitle: "Server Control Plane"
+    }
   );
 
 const renderNotFound = () =>
   renderPage(
-    "Workspace Not Found",
+    "Workspace Not Found | Clio FS Server",
     `
       <div class="nav"><a href="/">← Back to dashboard</a></div>
       <section class="panel error">
@@ -367,11 +472,15 @@ const renderNotFound = () =>
         <div class="metric-value">Workspace not found</div>
       </section>
     `
+    ,
+    {
+      topbarSubtitle: "Server Control Plane"
+    }
   );
 
 const renderError = (message: string) =>
   renderPage(
-    "Server UI Error",
+    "Server UI Error | Clio FS Server",
     `
       <section class="panel error">
         <div class="metric">Operator UI Error</div>
@@ -379,26 +488,140 @@ const renderError = (message: string) =>
         <p class="lede">${escapeHtml(message)}</p>
       </section>
     `
+    ,
+    {
+      topbarSubtitle: "Server Control Plane"
+    }
   );
 
 export const createServerUi = (options: ServerUiOptions) => {
   const client = createControlPlaneClient(options);
   const selectDirectory = options.selectDirectory ?? selectDirectoryWithNativeDialog;
+  const allowedUiTokens = options.allowedUiTokens?.filter((token) => token.trim().length > 0) ?? [
+    options.controlPlaneAuthToken
+  ];
+  const sessions = new Map<string, string>();
+
+  const getAuthenticatedToken = (request: Request | { headers: Record<string, unknown> | Headers | undefined }) => {
+    const cookieHeader =
+      request.headers instanceof Headers
+        ? request.headers.get("cookie") ?? undefined
+        : typeof request.headers?.cookie === "string"
+          ? request.headers.cookie
+          : undefined;
+    const sessionId = parseCookieHeader(cookieHeader)[UI_SESSION_COOKIE_NAME];
+
+    if (!sessionId) {
+      return undefined;
+    }
+
+    return sessions.get(sessionId);
+  };
+
+  const isUiRequest = (request: { headers: Record<string, unknown> }) =>
+    request.headers["x-clio-ui-request"] === "1";
+
   return createServer(async (request, response) => {
     try {
       const method = request.method ?? "GET";
       const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+      const authenticatedToken = getAuthenticatedToken(request);
+
+      if (method === "GET" && url.pathname === "/login") {
+        if (authenticatedToken) {
+          redirect(response, "/");
+          return;
+        }
+
+        writeHtml(response, 200, renderLoginPage());
+        return;
+      }
+
+      if (method === "POST" && url.pathname === "/login") {
+        const form = await readFormBody(request);
+        const authToken = form.get("authToken")?.toString().trim() ?? "";
+
+        if (!allowedUiTokens.includes(authToken)) {
+          writeHtml(response, 401, renderLoginPage({
+            tone: "error",
+            message: "Invalid server token"
+          }));
+          return;
+        }
+
+        try {
+          await client.listWorkspaces(authToken);
+          const sessionId = randomUUID();
+          sessions.set(sessionId, authToken);
+          setCookie(response, createSessionCookieValue(sessionId));
+          redirect(response, "/");
+          return;
+        } catch {
+          writeHtml(response, 401, renderLoginPage({
+            tone: "error",
+            message: "Unable to verify the supplied token against the control plane"
+          }));
+          return;
+        }
+      }
+
+      if (method === "POST" && url.pathname === "/logout") {
+        const sessionId = parseCookieHeader(request.headers.cookie)[UI_SESSION_COOKIE_NAME];
+
+        if (sessionId) {
+          sessions.delete(sessionId);
+        }
+
+        setCookie(response, clearSessionCookieValue());
+        redirect(response, "/login");
+        return;
+      }
+
+      if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
+        const upstreamUrl = new URL(
+          url.pathname === "/api" ? "/" : url.pathname.slice(4),
+          options.controlPlaneBaseUrl
+        );
+        upstreamUrl.search = url.search;
+        const requestBody =
+          method === "GET" || method === "HEAD" ? undefined : await readRequestBody(request);
+        const upstreamResponse = await (options.fetchImpl ?? fetch)(upstreamUrl, {
+          method,
+          headers: request.headers as Record<string, string>,
+          body: requestBody
+        });
+        await copyUpstreamResponse(upstreamResponse, response);
+        return;
+      }
+
+      if (!authenticatedToken) {
+        if (isUiRequest(request)) {
+          writeJson(response, 401, {
+            error: {
+              code: "unauthorized",
+              message: "Login required",
+              details: {
+                redirect: "/login"
+              }
+            }
+          });
+          return;
+        }
+
+        redirect(response, "/login");
+        return;
+      }
 
       if (method === "GET" && url.pathname === "/") {
-        writeHtml(response, 200, await renderDashboard(client));
+        writeHtml(response, 200, await renderDashboard(client, authenticatedToken));
         return;
       }
 
       if (method === "GET" && url.pathname === "/dashboard-fragment") {
         const [health, workspaces, watchSettings] = await Promise.all([
           client.getHealth(),
-          client.listWorkspaces(),
-          client.getWatchSettings()
+          client.listWorkspaces(authenticatedToken),
+          client.getWatchSettings(authenticatedToken)
         ]);
         writeJson(response, 200, {
           html: renderDashboardBody(health, workspaces, {
@@ -418,7 +641,7 @@ export const createServerUi = (options: ServerUiOptions) => {
         };
 
         try {
-          const result = await client.registerWorkspace(input);
+          const result = await client.registerWorkspace(authenticatedToken, input);
           if (request.headers["x-clio-ui-request"] === "1") {
             writeJson(response, 201, {
               ok: true,
@@ -443,7 +666,7 @@ export const createServerUi = (options: ServerUiOptions) => {
           writeHtml(
             response,
             400,
-            await renderDashboard(client, {
+            await renderDashboard(client, authenticatedToken, {
               notice: { tone: "error", message },
               formValues: input
             })
@@ -461,7 +684,7 @@ export const createServerUi = (options: ServerUiOptions) => {
         }
 
         try {
-          await client.deleteWorkspace(workspaceId);
+          await client.deleteWorkspace(authenticatedToken, workspaceId);
           if (request.headers["x-clio-ui-request"] === "1") {
             writeJson(response, 200, { ok: true });
             return;
@@ -482,8 +705,8 @@ export const createServerUi = (options: ServerUiOptions) => {
           writeHtml(
             response,
             400,
-            await renderDashboard(client, {
-              notice: { tone: "error", message }
+            await renderDashboard(client, authenticatedToken, {
+              notice: { tone: "error", message },
             })
           );
           return;
@@ -498,7 +721,7 @@ export const createServerUi = (options: ServerUiOptions) => {
         };
 
         try {
-          const result = await client.updateWatchSettings(input);
+          const result = await client.updateWatchSettings(authenticatedToken, input);
           if (request.headers["x-clio-ui-request"] === "1") {
             writeJson(response, 200, {
               ok: true,
@@ -524,7 +747,7 @@ export const createServerUi = (options: ServerUiOptions) => {
           writeHtml(
             response,
             400,
-            await renderDashboard(client, {
+            await renderDashboard(client, authenticatedToken, {
               notice: { tone: "error", message },
               watchSettings: input
             })
@@ -566,7 +789,7 @@ export const createServerUi = (options: ServerUiOptions) => {
           return;
         }
 
-        const workspace = await client.getWorkspace(workspaceId);
+        const workspace = await client.getWorkspace(authenticatedToken, workspaceId);
 
         if (!workspace) {
           writeHtml(response, 404, renderNotFound());

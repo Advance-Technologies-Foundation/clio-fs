@@ -1,0 +1,14 @@
+# clio-fs server configuration
+# Copy this file to config/server.conf and edit the values for your environment.
+
+CLIO_FS_SERVER_HOST=127.0.0.1
+CLIO_FS_SERVER_PORT=4010
+CLIO_FS_SERVER_AUTH_TOKEN=change-me
+CLIO_FS_SERVER_AUTH_TOKENS=change-me,operator-token-2
+
+CLIO_FS_SERVER_WORKSPACE_REGISTRY_FILE=.clio-fs/server/workspaces.json
+CLIO_FS_SERVER_WATCH_SETTINGS_FILE=.clio-fs/server/watch-settings.json
+CLIO_FS_SERVER_CHANGE_JOURNAL_FILE=.clio-fs/server/change-journal.json
+
+CLIO_FS_SERVER_UI_HOST=127.0.0.1
+CLIO_FS_SERVER_UI_PORT=4020
