@@ -149,13 +149,15 @@ test("resolveReleaseVersion prefers CLI override and otherwise reads RELEASE_TAG
 });
 
 test("resolveArtifactsOutputDir prefers CLI override and falls back to release artifacts directory", () => {
+  const rootDir = mkdtempSync(join(tmpdir(), "clio-fs-artifacts-"));
+
   assert.equal(
-    resolveArtifactsOutputDir("C:\\repo", ["--output-dir", "out"]),
-    join("C:\\repo", "out")
+    resolveArtifactsOutputDir(rootDir, ["--output-dir", "out"]),
+    join(rootDir, "out")
   );
   assert.equal(
-    resolveArtifactsOutputDir("C:\\repo", [], { RELEASE_ARTIFACTS_DIR: "artifacts" }),
-    join("C:\\repo", "artifacts")
+    resolveArtifactsOutputDir(rootDir, [], { RELEASE_ARTIFACTS_DIR: "artifacts" }),
+    join(rootDir, "artifacts")
   );
 });
 
