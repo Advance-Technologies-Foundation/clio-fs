@@ -137,12 +137,13 @@ test("renders dashboard with workspace content", async () => {
     assert.match(html, /Operations Console/i);
     assert.match(html, /Demo Main/);
     assert.match(html, /sync-core ready; workspaces=1/);
-    assert.match(html, /Choose Folder/);
     assert.match(html, /Demo Main \(demo-main\)/);
     assert.match(html, />Details</);
-    assert.match(html, /Delete/);
+    assert.match(html, /aria-label="Add workspace"/);
+    assert.match(html, /aria-label="Delete Demo Main \(demo-main\)"/);
     assert.match(html, /Delete Workspace/);
     assert.match(html, /The underlying project folder is not deleted/i);
+    assert.match(html, /Add Workspace/);
     assert.doesNotMatch(html, /onsubmit="return confirm/);
     assert.doesNotMatch(html, /Platform is determined by the server/i);
     assert.doesNotMatch(html, /<label for="platformDisplay">Platform<\/label>/);
@@ -218,6 +219,7 @@ test("allows omitting display name in workspace registration form", async () => 
     assert.doesNotMatch(html, /name="displayName" required/);
     assert.match(html, /Optional\. If omitted, the UI will show only the workspace ID\./);
     assert.match(html, /<th>Name<\/th>/);
+    assert.match(html, /data-add-workspace-dialog/);
     assert.doesNotMatch(html, /<th>Display Name<\/th>/);
     assert.doesNotMatch(html, /<th>Workspace ID<\/th>/);
   } finally {
@@ -233,8 +235,14 @@ test("renders a blank slate when there are no workspaces", async () => {
     const html = await response.text();
 
     assert.equal(response.status, 200);
-    assert.match(html, /no workspaces registered yet\./i);
+    assert.match(html, /No workspaces yet\./i);
+    assert.match(html, /Start by registering your first workspace/i);
+    assert.match(html, /Workspace Registry/i);
+    assert.match(html, /Add Workspace/);
+    assert.match(html, /data-add-workspace-dialog/);
     assert.doesNotMatch(html, /<table>/);
+    assert.doesNotMatch(html, /sync-core ready; workspaces=0/);
+    assert.doesNotMatch(html, /Manage workspace sync from a single control plane/i);
   } finally {
     await server.close();
   }

@@ -13,8 +13,9 @@ import {
   formatWorkspaceLabel,
   renderMetricCard,
   renderNotice,
+  renderEmptyWorkspaceState,
   renderPage,
-  renderWorkspaceRegistrationForm,
+  renderWorkspaceRegistrationModal,
   renderStatusBadge,
   renderWorkspaceTable,
   escapeHtml
@@ -229,6 +230,21 @@ const renderDashboard = async (
 ) => {
   const [health, workspaces] = await Promise.all([client.getHealth(), client.listWorkspaces()]);
 
+  if (workspaces.length === 0) {
+    return renderPage(
+      "Clio FS Control Plane",
+      `
+        ${
+          state?.notice ? renderNotice(state.notice.tone, state.notice.message) : ""
+        }
+        ${renderEmptyWorkspaceState()}
+        ${renderWorkspaceRegistrationModal(state?.formValues, {
+          openOnLoad: Boolean(state?.notice || state?.formValues)
+        })}
+      `
+    );
+  }
+
   return renderPage(
     "Clio FS Control Plane",
     `
@@ -250,8 +266,10 @@ const renderDashboard = async (
         <div class="metric">Runtime Summary</div>
         <p style="margin:0.5rem 0 0;font-size:0.875rem;color:var(--color-text-secondary);line-height:1.6;">${escapeHtml(health.summary)}</p>
       </section>
-      ${renderWorkspaceRegistrationForm(state?.formValues)}
       ${renderWorkspaceTable(workspaces)}
+      ${renderWorkspaceRegistrationModal(state?.formValues, {
+        openOnLoad: Boolean(state?.notice || state?.formValues)
+      })}
     `
   );
 };

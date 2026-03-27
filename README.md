@@ -116,10 +116,11 @@ Implemented today:
 - a compiled dev flow for `@clio-fs/server` so `corepack pnpm --filter @clio-fs/server dev` runs against emitted `dist`
 - an operator-facing server UI in `apps/server-ui`
 - server-rendered dashboard and workspace detail pages backed by control-plane API calls
-- registration form in the UI for creating workspaces without `curl`
+- modal-based workspace registration in the UI without `curl`
 - native `Choose Folder` button for selecting `rootPath` through the operating system file explorer dialog
 - workspace creation returns to the dashboard and refreshes the workspace list instead of opening detail immediately
-- dashboard actions include an explicit `Details` button per workspace
+- empty-state dashboard collapses to a blank slate with a single `Add Workspace` action
+- dashboard actions include an explicit `Details` button per workspace and icon actions for add/delete
 - auto-fill of `workspaceId` from the selected folder when that field is empty
 - delete actions for removing workspaces from the dashboard
 - simplified workspace list UI that shows either `Display Name (workspaceId)` or just `workspaceId`

@@ -30,6 +30,34 @@ export const formatWorkspaceLabel = (workspace: Pick<WorkspaceRecord, "workspace
   return workspace.workspaceId;
 };
 
+const renderTrashIcon = () => `
+  <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 6h18"></path>
+    <path d="M8 6V4h8v2"></path>
+    <path d="M19 6l-1 14H6L5 6"></path>
+    <path d="M10 11v6"></path>
+    <path d="M14 11v6"></path>
+  </svg>
+`;
+
+const renderPumaMascot = () => `
+  <svg aria-hidden="true" viewBox="0 0 240 180" class="blank-slate-mascot">
+    <defs>
+      <linearGradient id="pumaGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#F04E23"></stop>
+        <stop offset="100%" stop-color="#C93712"></stop>
+      </linearGradient>
+    </defs>
+    <circle cx="120" cy="90" r="74" fill="rgba(240,78,35,0.08)"></circle>
+    <path fill="url(#pumaGlow)" d="M45 112c10-26 32-44 58-53l22-8c10-4 22-3 31 4l17 13c7 5 16 8 25 7l-8 17c-4 8-11 14-20 16l-18 4-14 18c-7 8-17 13-28 13h-20c-18 0-34-9-45-23z"></path>
+    <path fill="#14111F" opacity="0.14" d="M84 73l18-20 19 7-14 16z"></path>
+    <path fill="#FFFFFF" opacity="0.9" d="M153 81c0 5-4 9-9 9s-9-4-9-9 4-9 9-9 9 4 9 9z"></path>
+    <circle cx="146" cy="81" r="4" fill="#14111F"></circle>
+    <path fill="#14111F" d="M171 83c5-2 9-1 12 2-3 3-7 5-11 5z" opacity="0.5"></path>
+    <path fill="#FFFFFF" opacity="0.75" d="M76 118c20 10 48 10 74 0-15 18-34 27-58 27-10 0-19-10-16-27z"></path>
+  </svg>
+`;
+
 export const renderPage = (title: string, body: string) => `<!doctype html>
 <html lang="en">
   <head>
@@ -216,6 +244,10 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
       .table-card-header {
         padding: 1rem 1.5rem;
         border-bottom: 1px solid var(--color-border);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
       }
       .table-card-label {
         font-size: 0.75rem;
@@ -255,6 +287,78 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
         text-align: center;
         color: var(--color-text-secondary);
         font-size: 0.9375rem;
+      }
+      .blank-slate-shell {
+        min-height: calc(100vh - 140px);
+        display: grid;
+        place-items: center;
+      }
+      .blank-slate-card {
+        width: min(720px, 100%);
+        background: linear-gradient(180deg, #FFFFFF 0%, #FFF7F4 100%);
+        border: 1px solid rgba(240,78,35,0.12);
+        border-radius: 24px;
+        box-shadow: var(--shadow-card);
+        padding: 2.5rem 2rem;
+        text-align: center;
+      }
+      .blank-slate-mascot {
+        width: 180px;
+        height: auto;
+        margin: 0 auto 1.25rem;
+        display: block;
+      }
+      .blank-slate-title {
+        margin: 0 0 0.75rem;
+        font-size: clamp(1.5rem, 3vw, 2rem);
+        font-weight: 700;
+        color: var(--color-text-primary);
+      }
+      .blank-slate-copy {
+        margin: 0 auto 1.5rem;
+        max-width: 520px;
+        color: var(--color-text-secondary);
+        font-size: 0.9375rem;
+        line-height: 1.7;
+      }
+      .registry-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+      .icon-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        border-radius: 9999px;
+        border: 1px solid var(--color-border-strong);
+        background: var(--color-surface-card);
+        color: var(--color-text-primary);
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s, color 0.15s;
+      }
+      .icon-button:hover:not(:disabled) {
+        background: var(--color-surface-page);
+        border-color: var(--color-primary);
+        color: var(--color-primary);
+      }
+      .icon-button.danger {
+        border-color: rgba(196,28,28,0.22);
+        color: var(--color-danger);
+      }
+      .icon-button.danger:hover:not(:disabled) {
+        background: var(--color-danger-soft);
+        border-color: var(--color-danger);
+        color: var(--color-danger);
+      }
+      .table-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.5rem;
       }
       /* --- Meta list --- */
       .meta-list {
@@ -436,6 +540,9 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
     <main class="shell">${body}</main>
     <script>
       (() => {
+        const addWorkspaceDialog = document.querySelector("[data-add-workspace-dialog]");
+        const addWorkspaceOpenButtons = document.querySelectorAll("[data-open-add-workspace]");
+        const addWorkspaceCloseButtons = document.querySelectorAll("[data-close-add-workspace]");
         const pickerButton = document.querySelector("[data-root-path-picker]");
         const targetId = pickerButton instanceof HTMLButtonElement
           ? pickerButton.getAttribute("data-target-input")
@@ -486,6 +593,37 @@ export const renderPage = (title: string, body: string) => `<!doctype html>
           statusNode.textContent = text;
           statusNode.style.color = isError ? "var(--color-danger-text)" : "var(--color-text-secondary)";
         };
+
+        if (addWorkspaceDialog instanceof HTMLDialogElement) {
+          addWorkspaceOpenButtons.forEach((button) => {
+            button.addEventListener("click", () => {
+              addWorkspaceDialog.showModal();
+            });
+          });
+
+          addWorkspaceCloseButtons.forEach((button) => {
+            button.addEventListener("click", () => {
+              addWorkspaceDialog.close();
+            });
+          });
+
+          addWorkspaceDialog.addEventListener("click", (event) => {
+            const rect = addWorkspaceDialog.getBoundingClientRect();
+            const withinDialog =
+              event.clientX >= rect.left &&
+              event.clientX <= rect.right &&
+              event.clientY >= rect.top &&
+              event.clientY <= rect.bottom;
+
+            if (!withinDialog) {
+              addWorkspaceDialog.close();
+            }
+          });
+
+          if (addWorkspaceDialog.dataset.openOnLoad === "true") {
+            addWorkspaceDialog.showModal();
+          }
+        }
 
         if (pickerButton instanceof HTMLButtonElement) {
           pickerButton.addEventListener("click", async () => {
@@ -582,17 +720,6 @@ export const renderMetricCard = (label: string, value: string) => `
 `;
 
 export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
-  if (items.length === 0) {
-    return `
-      <div class="table-card">
-        <div class="table-card-header">
-          <p class="table-card-label">Workspaces</p>
-        </div>
-        <div class="empty">no workspaces registered yet.</div>
-      </div>
-    `;
-  }
-
   const rows = items
     .map(
       (workspace) => `
@@ -601,18 +728,21 @@ export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
           <td>${renderStatusBadge(workspace.status)}</td>
           <td>${String(workspace.currentRevision)}</td>
           <td>
-            <a
-              href="/workspaces/${encodeURIComponent(workspace.workspaceId)}"
-              class="secondary-button"
-              style="margin-right:0.5rem;"
-            >Details</a>
-            <button
-              type="button"
-              class="danger-button"
-              data-delete-workspace-button
-              data-delete-action="/workspaces/${encodeURIComponent(workspace.workspaceId)}/delete"
-              data-workspace-label="${escapeHtml(formatWorkspaceLabel(workspace))}"
-            >Delete</button>
+            <div class="table-actions">
+              <a
+                href="/workspaces/${encodeURIComponent(workspace.workspaceId)}"
+                class="secondary-button"
+              >Details</a>
+              <button
+                type="button"
+                class="icon-button danger"
+                aria-label="Delete ${escapeHtml(formatWorkspaceLabel(workspace))}"
+                title="Delete workspace"
+                data-delete-workspace-button
+                data-delete-action="/workspaces/${encodeURIComponent(workspace.workspaceId)}/delete"
+                data-workspace-label="${escapeHtml(formatWorkspaceLabel(workspace))}"
+              >${renderTrashIcon()}</button>
+            </div>
           </td>
         </tr>
       `
@@ -623,6 +753,15 @@ export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
     <div class="table-card">
       <div class="table-card-header">
         <p class="table-card-label">Workspaces</p>
+        <div class="registry-actions">
+          <button
+            type="button"
+            class="icon-button"
+            aria-label="Add workspace"
+            title="Add workspace"
+            data-open-add-workspace
+          >+</button>
+        </div>
       </div>
       <div style="overflow-x:auto;">
         <table>
@@ -657,37 +796,60 @@ export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
   `;
 };
 
-export const renderWorkspaceRegistrationForm = (
+export const renderWorkspaceRegistrationModal = (
   values?: {
     workspaceId?: string;
     displayName?: string;
     rootPath?: string;
+  },
+  options?: {
+    openOnLoad?: boolean;
   }
 ) => `
-  <section class="panel">
-    <div class="metric">Register Workspace</div>
-    <form method="post" action="/workspaces/register" class="form-grid">
-      <div class="form-field">
-        <label for="workspaceId">Workspace ID<span style="color:var(--color-danger);margin-left:2px;">*</span></label>
-        <input id="workspaceId" name="workspaceId" required value="${escapeHtml(values?.workspaceId ?? "")}" />
+  <dialog data-add-workspace-dialog data-open-on-load="${options?.openOnLoad ? "true" : "false"}">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 class="modal-title">Add Workspace</h2>
       </div>
-      <div class="form-field">
-        <label for="displayName">Display Name</label>
-        <input id="displayName" name="displayName" value="${escapeHtml(values?.displayName ?? "")}" />
-        <p class="helper-text">Optional. If omitted, the UI will show only the workspace ID.</p>
+      <div class="modal-body">
+        Register a server workspace so it becomes available in the control plane and sync workflows.
+        <form method="post" action="/workspaces/register" class="form-grid" style="margin-top:1.25rem;">
+          <div class="form-field">
+            <label for="workspaceId">Workspace ID<span style="color:var(--color-danger);margin-left:2px;">*</span></label>
+            <input id="workspaceId" name="workspaceId" required value="${escapeHtml(values?.workspaceId ?? "")}" />
+          </div>
+          <div class="form-field">
+            <label for="displayName">Display Name</label>
+            <input id="displayName" name="displayName" value="${escapeHtml(values?.displayName ?? "")}" />
+            <p class="helper-text">Optional. If omitted, the UI will show only the workspace ID.</p>
+          </div>
+          <div class="form-field">
+            <label for="rootPath">Root Path<span style="color:var(--color-danger);margin-left:2px;">*</span></label>
+            <div class="field-row">
+              <input id="rootPath" name="rootPath" required value="${escapeHtml(values?.rootPath ?? "")}" />
+              <button type="button" class="secondary-button" data-root-path-picker data-target-input="rootPath">Choose Folder</button>
+            </div>
+            <p class="helper-text" data-root-picker-status>Use the button to select a folder with the native file explorer.</p>
+          </div>
+          <div class="modal-actions" style="padding:0;border-top:none;background:transparent;">
+            <button type="button" class="secondary-button" data-close-add-workspace>Cancel</button>
+            <button type="submit" class="primary-button">Create Workspace</button>
+          </div>
+        </form>
       </div>
-      <div class="form-field">
-        <label for="rootPath">Root Path<span style="color:var(--color-danger);margin-left:2px;">*</span></label>
-        <div class="field-row">
-          <input id="rootPath" name="rootPath" required value="${escapeHtml(values?.rootPath ?? "")}" />
-          <button type="button" class="secondary-button" data-root-path-picker data-target-input="rootPath">Choose Folder</button>
-        </div>
-        <p class="helper-text" data-root-picker-status>Use the button to select a folder with the native file explorer.</p>
-      </div>
-      <div>
-        <button type="submit" class="primary-button">Create Workspace</button>
-      </div>
-    </form>
+    </div>
+  </dialog>
+`;
+
+export const renderEmptyWorkspaceState = () => `
+  <section class="blank-slate-shell">
+    <div class="blank-slate-card">
+      ${renderPumaMascot()}
+      <div class="eyebrow">Workspace Registry</div>
+      <h1 class="blank-slate-title">No workspaces yet.</h1>
+      <p class="blank-slate-copy">Start by registering your first workspace. Once added, Clio FS will expose runtime metrics, registry actions, and detail views from the same control plane.</p>
+      <button type="button" class="primary-button" data-open-add-workspace>Add Workspace</button>
+    </div>
   </section>
 `;
 
