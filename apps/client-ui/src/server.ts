@@ -13,7 +13,7 @@ import type {
   WorkspaceListResponse
 } from "@clio-fs/contracts";
 import { checkForRuntimeUpdate } from "@clio-fs/sync-core";
-import { escapeHtml, renderNotice, renderPage } from "@clio-fs/ui-kit";
+import { escapeHtml, renderNotice, renderPage, renderUpdateWidget } from "@clio-fs/ui-kit";
 import { noopLogger, type Logger } from "./logger.js";
 
 export interface ClientUiOptions {
@@ -819,6 +819,12 @@ const renderDashboardBody = (
             ${renderLiveMetricCard("Last Revision", typeof status.lastAppliedRevision === "number" ? String(status.lastAppliedRevision) : "n/a", "lastRevision")}
           </div>
         </div>
+        ${renderUpdateWidget({
+          versionUrl: "/version",
+          updateCheckUrl: "/update/check",
+          title: "Client release",
+          compact: true
+        })}
       </section>
       ${notice ? renderNotice(notice.tone, notice.message) : ""}
       ${renderTargetTable(targets, status)}

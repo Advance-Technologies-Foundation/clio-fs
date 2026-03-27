@@ -316,6 +316,8 @@ test("renders metrics and registry when sync targets exist", async () => {
     assert.match(html, /Sync Targets/);
     assert.match(html, /From Server/);
     assert.match(html, /From Local/);
+    assert.match(html, /Client release/);
+    assert.match(html, /Check for updates/);
     assert.match(html, /data-open-edit-target/);
     assert.match(html, /Details/);
     assert.match(html, /Delete demo-main/);

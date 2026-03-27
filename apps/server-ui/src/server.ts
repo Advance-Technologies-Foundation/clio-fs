@@ -31,6 +31,7 @@ import {
   renderServerSettingsModal,
   renderWorkspaceRegistrationModal,
   renderStatusBadge,
+  renderUpdateWidget,
   renderWorkspaceTable,
   escapeHtml
 } from "@clio-fs/ui-kit";
@@ -524,6 +525,12 @@ const renderDashboardBody = (
             ${renderMetricCard("Workspaces", String(workspaces.length), workspaces.length > 0 ? "ok" : "info")}
           </div>
         </div>
+        ${renderUpdateWidget({
+          versionUrl: "/api/version",
+          updateCheckUrl: "/api/update/check",
+          title: "Server release",
+          compact: true
+        })}
       </section>
       ${
         state?.notice ? renderNotice(state.notice.tone, state.notice.message) : ""

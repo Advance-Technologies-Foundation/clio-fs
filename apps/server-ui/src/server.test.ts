@@ -349,6 +349,8 @@ test("renders dashboard with workspace content", async () => {
     assert.match(html, /Server Settings/);
     assert.match(html, /Change Settle Delay \(ms\)/);
     assert.match(html, /value="1200"/);
+    assert.match(html, /Server release/);
+    assert.match(html, /Check for updates/);
     assert.doesNotMatch(html, /onsubmit="return confirm/);
     assert.doesNotMatch(html, /Platform is determined by the server/i);
     assert.doesNotMatch(html, /<label for="platformDisplay">Platform<\/label>/);

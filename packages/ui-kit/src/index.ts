@@ -136,6 +136,47 @@ export const renderControlPlaneHeroVisual = () => `
   </div>
 `;
 
+export const renderUpdateWidget = (options: {
+  versionUrl: string;
+  updateCheckUrl: string;
+  title?: string;
+  compact?: boolean;
+}) => `
+  <section
+    class="update-widget${options.compact ? " update-widget-compact" : ""}"
+    data-update-widget
+    data-version-url="${escapeHtml(options.versionUrl)}"
+    data-update-check-url="${escapeHtml(options.updateCheckUrl)}"
+    aria-label="${escapeHtml(options.title ?? "Release status")}"
+  >
+    <div class="update-widget-header">
+      <div>
+        <div class="eyebrow">Release</div>
+        <h2 class="update-widget-title">${escapeHtml(options.title ?? "Version status")}</h2>
+      </div>
+      <span class="update-widget-badge" data-update-availability>Checking…</span>
+    </div>
+    <div class="update-widget-grid">
+      <div class="update-widget-metric">
+        <span class="update-widget-label">Current</span>
+        <strong data-current-version>—</strong>
+      </div>
+      <div class="update-widget-metric">
+        <span class="update-widget-label">Latest</span>
+        <strong data-latest-version>—</strong>
+      </div>
+      <div class="update-widget-metric update-widget-metric-wide">
+        <span class="update-widget-label">Status</span>
+        <span data-update-message>Checking release metadata…</span>
+      </div>
+    </div>
+    <div class="update-widget-actions">
+      <button type="button" class="secondary-button" data-check-updates>Check for updates</button>
+      <a href="#" class="secondary-button" data-release-notes hidden target="_blank" rel="noreferrer noopener">Release notes</a>
+    </div>
+  </section>
+`;
+
 export const renderPage = (
   title: string,
   body: string,
@@ -317,6 +358,85 @@ export const renderPage = (
         display: grid;
         gap: 1rem;
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+      .update-widget {
+        display:flex;
+        flex-direction:column;
+        gap:1rem;
+        padding:1.25rem;
+        border:1px solid rgba(20,99,200,0.10);
+        border-radius:var(--radius-xl);
+        background:linear-gradient(180deg, rgba(255,255,255,0.96), rgba(244,248,255,0.94));
+        box-shadow:0 8px 28px rgba(20,17,31,0.08);
+        min-width:min(100%, 360px);
+      }
+      .update-widget-compact {
+        padding:1rem 1.125rem;
+      }
+      .update-widget-header {
+        display:flex;
+        align-items:flex-start;
+        justify-content:space-between;
+        gap:1rem;
+      }
+      .update-widget-title {
+        margin:0.2rem 0 0;
+        font-size:1.05rem;
+        line-height:1.3;
+      }
+      .update-widget-badge {
+        display:inline-flex;
+        align-items:center;
+        padding:0.25rem 0.6rem;
+        border-radius:999px;
+        background:#E5E7EB;
+        color:#374151;
+        font-size:0.75rem;
+        font-weight:700;
+        letter-spacing:0.04em;
+        text-transform:uppercase;
+        white-space:nowrap;
+      }
+      .update-widget-badge[data-state="ok"] {
+        background:rgba(27,139,75,0.10);
+        color:#166534;
+      }
+      .update-widget-badge[data-state="warning"] {
+        background:rgba(180,83,9,0.10);
+        color:#92400E;
+      }
+      .update-widget-badge[data-state="error"] {
+        background:rgba(196,28,28,0.10);
+        color:#991B1B;
+      }
+      .update-widget-grid {
+        display:grid;
+        gap:0.9rem 1rem;
+        grid-template-columns:repeat(2,minmax(0,1fr));
+      }
+      .update-widget-metric {
+        display:flex;
+        flex-direction:column;
+        gap:0.2rem;
+      }
+      .update-widget-metric-wide {
+        grid-column:1 / -1;
+      }
+      .update-widget-label {
+        color:var(--color-text-secondary);
+        font-size:0.78rem;
+        font-weight:600;
+        text-transform:uppercase;
+        letter-spacing:0.05em;
+      }
+      .update-widget-metric strong {
+        font-size:1rem;
+      }
+      .update-widget-actions {
+        display:flex;
+        align-items:center;
+        gap:0.75rem;
+        flex-wrap:wrap;
       }
       .dashboard-hero-summary {
         margin-bottom: 0;
@@ -823,6 +943,9 @@ export const renderPage = (
         .dashboard-hero-network {
           width: min(92vw, 420px);
         }
+        .update-widget {
+          min-width:100%;
+        }
         .meta-list { grid-template-columns: 1fr; }
         .field-row { flex-direction: column; }
         h1 { font-size: 1.5rem; }
@@ -893,6 +1016,145 @@ export const renderPage = (
             void pollTopbarStatus().catch(() => {});
           }, 1000);
         }
+
+        const applyUpdateWidgetPayload = (widget, payload, isError = false) => {
+          if (!(widget instanceof HTMLElement)) {
+            return;
+          }
+
+          const currentVersion = widget.querySelector("[data-current-version]");
+          const latestVersion = widget.querySelector("[data-latest-version]");
+          const availability = widget.querySelector("[data-update-availability]");
+          const message = widget.querySelector("[data-update-message]");
+          const notes = widget.querySelector("[data-release-notes]");
+          const checkButton = widget.querySelector("[data-check-updates]");
+
+          if (currentVersion instanceof HTMLElement && typeof payload.currentVersion === "string") {
+            currentVersion.textContent = typeof payload.currentVersion === "string" ? payload.currentVersion : "—";
+          }
+
+          if (latestVersion instanceof HTMLElement && typeof payload.latestVersion === "string") {
+            latestVersion.textContent = typeof payload.latestVersion === "string" ? payload.latestVersion : "—";
+          }
+
+          if (availability instanceof HTMLElement) {
+            if (isError) {
+              availability.textContent = "Check failed";
+              availability.setAttribute("data-state", "error");
+            } else if (payload.updateAvailable === true) {
+              availability.textContent = "Update available";
+              availability.setAttribute("data-state", "warning");
+            } else {
+              availability.textContent = "Up to date";
+              availability.setAttribute("data-state", "ok");
+            }
+          }
+
+          if (message instanceof HTMLElement) {
+            if (isError) {
+              message.textContent = typeof payload.message === "string" ? payload.message : "Unable to check for updates.";
+            } else if (payload.updateAvailable === true) {
+              message.textContent = "A newer release is available. Installation stays manual.";
+            } else {
+              message.textContent = "This runtime already matches the latest published release.";
+            }
+          }
+
+          if (notes instanceof HTMLAnchorElement) {
+            if (!isError && typeof payload.notesUrl === "string" && payload.notesUrl.length > 0) {
+              notes.hidden = false;
+              notes.href = payload.notesUrl;
+            } else {
+              notes.hidden = true;
+              notes.removeAttribute("href");
+            }
+          }
+
+          if (checkButton instanceof HTMLButtonElement) {
+            checkButton.disabled = false;
+            checkButton.textContent = "Check for updates";
+          }
+        };
+
+        const bindUpdateWidgets = () => {
+          const widgets = document.querySelectorAll("[data-update-widget]");
+
+          for (const widget of widgets) {
+            if (!(widget instanceof HTMLElement) || widget.dataset.bound === "true") {
+              continue;
+            }
+
+            widget.dataset.bound = "true";
+            const versionUrl = widget.dataset.versionUrl ?? "";
+            const updateCheckUrl = widget.dataset.updateCheckUrl ?? "";
+            const checkButton = widget.querySelector("[data-check-updates]");
+
+            const loadVersions = async () => {
+              if (versionUrl.length === 0) {
+                return;
+              }
+
+              const response = await fetch(versionUrl, {
+                headers: { "x-clio-ui-request": "1" }
+              });
+
+              if (!response.ok) {
+                return;
+              }
+
+              const payload = await response.json().catch(() => null);
+              if (payload && typeof payload.version === "string") {
+                applyUpdateWidgetPayload(widget, {
+                  currentVersion: payload.version,
+                  latestVersion: payload.version,
+                  updateAvailable: false
+                });
+              }
+            };
+
+            const checkUpdates = async () => {
+              if (updateCheckUrl.length === 0) {
+                return;
+              }
+
+              if (checkButton instanceof HTMLButtonElement) {
+                checkButton.disabled = true;
+                checkButton.textContent = "Checking…";
+              }
+
+              const response = await fetch(updateCheckUrl, {
+                headers: { "x-clio-ui-request": "1" }
+              });
+              const payload = await response.json().catch(() => null);
+
+              if (!response.ok || !payload) {
+                applyUpdateWidgetPayload(
+                  widget,
+                  { message: payload?.error?.message ?? "Unable to check for updates." },
+                  true
+                );
+                return;
+              }
+
+              applyUpdateWidgetPayload(widget, payload);
+            };
+
+            void loadVersions().catch(() => {});
+            void checkUpdates().catch(() => {
+              applyUpdateWidgetPayload(widget, { message: "Unable to check for updates." }, true);
+            });
+
+            if (checkButton instanceof HTMLButtonElement) {
+              checkButton.addEventListener("click", () => {
+                void checkUpdates().catch(() => {
+                  applyUpdateWidgetPayload(widget, { message: "Unable to check for updates." }, true);
+                });
+              });
+            }
+          }
+        };
+
+        bindUpdateWidgets();
 
         const inferFolderName = (selectedPath) => {
           const normalized = selectedPath.replace(/[\\\\/]+$/, "");
@@ -1074,6 +1336,7 @@ export const renderPage = (
           if (nextAddDialog instanceof HTMLDialogElement && nextAddDialog.dataset.openOnLoad === "true") {
             showDialog(nextAddDialog);
           }
+          bindUpdateWidgets();
         };
 
         const bindDialogBackdropClose = (dialog) => {
