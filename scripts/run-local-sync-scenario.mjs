@@ -290,11 +290,12 @@ const runScenario = async ({ mode }) => {
     workspaceWatcher,
     createWorkspaceServer: serverModule.createWorkspaceServer
   });
+  let client;
 
   try {
     logStep("boot", `mode=${mode}`);
     await registerWorkspace(server.baseUrl, "scenario-main", serverWorkspaceRoot);
-    const client = clientModule.createMirrorClient({
+    client = clientModule.createMirrorClient({
       workspaceId: "scenario-main",
       mirrorRoot: clientMirrorRoot,
       filesystem: clientFs,
@@ -450,6 +451,7 @@ const runScenario = async ({ mode }) => {
       )
     );
   } finally {
+    client?.stopLocalWatchLoop?.();
     await server.close();
     if (mode === "real" && tempRoot) {
       rmSync(tempRoot, { recursive: true, force: true });

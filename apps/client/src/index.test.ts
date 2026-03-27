@@ -844,6 +844,7 @@ test("local watch loop pushes changed files through the control plane", async ()
   watcher.emit({
     type: "file_changed",
     path: "packages/Alpha/readme.txt",
+    encoding: "utf8",
     content: "watcher-write-v3\n",
     contentHash: "sha256:watcher-write-v3"
   });

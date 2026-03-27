@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import { basename, dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { ChangeEvent, SnapshotEntry } from "@clio-fs/contracts";
+import type { ChangeEvent, SnapshotEntry, SnapshotMaterializeFile } from "@clio-fs/contracts";
 import { appConfig } from "@clio-fs/config";
 import {
   ClientControlPlane,
@@ -26,6 +25,7 @@ import {
   type MirrorWatcher,
   type MirrorWatcherEvent
 } from "./watcher.js";
+import { decodeTransferContent, encodeTransferContent, hashBytes } from "./file-content.js";
 
 export interface MirrorClientOptions {
   workspaceId: string;
@@ -42,6 +42,7 @@ export interface MirrorClient {
   bind: () => Promise<ClientBindState>;
   pollOnce: () => Promise<ClientBindState>;
   pushFile: (path: string, content: string, options?: { baseFileRevision?: number }) => Promise<ClientBindState>;
+  pushFileBytes: (path: string, content: Buffer, options?: { baseFileRevision?: number }) => Promise<ClientBindState>;
   createDirectory: (path: string) => Promise<ClientBindState>;
   movePath: (oldPath: string, newPath: string) => Promise<ClientBindState>;
   deleteFile: (path: string, options?: { baseFileRevision?: number }) => Promise<ClientBindState>;
@@ -55,9 +56,6 @@ export interface MirrorClient {
 }
 
 const isFileEntry = (entry: SnapshotEntry) => entry.kind === "file";
-
-const hashText = (content: string) =>
-  `sha256:${createHash("sha256").update(content, "utf8").digest("hex")}`;
 
 const RETRYABLE_STATUS_CODES = new Set([408, 429, 500, 502, 503, 504]);
 
@@ -102,14 +100,14 @@ const ensureHydratedMirror = async (
   }
 
   const filePaths = snapshot.items.filter(isFileEntry).map((item) => item.path);
-  let materializedFiles: Array<{ path: string; fileRevision: number; content: string }> = [];
+  let materializedFiles: SnapshotMaterializeFile[] = [];
 
   if (filePaths.length > 0) {
     const materialized = await controlPlane.materialize(workspaceId, { paths: filePaths });
     materializedFiles = materialized.files;
 
     for (const file of materializedFiles) {
-      filesystem.writeFileText(join(mirrorRoot, file.path), file.content);
+      filesystem.writeFileBytes(join(mirrorRoot, file.path), decodeTransferContent(file.content, file.encoding));
     }
   }
 
@@ -125,12 +123,12 @@ const ensureHydratedMirror = async (
   return state;
 };
 
-const materializedFileRecords = (materialized: { files: Array<{ path: string; fileRevision: number; content: string }> }) =>
+const materializedFileRecords = (materialized: { files: Array<SnapshotMaterializeFile> }) =>
   materialized.files
     .map((file) => ({
       path: file.path,
       fileRevision: file.fileRevision,
-      contentHash: hashText(file.content)
+      contentHash: hashBytes(decodeTransferContent(file.content, file.encoding))
     }))
     .sort((left, right) => left.path.localeCompare(right.path));
 
@@ -191,7 +189,7 @@ const applyMaterializedFiles = async (
   const materialized = await controlPlane.materialize(workspaceId, { paths: uniquePaths });
 
   for (const file of materialized.files) {
-    filesystem.writeFileText(join(mirrorRoot, file.path), file.content);
+    filesystem.writeFileBytes(join(mirrorRoot, file.path), decodeTransferContent(file.content, file.encoding));
   }
 
   return materializedFileRecords(materialized);
@@ -310,7 +308,7 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
 
   const readLocalFileIfPresent = (absolutePath: string) => {
     try {
-      return filesystem.readFileText(absolutePath);
+      return filesystem.readFileBytes(absolutePath);
     } catch {
       return undefined;
     }
@@ -398,13 +396,13 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
     return savePendingOperation(state, operation, error);
   };
 
-  const suppressPath = (path: string, content: string) => {
-    suppressedHashes.set(path, hashText(content));
+  const suppressPath = (path: string, content: Uint8Array) => {
+    suppressedHashes.set(path, hashBytes(content));
   };
 
   const refreshSuppressionFromMirror = (mirrorRoot: string) => {
     for (const path of collectFilePaths(filesystem, mirrorRoot)) {
-      suppressPath(path, filesystem.readFileText(join(mirrorRoot, path)));
+      suppressPath(path, filesystem.readFileBytes(join(mirrorRoot, path)));
     }
   };
 
@@ -422,6 +420,7 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
           const trackedFile = getTrackedFile(nextState, operation.path);
           const result = await controlPlane.putFile(nextState.workspaceId, operation.path, {
             baseFileRevision: operation.baseFileRevision ?? trackedFile?.fileRevision ?? 0,
+            encoding: operation.encoding ?? "utf8",
             content: operation.content,
             origin: "local-client"
           });
@@ -529,6 +528,7 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
             path: operation.path,
             oldPath: operation.oldPath,
             content: operation.content,
+            encoding: operation.encoding,
             baseFileRevision: operation.baseFileRevision
           },
           error
@@ -558,10 +558,13 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
           dirname(absolutePath),
           `${basename(absolutePath)}.conflict-server-${timestamp}`
         );
-        filesystem.writeFileText(serverArtifactPath, serverFile.content);
+        filesystem.writeFileBytes(
+          serverArtifactPath,
+          decodeTransferContent(serverFile.content, serverFile.encoding)
+        );
         suppressPath(
           serverArtifactPath.slice(state.mirrorRoot.length).replace(/^[/\\]/, "").replaceAll("\\", "/"),
-          serverFile.content
+          decodeTransferContent(serverFile.content, serverFile.encoding)
         );
         nextRevision = serverFile.workspaceRevision;
       }
@@ -668,7 +671,10 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
     }
 
     try {
-      await client.pushFile(event.path, event.content);
+      await client.pushFileBytes(
+        event.path,
+        decodeTransferContent(event.content, event.encoding)
+      );
     } catch (error) {
       if (error instanceof ControlPlaneRequestError && error.code === "conflict") {
         await captureConflict(bound, event.path, error);
@@ -757,7 +763,7 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
           (change.operation === "file_created" || change.operation === "file_updated") &&
           filesystem.exists(join(nextState.mirrorRoot, change.path))
         ) {
-          suppressPath(change.path, filesystem.readFileText(join(nextState.mirrorRoot, change.path)));
+          suppressPath(change.path, filesystem.readFileBytes(join(nextState.mirrorRoot, change.path)));
         }
 
         if (change.operation === "file_deleted" || change.operation === "directory_deleted") {
@@ -776,6 +782,9 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       return nextState;
     },
     async pushFile(path, content, pushOptions) {
+      return client.pushFileBytes(path, Buffer.from(content, "utf8"), pushOptions);
+    },
+    async pushFileBytes(path, content, pushOptions) {
       const bound = (await client.bind()) ?? stateStore.load(options.workspaceId);
 
       if (!bound) {
@@ -787,13 +796,15 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       }
 
       suppressPath(path, content);
-      filesystem.writeFileText(join(bound.mirrorRoot, path), content);
+      filesystem.writeFileBytes(join(bound.mirrorRoot, path), content);
+      const encoded = encodeTransferContent(content);
 
       try {
         const trackedFile = getTrackedFile(bound, path);
         const result = await controlPlane.putFile(bound.workspaceId, path, {
           baseFileRevision: pushOptions?.baseFileRevision ?? trackedFile?.fileRevision ?? 0,
-          content,
+          encoding: encoded.encoding,
+          content: encoded.content,
           origin: "local-client"
         });
         const nextState = clearConflict(
@@ -826,7 +837,8 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
             id: `put:${path}`,
             kind: "put_file",
             path,
-            content,
+            encoding: encoded.encoding,
+            content: encoded.content,
             baseFileRevision: pushOptions?.baseFileRevision ?? bound.lastAppliedRevision
           },
           error
@@ -974,11 +986,13 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
         const absolutePath = join(bound.mirrorRoot, path);
         const localContent = readLocalFileIfPresent(absolutePath);
 
-        if (typeof localContent === "string") {
+        if (localContent) {
+          const encoded = encodeTransferContent(localContent);
           const pushResult = await controlPlane.putFile(bound.workspaceId, path, {
             baseFileRevision: result.existsOnServer ? result.fileRevision ?? result.workspaceRevision : 0,
             baseContentHash: result.existsOnServer ? result.contentHash ?? undefined : undefined,
-            content: localContent,
+            encoding: encoded.encoding,
+            content: encoded.content,
             origin: "local-client"
           });
 
@@ -1042,8 +1056,9 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
           throw new Error(`Resolved server file could not be materialized: ${path}`);
         }
 
-        suppressPath(path, file.content);
-        filesystem.writeFileText(join(bound.mirrorRoot, path), file.content);
+        const bytes = decodeTransferContent(file.content, file.encoding);
+        suppressPath(path, bytes);
+        filesystem.writeFileBytes(join(bound.mirrorRoot, path), bytes);
       } else {
         suppressedDeletes.add(path);
         filesystem.removePath(join(bound.mirrorRoot, path));
@@ -1145,3 +1160,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     process.exit(1);
   });
 }
+
+export * from "./sync-config.js";

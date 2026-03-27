@@ -26,7 +26,9 @@ export interface FileSystemStat {
 export interface FileSystemAdapter {
   readdir: (directoryPath: string) => FileSystemDirectoryEntry[];
   stat: (path: string) => FileSystemStat;
+  readFileBytes: (path: string) => Buffer;
   readFileText: (path: string) => string;
+  writeFileBytes: (path: string, content: Buffer) => void;
   writeFileText: (path: string, content: string) => void;
   ensureDirectory: (path: string) => void;
   exists: (path: string) => boolean;
@@ -52,8 +54,15 @@ export const nodeFileSystem: FileSystemAdapter = {
       mtime: stats.mtime
     };
   },
+  readFileBytes(path) {
+    return readFileSync(path);
+  },
   readFileText(path) {
     return readFileSync(path, "utf8");
+  },
+  writeFileBytes(path, content) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, content);
   },
   writeFileText(path, content) {
     mkdirSync(dirname(path), { recursive: true });

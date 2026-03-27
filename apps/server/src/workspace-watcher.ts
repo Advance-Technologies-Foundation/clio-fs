@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
 import { join, relative } from "node:path";
 import type { ChangeOrigin, ServerWatchSettings, WorkspaceRecord } from "@clio-fs/contracts";
 import type { ChangeJournal, WorkspaceRegistry } from "@clio-fs/database";
 import type { FileSystemAdapter } from "./filesystem.js";
+import { hashBytes } from "./file-content.js";
 
 interface FileSnapshot {
   contentHash: string;
@@ -49,9 +49,6 @@ export interface WorkspaceChangeWatcherOptions {
   pollIntervalMs?: number;
   origin?: ChangeOrigin;
 }
-
-const hashText = (content: string) =>
-  `sha256:${createHash("sha256").update(content, "utf8").digest("hex")}`;
 
 const shouldIgnoreName = (name: string) => name === ".git";
 
@@ -185,12 +182,12 @@ const scanFiles = (
       continue;
     }
 
-    const content = filesystem.readFileText(absolutePath);
+    const bytes = filesystem.readFileBytes(absolutePath);
     const relativePath = relative(rootPath, absolutePath).replaceAll("\\", "/");
 
     results.set(relativePath, {
-      contentHash: hashText(content),
-      size: Buffer.byteLength(content, "utf8")
+      contentHash: hashBytes(bytes),
+      size: bytes.byteLength
     });
   }
 

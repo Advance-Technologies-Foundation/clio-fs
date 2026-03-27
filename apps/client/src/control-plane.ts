@@ -11,9 +11,12 @@ import type {
   ResolveWorkspaceConflictRequest,
   ResolveWorkspaceConflictResponse,
   ServerWatchSettingsResponse,
+  ServerDiagnosticsSummaryResponse,
   SnapshotMaterializeRequest,
   SnapshotMaterializeResponse,
+  WorkspaceChangesStreamEvent,
   WorkspaceChangesResponse,
+  WorkspaceDiagnosticsResponse,
   WorkspaceSnapshotResponse
 } from "@clio-fs/contracts";
 
@@ -56,6 +59,16 @@ export class ClientControlPlane {
 
   async getWatchSettings(): Promise<ServerWatchSettingsResponse> {
     return this.#request<ServerWatchSettingsResponse>("/settings/watch");
+  }
+
+  async getDiagnosticsSummary(): Promise<ServerDiagnosticsSummaryResponse> {
+    return this.#request<ServerDiagnosticsSummaryResponse>("/diagnostics/summary");
+  }
+
+  async getWorkspaceDiagnostics(workspaceId: string): Promise<WorkspaceDiagnosticsResponse> {
+    return this.#request<WorkspaceDiagnosticsResponse>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/diagnostics`
+    );
   }
 
   async materialize(
@@ -172,6 +185,75 @@ export class ClientControlPlane {
         body: JSON.stringify(input)
       }
     );
+  }
+
+  async subscribeChanges(
+    workspaceId: string,
+    options: {
+      since: number;
+      signal?: AbortSignal;
+      onEvent: (event: WorkspaceChangesStreamEvent) => void;
+    }
+  ): Promise<void> {
+    const url = new URL(
+      `/workspaces/${encodeURIComponent(workspaceId)}/changes/stream`,
+      this.#baseUrl
+    );
+    url.searchParams.set("since", String(options.since));
+
+    const response = await this.#fetch(url, {
+      headers: {
+        authorization: `Bearer ${this.#authToken}`,
+        accept: "text/event-stream"
+      },
+      signal: options.signal
+    });
+
+    if (!response.ok || !response.body) {
+      const error = (await response.json()) as ApiErrorShape;
+      throw new ControlPlaneRequestError(
+        response.status,
+        error.error.code,
+        error.error.message,
+        error.error.details
+      );
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const result = await reader.read();
+
+      if (result.done) {
+        break;
+      }
+
+      buffer += decoder.decode(result.value, { stream: true });
+
+      while (buffer.includes("\n\n")) {
+        const separatorIndex = buffer.indexOf("\n\n");
+        const rawEvent = buffer.slice(0, separatorIndex);
+        buffer = buffer.slice(separatorIndex + 2);
+
+        const dataLines = rawEvent
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trimStart());
+
+        if (dataLines.length === 0) {
+          continue;
+        }
+
+        const data = dataLines.join("\n");
+        if (data === "heartbeat") {
+          continue;
+        }
+
+        options.onEvent(JSON.parse(data) as WorkspaceChangesStreamEvent);
+      }
+    }
   }
 
   async #request<T>(pathOrUrl: string | URL, init?: RequestInit): Promise<T> {

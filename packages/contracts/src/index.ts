@@ -3,6 +3,7 @@ export type Revision = number;
 export type WorkspacePlatform = "windows" | "macos" | "linux";
 export type WorkspaceStatus = "active" | "disabled";
 export type SnapshotEntryKind = "file" | "directory";
+export type FileTransferEncoding = "utf8" | "base64";
 export type ChangeOperation =
   | "file_created"
   | "file_updated"
@@ -77,9 +78,11 @@ export interface SnapshotMaterializeRequest {
 
 export interface SnapshotMaterializeFile {
   path: string;
+  encoding: FileTransferEncoding;
   content: string;
   fileRevision: Revision;
   workspaceRevision: Revision;
+  sizeBytes: number;
 }
 
 export interface SnapshotMaterializeResponse {
@@ -92,7 +95,7 @@ export interface PutWorkspaceFileRequest {
   operationId?: string;
   baseFileRevision?: Revision;
   baseContentHash?: string;
-  encoding?: "utf8";
+  encoding?: FileTransferEncoding;
   content: string;
   origin: ChangeOrigin;
 }
@@ -159,6 +162,7 @@ export interface ResolveWorkspaceConflictResponse {
   workspaceRevision: Revision;
   existsOnServer: boolean;
   fileRevision?: Revision;
+  encoding?: FileTransferEncoding;
   contentHash?: string | null;
 }
 
@@ -181,6 +185,33 @@ export interface WorkspaceChangesResponse {
   toRevision: Revision;
   hasMore: boolean;
   items: ChangeEvent[];
+}
+
+export interface WorkspaceChangesStreamEvent {
+  workspaceId: WorkspaceId;
+  fromRevision: Revision;
+  toRevision: Revision;
+  items: ChangeEvent[];
+}
+
+export interface ServerDiagnosticsSummaryResponse {
+  service: string;
+  platform: WorkspacePlatform;
+  workspaceCount: number;
+  workspaceIds: WorkspaceId[];
+  watch: ServerWatchSettings;
+  journal: {
+    totalEvents: number;
+    latestRevisions: Record<WorkspaceId, Revision>;
+  };
+}
+
+export interface WorkspaceDiagnosticsResponse {
+  workspaceId: WorkspaceId;
+  currentRevision: Revision;
+  journalEventCount: number;
+  latestPathEvent?: ChangeEvent;
+  latestRevisionEvent?: ChangeEvent;
 }
 
 export interface RegisterWorkspaceInput extends RegisterWorkspaceRequest {}

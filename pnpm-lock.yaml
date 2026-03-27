@@ -27,6 +27,21 @@ importers:
         specifier: workspace:*
         version: link:../../packages/sync-core
 
+  apps/client-ui:
+    dependencies:
+      '@clio-fs/client':
+        specifier: workspace:*
+        version: link:../client
+      '@clio-fs/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@clio-fs/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@clio-fs/ui-kit':
+        specifier: workspace:*
+        version: link:../../packages/ui-kit
+
   apps/server:
     dependencies:
       '@clio-fs/config':

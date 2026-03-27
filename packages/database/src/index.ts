@@ -336,6 +336,12 @@ export interface ChangeJournal {
   append: (input: AppendChangeEventInput) => ChangeEvent;
   listSince: (options: ListChangeEventsOptions) => { items: ChangeEvent[]; hasMore: boolean };
   getLatestForPath: (workspaceId: string, path: string) => ChangeEvent | undefined;
+  getLatestEvent: (workspaceId: string) => ChangeEvent | undefined;
+  getStats: () => {
+    totalEvents: number;
+    latestRevisions: Record<string, Revision>;
+    workspaceEventCounts: Record<string, number>;
+  };
 }
 
 interface ChangeJournalFileShape {
@@ -463,6 +469,28 @@ export class InMemoryChangeJournal implements ChangeJournal {
     }
 
     return undefined;
+  }
+
+  getLatestEvent(workspaceId: string) {
+    return (this.eventsByWorkspace.get(workspaceId) ?? []).at(-1);
+  }
+
+  getStats() {
+    const latestRevisions: Record<string, Revision> = {};
+    const workspaceEventCounts: Record<string, number> = {};
+    let totalEvents = 0;
+
+    for (const [workspaceId, events] of this.eventsByWorkspace.entries()) {
+      totalEvents += events.length;
+      workspaceEventCounts[workspaceId] = events.length;
+      latestRevisions[workspaceId] = events.at(-1)?.revision ?? 0;
+    }
+
+    return {
+      totalEvents,
+      latestRevisions,
+      workspaceEventCounts
+    };
   }
 }
 

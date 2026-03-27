@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import type { Revision } from "@clio-fs/contracts";
+import type { FileTransferEncoding, Revision } from "@clio-fs/contracts";
 
 export interface ClientBindState {
   workspaceId: string;
@@ -31,6 +31,7 @@ export interface ClientPendingOperation {
   path: string;
   oldPath?: string;
   content?: string;
+  encoding?: FileTransferEncoding;
   baseFileRevision?: number;
   attemptCount: number;
   enqueuedAt: string;
@@ -108,6 +109,9 @@ const isClientBindState = (value: unknown): value is ClientBindState => {
               typeof (operation as Record<string, unknown>).oldPath === "string") &&
             (typeof (operation as Record<string, unknown>).content === "undefined" ||
               typeof (operation as Record<string, unknown>).content === "string") &&
+            (typeof (operation as Record<string, unknown>).encoding === "undefined" ||
+              (operation as Record<string, unknown>).encoding === "utf8" ||
+              (operation as Record<string, unknown>).encoding === "base64") &&
             (typeof (operation as Record<string, unknown>).baseFileRevision === "undefined" ||
               typeof (operation as Record<string, unknown>).baseFileRevision === "number")
         ))) &&

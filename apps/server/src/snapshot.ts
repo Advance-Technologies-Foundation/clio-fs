@@ -6,6 +6,7 @@ import type {
   WorkspaceSnapshotResponse
 } from "@clio-fs/contracts";
 import { type FileSystemAdapter, type FileSystemDirectoryEntry, nodeFileSystem } from "./filesystem.js";
+import { detectTransferEncoding } from "./file-content.js";
 
 const normalizeWorkspacePath = (rootPath: string, absolutePath: string) =>
   relative(rootPath, absolutePath).replaceAll("\\", "/");
@@ -129,9 +130,10 @@ export const materializeWorkspaceFiles = (
 
     return {
       path,
-      content: filesystem.readFileText(absolutePath),
+      ...detectTransferEncoding(filesystem.readFileBytes(absolutePath)),
       fileRevision: workspace.currentRevision,
-      workspaceRevision: workspace.currentRevision
+      workspaceRevision: workspace.currentRevision,
+      sizeBytes: stats.size
     };
   });
 
