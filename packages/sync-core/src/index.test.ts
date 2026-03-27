@@ -1,6 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { checkForRuntimeUpdate, compareReleaseVersions, healthSummary } from "@clio-fs/sync-core";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import {
+  checkForRuntimeUpdate,
+  compareReleaseVersions,
+  healthSummary,
+  readStagedRuntimeUpdate,
+  sha256File,
+  stageRuntimeUpdate
+} from "@clio-fs/sync-core";
 
 test("health summary returns scaffold marker", () => {
   assert.match(healthSummary(), /ready/i);
@@ -70,4 +80,87 @@ test("checkForRuntimeUpdate rejects invalid manifest payloads", async () => {
     }),
     /invalid/i
   );
+});
+
+test("stageRuntimeUpdate downloads an asset into a staging directory and verifies checksum", async () => {
+  const stagingRoot = mkdtempSync(join(tmpdir(), "clio-fs-update-stage-"));
+  const assetBytes = Buffer.from("release-asset\n", "utf8");
+  const expectedSha256 = "8fcb2b4547236e7039acbdfb464e17f042846b9359bb09053cc59da1788c2db4";
+
+  const staged = await stageRuntimeUpdate({
+    service: "clio-fs-server",
+    currentVersion: "0.1.0",
+    targetVersion: "0.2.0",
+    stagingRoot,
+    asset: {
+      fileName: "clio-fs-v0.2.0-linux.tar.gz",
+      platform: "linux",
+      format: "tar.gz",
+      url: "https://example.test/clio-fs-v0.2.0-linux.tar.gz",
+      sha256: expectedSha256
+    },
+    fetchImpl: (async () => new Response(assetBytes, { status: 200 })) as typeof fetch
+  });
+
+  assert.equal(staged.verified, true);
+  assert.ok(existsSync(staged.stageDir));
+  assert.equal(readFileSync(staged.archivePath, "utf8"), "release-asset\n");
+  assert.equal(sha256File(staged.archivePath), expectedSha256);
+
+  const metadata = JSON.parse(readFileSync(staged.metadataPath, "utf8")) as { targetVersion: string };
+  assert.equal(metadata.targetVersion, "0.2.0");
+
+  const reloaded = readStagedRuntimeUpdate(staged.metadataPath);
+  assert.equal(reloaded.archiveSha256, expectedSha256);
+});
+
+test("stageRuntimeUpdate removes the staging directory when checksum verification fails", async () => {
+  const stagingRoot = mkdtempSync(join(tmpdir(), "clio-fs-update-stage-"));
+  const beforeEntries = new Set(readdirSync(stagingRoot));
+
+  await assert.rejects(
+    stageRuntimeUpdate({
+      service: "clio-fs-client-ui",
+      currentVersion: "0.1.0",
+      targetVersion: "0.2.0",
+      stagingRoot,
+      asset: {
+        fileName: "clio-fs-v0.2.0-windows.zip",
+        platform: "windows",
+        format: "zip",
+        url: "https://example.test/clio-fs-v0.2.0-windows.zip",
+        sha256: "deadbeef"
+      },
+      fetchImpl: (async () => new Response(Buffer.from("wrong"), { status: 200 })) as typeof fetch
+    }),
+    /checksum mismatch/i
+  );
+
+  const afterEntries = new Set(readdirSync(stagingRoot));
+  assert.deepEqual(afterEntries, beforeEntries);
+});
+
+test("readStagedRuntimeUpdate rejects tampered archive contents", async () => {
+  const stagingRoot = mkdtempSync(join(tmpdir(), "clio-fs-update-stage-"));
+  const assetBytes = Buffer.from("release-asset\n", "utf8");
+  const expectedSha256 = "8fcb2b4547236e7039acbdfb464e17f042846b9359bb09053cc59da1788c2db4";
+
+  const staged = await stageRuntimeUpdate({
+    service: "clio-fs-server",
+    currentVersion: "0.1.0",
+    targetVersion: "0.2.0",
+    stagingRoot,
+    asset: {
+      fileName: "clio-fs-v0.2.0-linux.tar.gz",
+      platform: "linux",
+      format: "tar.gz",
+      url: "https://example.test/clio-fs-v0.2.0-linux.tar.gz",
+      sha256: expectedSha256
+    },
+    fetchImpl: (async () => new Response(assetBytes, { status: 200 })) as typeof fetch
+  });
+
+  writeFileSync(staged.archivePath, "tampered\n", "utf8");
+
+  assert.throws(() => readStagedRuntimeUpdate(staged.metadataPath), /checksum mismatch/i);
 });

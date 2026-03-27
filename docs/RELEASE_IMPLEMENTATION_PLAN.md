@@ -33,7 +33,7 @@ Goal: detect updates safely and show them in the UI without installing them auto
 
 Goal: allow the user to apply an update manually from the UI.
 
-- [ ] Item 1. Add a shared updater engine for staged download and checksum verification.
+- [x] Item 1. Add a shared updater engine for staged download and checksum verification.
 - [ ] Item 2. Add `Update` actions and apply endpoints for server and client.
 - [ ] Item 3. Install new bundles into versioned directories and switch the active release safely.
 - [ ] Item 4. Restart under operator control and roll back on failed health check.
