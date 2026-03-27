@@ -133,7 +133,8 @@ test("renders dashboard with workspace content", async () => {
     const html = await response.text();
 
     assert.equal(response.status, 200);
-    assert.match(html, /Control plane visibility/i);
+    assert.match(html, /Manage workspace sync from a single control plane/i);
+    assert.match(html, /Operations Console/i);
     assert.match(html, /Demo Main/);
     assert.match(html, /sync-core ready; workspaces=1/);
     assert.match(html, /Choose Folder/);

@@ -233,9 +233,9 @@ const renderDashboard = async (
     "Clio FS Control Plane",
     `
       <section class="hero">
-        <div class="eyebrow">Clio FS Operator Surface</div>
-        <h1>Control plane visibility without leaving the browser.</h1>
-        <p class="lede">This initial UI exposes the live health signal and registered workspaces for the TypeScript control-plane service. It is intentionally server-rendered so operators can use it immediately without building a frontend bundle first.</p>
+        <div class="eyebrow">Operations Console</div>
+        <h1>Manage workspace sync from a single control plane.</h1>
+        <p class="lede">Monitor service health, register workspaces, and inspect runtime state from one operator console built for day-to-day control of Clio FS.</p>
       </section>
       <section class="grid">
         ${renderMetricCard("Service", health.service)}
