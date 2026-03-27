@@ -61,7 +61,8 @@ const createFetchStub = (
     }
   ]
 ) => {
-  const [workspace] = workspaces;
+  const items = workspaces.map((workspace) => ({ ...workspace }));
+  const [workspace] = items;
   let watchSettings = {
     settleDelayMs: 1200
   };
@@ -80,7 +81,7 @@ const createFetchStub = (
         JSON.stringify({
           status: "ok",
           service: "clio-fs-server",
-          summary: `sync-core ready; workspaces=${workspaces.length}`,
+          summary: `sync-core ready; workspaces=${items.length}`,
           platform: "linux"
         }),
         { status: 200, headers: { "content-type": "application/json" } }
@@ -90,7 +91,7 @@ const createFetchStub = (
     if (pathname === "/workspaces") {
       return new Response(
         JSON.stringify({
-          items: workspaces.map((item) => ({
+          items: items.map((item) => ({
             workspaceId: item.workspaceId,
             displayName: item.displayName,
             currentRevision: item.currentRevision
@@ -127,11 +128,28 @@ const createFetchStub = (
       );
     }
 
+    if ((init?.method ?? "GET") === "PATCH") {
+      const matchedWorkspaceForUpdate = items.find(
+        (item) => pathname === `/workspaces/${item.workspaceId}`
+      );
+
+      if (matchedWorkspaceForUpdate) {
+        const payload = JSON.parse(String(init?.body ?? "{}")) as { displayName?: string; rootPath: string };
+        matchedWorkspaceForUpdate.displayName = payload.displayName;
+        matchedWorkspaceForUpdate.rootPath = payload.rootPath;
+
+        return new Response(JSON.stringify(matchedWorkspaceForUpdate), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+    }
+
     if (workspace && pathname === `/workspaces/${workspace.workspaceId}` && (init?.method ?? "GET") === "DELETE") {
       return new Response(null, { status: 204 });
     }
 
-    const matchedWorkspace = workspaces.find(
+    const matchedWorkspace = items.find(
       (item) => pathname === `/workspaces/${item.workspaceId}`
     );
 
@@ -253,6 +271,7 @@ test("renders dashboard with workspace content", async () => {
     assert.match(html, /Workspaces/i);
     assert.match(html, /Demo Main/);
     assert.match(html, /Demo Main \(demo-main\)/);
+    assert.match(html, /data-open-edit-workspace/);
     assert.match(html, />Details</);
     assert.match(html, /aria-label="Add workspace"/);
     assert.match(html, /aria-label="Delete Demo Main \(demo-main\)"/);
@@ -415,6 +434,42 @@ test("submits workspace registration form in JSON mode", async () => {
     assert.equal(response.status, 201);
     assert.equal(body.ok, true);
     assert.equal(body.workspaceId, "created-from-form");
+  } finally {
+    await server.close();
+  }
+});
+
+test("updates a workspace from the shared modal in JSON mode", async () => {
+  const server = await startTestServer();
+
+  try {
+    const { cookie } = await server.login();
+    const response = await fetch(`${server.baseUrl}/workspaces/demo-main/update`, {
+      method: "POST",
+      headers: {
+        ...withCookie(cookie),
+        "content-type": "application/x-www-form-urlencoded",
+        "x-clio-ui-request": "1"
+      },
+      body: new URLSearchParams({
+        workspaceId: "demo-main",
+        displayName: "Demo Updated",
+        rootPath: "/srv/clio/demo-updated"
+      })
+    });
+    const body = (await response.json()) as { ok: boolean; workspaceId: string };
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.workspaceId, "demo-main");
+
+    const dashboard = await fetch(`${server.baseUrl}/`, {
+      headers: withCookie(cookie)
+    });
+    const html = await dashboard.text();
+
+    assert.match(html, /Demo Updated \(demo-main\)/);
+    assert.match(html, /data-edit-root-path="\/srv\/clio\/demo-updated"/);
   } finally {
     await server.close();
   }

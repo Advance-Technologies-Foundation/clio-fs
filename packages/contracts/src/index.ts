@@ -38,6 +38,12 @@ export interface RegisterWorkspaceRequest {
   policies?: Partial<WorkspacePolicies>;
 }
 
+export interface UpdateWorkspaceRequest {
+  displayName?: string;
+  rootPath: string;
+  policies?: Partial<WorkspacePolicies>;
+}
+
 export interface ServerHealthResponse {
   status: "ok";
   service: string;
@@ -217,6 +223,7 @@ export interface WorkspaceDiagnosticsResponse {
 }
 
 export interface RegisterWorkspaceInput extends RegisterWorkspaceRequest {}
+export interface UpdateWorkspaceInput extends UpdateWorkspaceRequest {}
 
 export interface ApiErrorShape {
   error: {

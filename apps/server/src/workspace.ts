@@ -2,6 +2,7 @@ import path from "node:path";
 import {
   DEFAULT_WORKSPACE_POLICIES,
   type RegisterWorkspaceInput,
+  type UpdateWorkspaceInput,
   type WorkspacePlatform
 } from "@clio-fs/contracts";
 
@@ -71,6 +72,57 @@ export const parseRegisterWorkspaceInput = (
 
   return {
     workspaceId,
+    displayName:
+      typeof displayName === "string" && displayName.trim().length > 0
+        ? displayName.trim()
+        : undefined,
+    rootPath,
+    policies: {
+      allowGit:
+        typeof policies.allowGit === "boolean"
+          ? policies.allowGit
+          : DEFAULT_WORKSPACE_POLICIES.allowGit,
+      allowBinaryWrites:
+        typeof policies.allowBinaryWrites === "boolean"
+          ? policies.allowBinaryWrites
+          : DEFAULT_WORKSPACE_POLICIES.allowBinaryWrites,
+      maxFileBytes:
+        typeof policies.maxFileBytes === "number" && Number.isFinite(policies.maxFileBytes)
+          ? policies.maxFileBytes
+          : DEFAULT_WORKSPACE_POLICIES.maxFileBytes
+    }
+  };
+};
+
+export const parseUpdateWorkspaceInput = (
+  value: unknown,
+  serverPlatform: WorkspacePlatform
+): UpdateWorkspaceInput => {
+  if (!isObject(value)) {
+    throw new Error("request body must be a JSON object");
+  }
+
+  const displayName = value.displayName;
+  const rootPath = value.rootPath;
+
+  if (
+    typeof displayName !== "undefined" &&
+    typeof displayName !== "string"
+  ) {
+    throw new Error("displayName must be omitted or a non-empty string");
+  }
+
+  if (typeof rootPath !== "string" || rootPath.trim().length === 0) {
+    throw new Error("rootPath must be a non-empty string");
+  }
+
+  if (!isAbsoluteRootPath(rootPath, serverPlatform)) {
+    throw new Error("rootPath must be absolute for the server platform");
+  }
+
+  const policies = isObject(value.policies) ? value.policies : {};
+
+  return {
     displayName:
       typeof displayName === "string" && displayName.trim().length > 0
         ? displayName.trim()

@@ -10,6 +10,7 @@ import {
   type RegisterWorkspaceInput,
   type Revision,
   type ServerWatchSettings,
+  type UpdateWorkspaceInput,
   type WorkspaceRecord
 } from "@clio-fs/contracts";
 
@@ -54,6 +55,7 @@ export interface WorkspaceRegistry {
   list: () => WorkspaceRecord[];
   get: (workspaceId: string) => WorkspaceRecord | undefined;
   register: (input: RegisterWorkspaceInput) => WorkspaceRecord;
+  update: (workspaceId: string, input: UpdateWorkspaceInput) => WorkspaceRecord;
   delete: (workspaceId: string) => void;
   advanceRevision: (workspaceId: string, revision: Revision) => WorkspaceRecord;
 }
@@ -80,6 +82,29 @@ export class InMemoryWorkspaceRegistry implements WorkspaceRegistry {
 
     this.workspaces.set(workspace.workspaceId, workspace);
     return workspace;
+  }
+
+  update(workspaceId: string, input: UpdateWorkspaceInput): WorkspaceRecord {
+    const workspace = this.workspaces.get(workspaceId);
+
+    if (!workspace) {
+      throw new WorkspaceRegistryError("workspace_not_found", "Workspace not found", {
+        workspaceId
+      });
+    }
+
+    const nextWorkspace: WorkspaceRecord = {
+      ...workspace,
+      displayName: input.displayName,
+      rootPath: input.rootPath,
+      policies: {
+        ...workspace.policies,
+        ...input.policies
+      }
+    };
+
+    this.workspaces.set(workspaceId, nextWorkspace);
+    return nextWorkspace;
   }
 
   delete(workspaceId: string) {
@@ -177,6 +202,12 @@ export class FileWorkspaceRegistry extends InMemoryWorkspaceRegistry {
 
   override register(input: RegisterWorkspaceInput): WorkspaceRecord {
     const workspace = super.register(input);
+    this.flush();
+    return workspace;
+  }
+
+  override update(workspaceId: string, input: UpdateWorkspaceInput): WorkspaceRecord {
+    const workspace = super.update(workspaceId, input);
     this.flush();
     return workspace;
   }

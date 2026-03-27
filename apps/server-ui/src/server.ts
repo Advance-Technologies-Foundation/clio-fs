@@ -11,6 +11,7 @@ import type {
   CreateAuthTokenResponse,
   UpdateAuthTokenRequest,
   RegisterWorkspaceRequest,
+  UpdateWorkspaceRequest,
   ServerHealthResponse,
   ServerWatchSettings,
   WorkspaceDiagnosticsResponse,
@@ -56,6 +57,7 @@ interface ControlPlaneClient {
   getWorkspace: (authToken: string, workspaceId: string) => Promise<WorkspaceRecord | null>;
   getWorkspaceDiagnostics: (authToken: string, workspaceId: string) => Promise<WorkspaceDiagnosticsResponse | null>;
   registerWorkspace: (authToken: string, input: RegisterWorkspaceRequest) => Promise<{ workspaceId: string }>;
+  updateWorkspace: (authToken: string, workspaceId: string, input: UpdateWorkspaceRequest) => Promise<WorkspaceRecord>;
   deleteWorkspace: (authToken: string, workspaceId: string) => Promise<void>;
   updateWatchSettings: (authToken: string, input: ServerWatchSettings) => Promise<ServerWatchSettings>;
   listTokens: (authToken: string) => Promise<ListAuthTokensResponse>;
@@ -340,6 +342,15 @@ const createControlPlaneClient = (
         body: JSON.stringify(input)
       });
     },
+    async updateWorkspace(authToken: string, workspaceId: string, input: UpdateWorkspaceRequest) {
+      return request<WorkspaceRecord>(authToken, `/workspaces/${encodeURIComponent(workspaceId)}`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(input)
+      });
+    },
     async deleteWorkspace(authToken: string, workspaceId: string) {
       const response = await fetchImpl(
         resolveControlPlaneUrl(`/workspaces/${encodeURIComponent(workspaceId)}`),
@@ -437,6 +448,7 @@ const renderDashboard = async (
   state?: {
     notice?: { tone: "error" | "success"; message: string };
     formValues?: Partial<RegisterWorkspaceRequest>;
+    workspaceFormMode?: "add" | "edit";
     watchSettings?: ServerWatchSettings;
   }
 ) => {
@@ -462,6 +474,7 @@ const renderDashboardBody = (
   state?: {
     notice?: { tone: "error" | "success"; message: string };
     formValues?: Partial<RegisterWorkspaceRequest>;
+    workspaceFormMode?: "add" | "edit";
     watchSettings?: ServerWatchSettings;
   }
 ) => {
@@ -476,7 +489,8 @@ const renderDashboardBody = (
       }
       ${renderEmptyWorkspaceState()}
       ${renderWorkspaceRegistrationModal(state?.formValues, {
-        openOnLoad: Boolean(state?.notice || state?.formValues)
+        openOnLoad: Boolean(state?.notice || state?.formValues),
+        mode: state?.workspaceFormMode
       })}
       ${renderServerSettingsModal(watchSettings)}
     `;
@@ -500,7 +514,8 @@ const renderDashboardBody = (
       }
       ${renderWorkspaceTable(workspaces)}
       ${renderWorkspaceRegistrationModal(state?.formValues, {
-        openOnLoad: Boolean(state?.notice || state?.formValues)
+        openOnLoad: Boolean(state?.notice || state?.formValues),
+        mode: state?.workspaceFormMode
       })}
       ${renderServerSettingsModal(watchSettings)}
     </section>
@@ -1071,7 +1086,63 @@ export const createServerUiRequestHandler = (options: ServerUiOptions) => {
             400,
             await renderDashboard(client, authenticatedToken, {
               notice: { tone: "error", message },
-              formValues: input
+              formValues: input,
+              workspaceFormMode: "add"
+            })
+          );
+          return;
+        }
+      }
+
+      if (method === "POST" && url.pathname.startsWith("/workspaces/") && url.pathname.endsWith("/update")) {
+        const [, , workspaceId] = url.pathname.split("/");
+
+        if (!workspaceId) {
+          writeHtml(response, 404, renderNotFound());
+          return;
+        }
+
+        const form = await readFormBody(request);
+        const displayName = form.get("displayName")?.toString().trim() ?? "";
+        const input: UpdateWorkspaceRequest = {
+          displayName: displayName.length > 0 ? displayName : undefined,
+          rootPath: form.get("rootPath")?.toString() ?? ""
+        };
+
+        try {
+          await client.updateWorkspace(authenticatedToken, workspaceId, input);
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 200, {
+              ok: true,
+              workspaceId
+            });
+            return;
+          }
+
+          redirect(response, `/`);
+          return;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to update workspace";
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 400, {
+              error: {
+                code: "workspace_update_failed",
+                message
+              }
+            });
+            return;
+          }
+          writeHtml(
+            response,
+            400,
+            await renderDashboard(client, authenticatedToken, {
+              notice: { tone: "error", message },
+              formValues: {
+                workspaceId,
+                displayName: input.displayName,
+                rootPath: input.rootPath
+              },
+              workspaceFormMode: "edit"
             })
           );
           return;

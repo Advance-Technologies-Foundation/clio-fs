@@ -176,6 +176,50 @@ test("reads and updates server watch settings", async () => {
   }
 });
 
+test("updates a registered workspace", async () => {
+  const server = await startTestServer();
+
+  try {
+    const createResponse = await fetch(`${server.apiBaseUrl}/workspaces/register`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        workspaceId: "update-main",
+        displayName: "Update Main",
+        rootPath: "/srv/clio/update-main"
+      })
+    });
+
+    assert.equal(createResponse.status, 201);
+
+    const updateResponse = await fetch(`${server.apiBaseUrl}/workspaces/update-main`, {
+      method: "PATCH",
+      headers: {
+        authorization: `Bearer ${AUTH_TOKEN}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        displayName: "Updated Main",
+        rootPath: "/srv/clio/update-main-next"
+      })
+    });
+    const updateBody = await updateResponse.json();
+
+    assert.equal(updateResponse.status, 200);
+    assert.equal(updateBody.workspaceId, "update-main");
+    assert.equal(updateBody.displayName, "Updated Main");
+    assert.equal(updateBody.rootPath, "/srv/clio/update-main-next");
+    assert.equal(server.registry.get("update-main")?.displayName, "Updated Main");
+    assert.equal(server.registry.get("update-main")?.rootPath, "/srv/clio/update-main-next");
+    assert.equal(server.registry.get("update-main")?.currentRevision, 0);
+  } finally {
+    await server.close();
+  }
+});
+
 test("returns diagnostics summary for the server", async () => {
   const server = await startTestServer();
 

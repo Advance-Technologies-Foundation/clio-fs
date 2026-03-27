@@ -299,6 +299,47 @@ Response `200`:
 }
 ```
 
+### PATCH /workspaces/{workspaceId}
+
+Updates mutable workspace registration fields.
+
+Rules:
+
+- `workspaceId` is stable after registration and is not changed by this endpoint
+- `rootPath` must remain absolute for the server platform
+- omitted or blank `displayName` is stored as unset
+
+Request:
+
+```json
+{
+  "displayName": "CRM Prod Main",
+  "rootPath": "D:/creatio/workspaces/main-renamed"
+}
+```
+
+Response `200`:
+
+```json
+{
+  "workspaceId": "crm-prod-main",
+  "displayName": "CRM Prod Main",
+  "rootPath": "D:/creatio/workspaces/main-renamed",
+  "status": "active",
+  "currentRevision": 18442,
+  "policies": {
+    "allowGit": true,
+    "allowBinaryWrites": true,
+    "maxFileBytes": 10485760
+  }
+}
+```
+
+Possible errors:
+
+- `400` if root path is invalid
+- `404` if `workspaceId` does not exist
+
 ### GET /workspaces/{workspaceId}/snapshot
 
 Returns a recursive snapshot manifest for the current server workspace contents.

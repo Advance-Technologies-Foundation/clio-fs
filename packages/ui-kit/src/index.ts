@@ -847,6 +847,7 @@ export const renderPage = (
         const getAddDialog = () => document.querySelector("[data-add-workspace-dialog]");
         const getDeleteDialog = () => document.querySelector("[data-delete-dialog]");
         const getSettingsDialog = () => document.querySelector("[data-server-settings-dialog]");
+        const getAddWorkspaceForm = () => document.querySelector("[data-add-workspace-form]");
         const getWorkspaceIdInput = () => document.getElementById("workspaceId");
         const getStatusNode = () => document.querySelector("[data-root-picker-status]");
         const getShell = () => document.querySelector("main.shell");
@@ -902,6 +903,77 @@ export const renderPage = (
           if (dialog instanceof HTMLDialogElement && !dialog.open) {
             dialog.showModal();
           }
+        };
+
+        const setAddWorkspaceDialogMode = (mode, workspaceId = "") => {
+          const form = getAddWorkspaceForm();
+          const title = document.querySelector("[data-add-workspace-title]");
+          const copy = document.querySelector("[data-add-workspace-copy]");
+          const submitLabel = document.querySelector("[data-add-workspace-submit-label]");
+          const workspaceIdInput = getWorkspaceIdInput();
+          const isEditMode = mode === "edit" && workspaceId.trim().length > 0;
+
+          if (!(form instanceof HTMLFormElement) || !(workspaceIdInput instanceof HTMLInputElement)) {
+            return;
+          }
+
+          form.action = isEditMode
+            ? "/workspaces/" + encodeURIComponent(workspaceId) + "/update"
+            : "/workspaces/register";
+          form.dataset.mode = isEditMode ? "edit" : "add";
+          form.dataset.workspaceId = isEditMode ? workspaceId : "";
+          workspaceIdInput.readOnly = isEditMode;
+
+          if (title instanceof HTMLElement) {
+            title.textContent = isEditMode ? "Edit Workspace" : "Add Workspace";
+          }
+
+          if (copy instanceof HTMLElement) {
+            copy.textContent = isEditMode
+              ? "Update the registered workspace path and display name. Workspace ID stays fixed to preserve server-side history and isolation."
+              : "Register a server workspace so it becomes available in the control plane and sync workflows.";
+          }
+
+          if (submitLabel instanceof HTMLElement) {
+            submitLabel.textContent = isEditMode ? "Save Changes" : "Create Workspace";
+          }
+        };
+
+        const resetAddWorkspaceDialog = () => {
+          const form = getAddWorkspaceForm();
+
+          if (form instanceof HTMLFormElement) {
+            form.reset();
+          }
+
+          setAddWorkspaceDialogMode("add");
+          setInlineError("[data-add-workspace-error]", "");
+          setStatus("Use the button to select a folder with the native file explorer.");
+        };
+
+        const populateEditWorkspaceDialog = (target) => {
+          const form = getAddWorkspaceForm();
+          const workspaceIdInput = getWorkspaceIdInput();
+          const displayNameInput = document.getElementById("displayName");
+          const rootPathInput = document.getElementById("rootPath");
+          const workspaceId = target.getAttribute("data-edit-workspace-id") ?? "";
+
+          if (
+            !(form instanceof HTMLFormElement) ||
+            !(workspaceIdInput instanceof HTMLInputElement) ||
+            !(displayNameInput instanceof HTMLInputElement) ||
+            !(rootPathInput instanceof HTMLInputElement)
+          ) {
+            return;
+          }
+
+          form.reset();
+          setAddWorkspaceDialogMode("edit", workspaceId);
+          workspaceIdInput.value = workspaceId;
+          displayNameInput.value = target.getAttribute("data-edit-display-name") ?? "";
+          rootPathInput.value = target.getAttribute("data-edit-root-path") ?? "";
+          setInlineError("[data-add-workspace-error]", "");
+          setStatus("Update the workspace values and save changes.");
         };
 
         const refreshDashboard = async () => {
@@ -964,7 +1036,7 @@ export const renderPage = (
 
         document.addEventListener("click", async (event) => {
           const target = event.target instanceof Element
-            ? event.target.closest("[data-open-add-workspace], [data-close-add-workspace], [data-root-path-picker], [data-delete-workspace-button], [data-delete-cancel], [data-open-server-settings], [data-close-server-settings]")
+            ? event.target.closest("[data-open-add-workspace], [data-open-edit-workspace], [data-close-add-workspace], [data-root-path-picker], [data-delete-workspace-button], [data-delete-cancel], [data-open-server-settings], [data-close-server-settings]")
             : null;
 
           if (!(target instanceof HTMLElement)) {
@@ -972,7 +1044,13 @@ export const renderPage = (
           }
 
           if (target.matches("[data-open-add-workspace]")) {
-            setInlineError("[data-add-workspace-error]", "");
+            resetAddWorkspaceDialog();
+            showDialog(getAddDialog());
+            return;
+          }
+
+          if (target.matches("[data-open-edit-workspace]")) {
+            populateEditWorkspaceDialog(target);
             showDialog(getAddDialog());
             return;
           }
@@ -1094,15 +1172,16 @@ export const renderPage = (
               });
 
               if (!response.ok) {
-                const payload = await response.json().catch(() => ({ error: { message: "Failed to create workspace" } }));
-                setInlineError("[data-add-workspace-error]", payload?.error?.message ?? "Failed to create workspace");
+                const payload = await response.json().catch(() => ({ error: { message: "Failed to save workspace" } }));
+                setInlineError("[data-add-workspace-error]", payload?.error?.message ?? "Failed to save workspace");
                 return;
               }
 
               closeDialog(getAddDialog());
+              resetAddWorkspaceDialog();
               await refreshDashboard();
             } catch (error) {
-              setInlineError("[data-add-workspace-error]", error instanceof Error ? error.message : "Failed to create workspace");
+              setInlineError("[data-add-workspace-error]", error instanceof Error ? error.message : "Failed to save workspace");
             } finally {
               if (submitButton instanceof HTMLButtonElement) {
                 submitButton.disabled = false;
@@ -1233,6 +1312,14 @@ export const renderWorkspaceTable = (items: WorkspaceRecord[]) => {
           <td>${String(workspace.currentRevision)}</td>
           <td>
             <div class="table-actions">
+              <button
+                type="button"
+                class="secondary-button"
+                data-open-edit-workspace
+                data-edit-workspace-id="${escapeHtml(workspace.workspaceId)}"
+                data-edit-display-name="${escapeHtml(workspace.displayName ?? "")}"
+                data-edit-root-path="${escapeHtml(workspace.rootPath)}"
+              >Edit</button>
               <a
                 href="/workspaces/${encodeURIComponent(workspace.workspaceId)}"
                 class="secondary-button"
@@ -1309,12 +1396,13 @@ export const renderWorkspaceRegistrationModal = (
   },
   options?: {
     openOnLoad?: boolean;
+    mode?: "add" | "edit";
   }
 ) => `
   <dialog data-add-workspace-dialog data-open-on-load="${options?.openOnLoad ? "true" : "false"}">
     <div class="modal-card">
       <div class="modal-header">
-        <h2 class="modal-title">Add Workspace</h2>
+        <h2 class="modal-title" data-add-workspace-title>${options?.mode === "edit" ? "Edit Workspace" : "Add Workspace"}</h2>
         <button
           type="button"
           class="modal-close"
@@ -1324,7 +1412,9 @@ export const renderWorkspaceRegistrationModal = (
         >×</button>
       </div>
         <div class="modal-body">
-        Register a server workspace so it becomes available in the control plane and sync workflows.
+        <span data-add-workspace-copy>${options?.mode === "edit"
+          ? "Update the registered workspace path and display name. Workspace ID stays fixed to preserve server-side history and isolation."
+          : "Register a server workspace so it becomes available in the control plane and sync workflows."}</span>
         <div class="modal-inline-error" data-add-workspace-error hidden></div>
         <form method="post" action="/workspaces/register" data-add-workspace-form class="form-grid" style="margin-top:1.25rem;">
           <div class="form-field">
@@ -1337,7 +1427,8 @@ export const renderWorkspaceRegistrationModal = (
           </div>
           <div class="form-field">
             <label for="workspaceId">Workspace ID<span style="color:var(--color-danger);margin-left:2px;">*</span></label>
-            <input id="workspaceId" name="workspaceId" required value="${escapeHtml(values?.workspaceId ?? "")}" />
+            <input id="workspaceId" name="workspaceId" required value="${escapeHtml(values?.workspaceId ?? "")}"${options?.mode === "edit" ? " readonly" : ""} />
+            ${options?.mode === "edit" ? '<p class="helper-text">Workspace ID cannot be changed after registration.</p>' : ""}
           </div>
           <div class="form-field">
             <label for="displayName">Display Name</label>
@@ -1346,7 +1437,7 @@ export const renderWorkspaceRegistrationModal = (
           </div>
           <div class="modal-actions" style="padding:0;border-top:none;background:transparent;">
             <button type="button" class="secondary-button" data-close-add-workspace>Cancel</button>
-            <button type="submit" class="primary-button">Create Workspace</button>
+            <button type="submit" class="primary-button" data-add-workspace-submit-label>${options?.mode === "edit" ? "Save Changes" : "Create Workspace"}</button>
           </div>
         </form>
       </div>

@@ -600,6 +600,18 @@ const renderTargetTable = (targets: ClientSyncTarget[], status: ClientSyncManage
                     >
                       From Local
                     </button>
+                    <button
+                      class="secondary-button"
+                      type="button"
+                      data-open-edit-target
+                      data-edit-target-id="${escapeHtml(target.targetId)}"
+                      data-edit-server-base-url="${escapeHtml(target.serverBaseUrl)}"
+                      data-edit-auth-token="${escapeHtml(target.authToken)}"
+                      data-edit-workspace-id="${escapeHtml(target.workspaceId)}"
+                      data-edit-mirror-root="${escapeHtml(target.mirrorRoot)}"
+                    >
+                      Edit
+                    </button>
                     <a class="secondary-button" href="/targets/${encodeURIComponent(target.targetId)}">Details</a>
                     <button
                       class="icon-button danger"
@@ -638,12 +650,12 @@ const renderAddTargetModal = (remoteWorkspaces: ClientUiRemoteWorkspace[]) => `
     <div class="modal-card">
       <div class="modal-header">
         <div>
-          <p class="table-card-label" style="margin-bottom:0.35rem;">Sync Target</p>
-          <h2 class="modal-title">Add Sync Target</h2>
+          <p class="table-card-label" style="margin-bottom:0.35rem;" data-add-target-mode-label>Sync Target</p>
+          <h2 class="modal-title" data-add-target-title>Add Sync Target</h2>
         </div>
         <button class="modal-close" type="button" data-close-add-target aria-label="Close add target dialog">×</button>
       </div>
-      <form action="/targets" method="post" data-add-target-form>
+      <form action="/targets" method="post" data-add-target-form data-add-action="/targets" data-edit-action-template="/targets/__TARGET_ID__/update">
         <div class="modal-body">
           <div data-add-target-error hidden class="modal-inline-error"></div>
           <div class="form-grid">
@@ -688,7 +700,7 @@ const renderAddTargetModal = (remoteWorkspaces: ClientUiRemoteWorkspace[]) => `
         </div>
         <div class="modal-actions">
           <button class="secondary-button" type="button" data-close-add-target>Cancel</button>
-          <button class="primary-button" type="submit">Save to Registry</button>
+          <button class="primary-button" type="submit" data-add-target-submit-label>Save to Registry</button>
         </div>
       </form>
     </div>
@@ -804,6 +816,7 @@ const renderClientPage = (
         const getShell = () => document.querySelector("main.shell");
         const getWorkspaceList = () => document.getElementById("client-workspace-options");
         const getWorkspaceSelect = () => document.getElementById("workspaceSelect");
+        const getAddForm = () => document.querySelector("[data-add-target-form]");
         const getDeleteForm = () => document.querySelector("[data-delete-target-form]");
         const getResyncForm = () => document.querySelector("[data-resync-target-form]");
         let workspaceReloadTimer = null;
@@ -919,6 +932,95 @@ const renderClientPage = (
 
           if (workspaceIdInput instanceof HTMLInputElement) {
             workspaceIdInput.value = "";
+          }
+        };
+
+        const setAddTargetDialogMode = (mode, targetId = "") => {
+          const form = getAddForm();
+          const modeLabel = document.querySelector("[data-add-target-mode-label]");
+          const title = document.querySelector("[data-add-target-title]");
+          const submitLabel = document.querySelector("[data-add-target-submit-label]");
+
+          if (!(form instanceof HTMLFormElement)) {
+            return;
+          }
+
+          const addAction = form.getAttribute("data-add-action") ?? "/targets";
+          const editActionTemplate = form.getAttribute("data-edit-action-template") ?? "/targets/__TARGET_ID__/update";
+          const isEditMode = mode === "edit" && targetId.trim().length > 0;
+
+          form.action = isEditMode
+            ? editActionTemplate.replace("__TARGET_ID__", encodeURIComponent(targetId))
+            : addAction;
+          form.dataset.mode = isEditMode ? "edit" : "add";
+          form.dataset.targetId = isEditMode ? targetId : "";
+
+          if (modeLabel instanceof HTMLElement) {
+            modeLabel.textContent = isEditMode ? "Edit Target" : "Sync Target";
+          }
+
+          if (title instanceof HTMLElement) {
+            title.textContent = isEditMode ? "Edit Sync Target" : "Add Sync Target";
+          }
+
+          if (submitLabel instanceof HTMLElement) {
+            submitLabel.textContent = isEditMode ? "Save Changes" : "Save to Registry";
+          }
+        };
+
+        const resetAddTargetDialog = () => {
+          const form = getAddForm();
+          const statusNode = document.querySelector("[data-root-picker-status]");
+
+          if (form instanceof HTMLFormElement) {
+            form.reset();
+          }
+
+          setAddTargetDialogMode("add");
+          setInlineError("[data-add-target-error]", "");
+
+          const workspaceSelect = getWorkspaceSelect();
+          if (workspaceSelect instanceof HTMLSelectElement) {
+            workspaceSelect.innerHTML = '<option value="">Select a workspace</option>';
+          }
+
+          if (statusNode instanceof HTMLElement) {
+            statusNode.textContent = "";
+            statusNode.style.color = "";
+          }
+        };
+
+        const populateEditTargetDialog = (trigger) => {
+          const form = getAddForm();
+          const serverBaseUrlInput = document.getElementById("serverBaseUrl");
+          const authTokenInput = document.getElementById("authToken");
+          const workspaceIdInput = document.getElementById("workspaceId");
+          const mirrorRootInput = document.getElementById("mirrorRoot");
+          const workspaceSelect = getWorkspaceSelect();
+          const targetId = trigger.getAttribute("data-edit-target-id") ?? "";
+          const workspaceId = trigger.getAttribute("data-edit-workspace-id") ?? "";
+
+          if (
+            !(form instanceof HTMLFormElement) ||
+            !(serverBaseUrlInput instanceof HTMLInputElement) ||
+            !(authTokenInput instanceof HTMLInputElement) ||
+            !(workspaceIdInput instanceof HTMLInputElement) ||
+            !(mirrorRootInput instanceof HTMLInputElement)
+          ) {
+            return;
+          }
+
+          form.reset();
+          setAddTargetDialogMode("edit", targetId);
+          setInlineError("[data-add-target-error]", "");
+
+          serverBaseUrlInput.value = trigger.getAttribute("data-edit-server-base-url") ?? "";
+          authTokenInput.value = trigger.getAttribute("data-edit-auth-token") ?? "";
+          workspaceIdInput.value = workspaceId;
+          mirrorRootInput.value = trigger.getAttribute("data-edit-mirror-root") ?? "";
+
+          if (workspaceSelect instanceof HTMLSelectElement) {
+            workspaceSelect.value = workspaceId;
           }
         };
 
@@ -1066,12 +1168,14 @@ const renderClientPage = (
           const authToken = document.getElementById("authToken");
           const workspaceList = getWorkspaceList();
           const workspaceSelect = getWorkspaceSelect();
+          const workspaceIdInput = document.getElementById("workspaceId");
 
           if (
             !(serverBaseUrl instanceof HTMLInputElement) ||
             !(authToken instanceof HTMLInputElement) ||
             !(workspaceList instanceof HTMLDataListElement) ||
-            !(workspaceSelect instanceof HTMLSelectElement)
+            !(workspaceSelect instanceof HTMLSelectElement) ||
+            !(workspaceIdInput instanceof HTMLInputElement)
           ) {
             return;
           }
@@ -1100,6 +1204,8 @@ const renderClientPage = (
           if (!response.ok || !Array.isArray(payload.items)) {
             throw new Error(payload?.error?.message ?? "Failed to load workspaces");
           }
+
+          const preferredWorkspaceId = workspaceIdInput.value.trim() || workspaceSelect.value.trim();
 
           workspaceList.innerHTML = payload.items
             .map((workspace) => {
@@ -1139,6 +1245,12 @@ const renderClientPage = (
             )
             .join("");
 
+          if (preferredWorkspaceId.length > 0 && payload.items.some((workspace) => workspace.workspaceId === preferredWorkspaceId)) {
+            workspaceSelect.value = preferredWorkspaceId;
+            workspaceIdInput.value = preferredWorkspaceId;
+            return;
+          }
+
           if (payload.items.length === 1) {
             workspaceSelect.value = payload.items[0].workspaceId;
             syncWorkspaceIdWithSelection();
@@ -1152,7 +1264,7 @@ const renderClientPage = (
 
         document.addEventListener("click", async (event) => {
           const trigger = event.target instanceof Element
-            ? event.target.closest("[data-open-add-target], [data-close-add-target], [data-client-root-picker], [data-open-delete-target], [data-close-delete-target], [data-open-resync-target], [data-close-resync-target]")
+            ? event.target.closest("[data-open-add-target], [data-open-edit-target], [data-close-add-target], [data-client-root-picker], [data-open-delete-target], [data-close-delete-target], [data-open-resync-target], [data-close-resync-target]")
             : null;
 
           if (!(trigger instanceof HTMLElement)) {
@@ -1160,8 +1272,17 @@ const renderClientPage = (
           }
 
           if (trigger.matches("[data-open-add-target]")) {
-            setInlineError("[data-add-target-error]", "");
+            resetAddTargetDialog();
             showDialog(getAddDialog());
+            return;
+          }
+
+          if (trigger.matches("[data-open-edit-target]")) {
+            populateEditTargetDialog(trigger);
+            showDialog(getAddDialog());
+            void loadRemoteWorkspaces().catch((error) => {
+              setInlineError("[data-add-target-error]", error instanceof Error ? error.message : "Failed to load workspaces");
+            });
             return;
           }
 
@@ -1324,22 +1445,14 @@ const renderClientPage = (
               const payload = await response.json();
 
               if (!response.ok) {
-                throw new Error(payload?.error?.message ?? "Failed to add sync target");
+                throw new Error(payload?.error?.message ?? "Failed to save sync target");
               }
 
               closeDialog(getAddDialog());
-              form.reset();
-              const workspaceSelect = getWorkspaceSelect();
-              if (workspaceSelect instanceof HTMLSelectElement) {
-                workspaceSelect.innerHTML = '<option value="">Select a workspace</option>';
-              }
-              const statusNode = document.querySelector("[data-root-picker-status]");
-              if (statusNode instanceof HTMLElement) {
-                statusNode.textContent = "";
-              }
+              resetAddTargetDialog();
               await refreshDashboard();
             } catch (error) {
-              setInlineError("[data-add-target-error]", error instanceof Error ? error.message : "Failed to add sync target");
+              setInlineError("[data-add-target-error]", error instanceof Error ? error.message : "Failed to save sync target");
             } finally {
               if (submitButton instanceof HTMLButtonElement) {
                 submitButton.disabled = false;
@@ -1918,6 +2031,66 @@ export const createClientUi = (options: ClientUiOptions) => {
           const message = error instanceof Error ? error.message : "Failed to add sync target";
           if (request.headers["x-clio-ui-request"] === "1") {
             writeJson(response, 400, { error: { code: "target_add_failed", message } });
+            return;
+          }
+
+          writeHtml(response, 400, await renderDashboard({ tone: "error", message }));
+          return;
+        }
+      }
+
+      if (method === "POST" && url.pathname.startsWith("/targets/") && url.pathname.endsWith("/update")) {
+        const [, , targetId] = url.pathname.split("/");
+        const existingTarget = targetStore.get(targetId);
+
+        if (!existingTarget) {
+          writeJson(response, 404, { error: { code: "not_found", message: "Target not found" } });
+          return;
+        }
+
+        const form = await readFormBody(request);
+        const input = {
+          serverBaseUrl: form.get("serverBaseUrl")?.toString().trim() ?? "",
+          authToken: form.get("authToken")?.toString().trim() ?? "",
+          workspaceId: form.get("workspaceId")?.toString().trim() ?? "",
+          mirrorRoot: form.get("mirrorRoot")?.toString().trim() ?? ""
+        };
+
+        try {
+          validateTargetInput(input);
+          const shouldPauseTarget = existingTarget.enabled || syncManager.getStatus().targetId === targetId;
+
+          if (syncManager.getStatus().targetId === targetId) {
+            await syncManager.stop();
+          }
+
+          if (shouldPauseTarget) {
+            targetStore.setEnabledTarget(null);
+          }
+
+          targetStore.save({
+            ...existingTarget,
+            ...input,
+            serverBaseUrl: normalizeServerBaseUrl(input.serverBaseUrl),
+            enabled: false
+          });
+
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 200, { ok: true, targetId });
+            return;
+          }
+
+          writeHtml(response, 200, await renderDashboard({
+            tone: "success",
+            message: shouldPauseTarget
+              ? "Sync target updated. Start it again to apply the new settings."
+              : "Sync target updated."
+          }));
+          return;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to update sync target";
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 400, { error: { code: "target_update_failed", message } });
             return;
           }
 

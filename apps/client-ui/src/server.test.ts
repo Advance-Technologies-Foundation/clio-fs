@@ -200,6 +200,7 @@ test("renders metrics and registry when sync targets exist", async () => {
     assert.match(html, /Sync Targets/);
     assert.match(html, /From Server/);
     assert.match(html, /From Local/);
+    assert.match(html, /data-open-edit-target/);
     assert.match(html, /Details/);
     assert.match(html, /Delete demo-main/);
     assert.match(html, /Targets/);
@@ -239,6 +240,52 @@ test("adds a sync target and persists it", async () => {
     assert.equal(items[0]?.workspaceId, "demo-main");
     assert.equal(items[0]?.enabled, false);
     assert.equal(mirrorClientStub.getStartedTarget(), undefined);
+  } finally {
+    await close();
+  }
+});
+
+test("updates a saved sync target and pauses it until restarted", async () => {
+  const targetStore = new InMemoryClientSyncTargetStore();
+  targetStore.save(seedTarget({ enabled: true }));
+  const { baseUrl, mirrorClientStub, close } = await startTestUi({
+    targetStore
+  });
+
+  try {
+    await fetch(`${baseUrl}/targets/target-1/start`, {
+      method: "POST",
+      headers: {
+        "x-clio-ui-request": "1"
+      }
+    });
+
+    const response = await fetch(`${baseUrl}/targets/target-1/update`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-clio-ui-request": "1"
+      },
+      body: new URLSearchParams({
+        serverBaseUrl: "http://127.0.0.1:4999",
+        authToken: "next-token",
+        workspaceId: "forecast-hierarchy",
+        mirrorRoot: "/tmp/forecast-hierarchy"
+      }).toString()
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.deepEqual(targetStore.get("target-1"), {
+      targetId: "target-1",
+      serverBaseUrl: "http://127.0.0.1:4999/",
+      authToken: "next-token",
+      workspaceId: "forecast-hierarchy",
+      mirrorRoot: "/tmp/forecast-hierarchy",
+      enabled: false
+    });
+    assert.equal(mirrorClientStub.getStartedTarget()?.workspaceId, "demo-main");
   } finally {
     await close();
   }

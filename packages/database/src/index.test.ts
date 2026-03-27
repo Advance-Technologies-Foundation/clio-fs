@@ -59,6 +59,36 @@ test("file workspace registry persists deletions to a JSON file", () => {
   assert.equal(reloaded.list().length, 0);
 });
 
+test("file workspace registry persists workspace updates to a JSON file", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "clio-fs-registry-"));
+  const filePath = join(tempDir, "workspaces.json");
+  const registry = createFileWorkspaceRegistry(filePath);
+
+  registry.register({
+    workspaceId: "update-me",
+    displayName: "Update Me",
+    rootPath: "/srv/clio/update-me"
+  });
+
+  registry.update("update-me", {
+    displayName: "Updated Workspace",
+    rootPath: "/srv/clio/update-me-next"
+  });
+
+  const saved = JSON.parse(readFileSync(filePath, "utf8")) as {
+    workspaces: Array<{ workspaceId: string; displayName?: string; rootPath: string }>;
+  };
+
+  assert.equal(saved.workspaces[0]?.workspaceId, "update-me");
+  assert.equal(saved.workspaces[0]?.displayName, "Updated Workspace");
+  assert.equal(saved.workspaces[0]?.rootPath, "/srv/clio/update-me-next");
+
+  const reloaded = createFileWorkspaceRegistry(filePath);
+
+  assert.equal(reloaded.get("update-me")?.displayName, "Updated Workspace");
+  assert.equal(reloaded.get("update-me")?.rootPath, "/srv/clio/update-me-next");
+});
+
 test("change journal advances workspace revisions monotonically", () => {
   const registry = createInMemoryWorkspaceRegistry();
   registry.register({

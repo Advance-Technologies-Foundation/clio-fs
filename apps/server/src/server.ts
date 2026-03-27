@@ -20,6 +20,7 @@ import {
   type ServerWatchSettings,
   type ServerWatchSettingsResponse,
   type SnapshotMaterializeRequest,
+  type UpdateWorkspaceInput,
   type UpdateServerWatchSettingsRequest,
   type WorkspaceChangesStreamEvent,
   type WorkspaceDiagnosticsResponse,
@@ -55,7 +56,7 @@ import { getWorkspaceFile, getWorkspaceFileMetadata, getWorkspaceTree } from "./
 import { getGitStatus, getGitDiff } from "./git.js";
 import { type Logger, noopLogger } from "./logger.js";
 import type { WorkspaceChangeWatcher } from "./workspace-watcher.js";
-import { detectServerPlatform, parseRegisterWorkspaceInput } from "./workspace.js";
+import { detectServerPlatform, parseRegisterWorkspaceInput, parseUpdateWorkspaceInput } from "./workspace.js";
 
 interface WorkspaceClientActivity {
   lastPollAt?: Date;
@@ -868,6 +869,45 @@ button{background:#1f6feb;border:none;color:#fff;padding:8px;border-radius:6px;c
     } catch (error) {
       if (error instanceof WorkspaceRegistryError) {
         const statusCode = error.code === "duplicate_workspace" ? 409 : 400;
+        writeError(response, statusCode, error.code, error.message, error.details);
+        return;
+      }
+
+      throw error;
+    }
+  }
+
+  if (method === "PATCH" && pathname.startsWith("/workspaces/")) {
+    const workspaceId = pathname.slice("/workspaces/".length);
+
+    if (!workspaceId || workspaceId.includes("/")) {
+      writeError(response, 404, "not_found", "Workspace not found");
+      return;
+    }
+
+    let input: UpdateWorkspaceInput;
+
+    try {
+      const payload = await readJsonBody(request);
+      input = parseUpdateWorkspaceInput(payload, options.serverPlatform ?? detectServerPlatform());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid request body";
+      writeError(response, 400, "invalid_request", message);
+      return;
+    }
+
+    try {
+      const workspace = options.registry.update(workspaceId, input);
+      options.workspaceWatcher?.resyncWorkspace(workspace.workspaceId);
+      (options.logger ?? noopLogger).audit("workspace_updated", {
+        workspaceId: workspace.workspaceId,
+        rootPath: workspace.rootPath
+      });
+      json(response, 200, fullWorkspaceShape(workspace));
+      return;
+    } catch (error) {
+      if (error instanceof WorkspaceRegistryError) {
+        const statusCode = error.code === "workspace_not_found" ? 404 : 400;
         writeError(response, statusCode, error.code, error.message, error.details);
         return;
       }
