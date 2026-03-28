@@ -52,6 +52,32 @@ Rules:
 - snapshot apply must be atomic enough to avoid half-built state for coding apps
 - bootstrap must use manifest + bulk materialization, not N individual file fetches for the initial workspace load
 
+## Flow 1a. Initialize Empty Server Workspace From Local Folder
+
+Goal:
+
+- seed an empty server workspace from an already-populated local folder
+- transition into normal server-authoritative synchronization after the seed completes
+
+Sequence:
+
+1. operator creates or selects an empty workspace on the server
+2. operator creates a client sync target with local bootstrap explicitly enabled
+3. client checks the server snapshot and verifies that the workspace is empty
+4. client enumerates local directories and files under the selected mirror root
+5. client creates missing directories on the server
+6. client uploads local files with `baseFileRevision = 0`
+7. client requests a fresh server snapshot
+8. client re-hydrates the local mirror from the newly seeded server state
+9. client clears the one-shot bootstrap flag and starts normal watch/poll sync
+
+Rules:
+
+- this flow must fail explicitly if the server workspace is not empty
+- this flow must not begin by hydrating from the server into the populated local folder
+- the local bootstrap option is one-shot and must be cleared after a successful seed
+- after the seed completes, the server remains the source of truth
+
 ## Flow 2. Creatio Changes a File on Server
 
 Goal:

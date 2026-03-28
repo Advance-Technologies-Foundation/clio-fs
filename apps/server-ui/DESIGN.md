@@ -438,7 +438,7 @@ The control-plane auth token comes from `@clio-fs/config`. The control-plane bas
 ## 11. Development Workflow
 
 ```powershell
-# From the repo root — builds all packages then starts the single server listener:
+# From the repo root — builds all packages then starts the reserved background-test helper listener:
 corepack pnpm -r build
 node scripts/dev-server.mjs
 ```
@@ -453,8 +453,10 @@ Once running:
 
 | Service | URL |
 |---------|-----|
-| Operator UI | http://127.0.0.1:4020 |
-| Control Plane API | http://127.0.0.1:4020/api |
+| Operator UI | http://127.0.0.1:4025 |
+| Control Plane API | http://127.0.0.1:4025/api |
+
+The direct package command `corepack pnpm --filter @clio-fs/server dev` remains on the default product port `4020`. The repository helper script reserves `4025` for repeatable background checks.
 
 After editing any `.ts` file in `packages/ui-kit` or `apps/server-ui`, rebuild and restart:
 

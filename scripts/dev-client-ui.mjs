@@ -1,8 +1,11 @@
 import { spawnSync, spawn } from "node:child_process";
+import { createBackgroundTestEnv } from "./test-runtime-ports.mjs";
 
 const shell = process.platform === "win32";
+const env = createBackgroundTestEnv();
 const run = (command, args) => {
   const result = spawnSync(command, args, {
+    env,
     stdio: "inherit",
     shell
   });
@@ -15,6 +18,7 @@ const run = (command, args) => {
 run("corepack", ["pnpm", "--filter", "@clio-fs/client", "build"]);
 
 const child = spawn("corepack", ["pnpm", "--filter", "@clio-fs/client-ui", "dev"], {
+  env,
   stdio: "inherit",
   shell
 });

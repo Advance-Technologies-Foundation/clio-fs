@@ -64,6 +64,7 @@ const createMirrorClientStub = () => {
   };
   const resolvedConflicts: Array<{ path: string; resolution: string }> = [];
   const resyncActions: Array<"server" | "local"> = [];
+  let bootstrapCalls = 0;
 
   return {
     factory: (options: {
@@ -75,6 +76,16 @@ const createMirrorClientStub = () => {
       };
     }) => ({
       async bind() {
+        startedTarget = {
+          workspaceId: options.workspaceId,
+          mirrorRoot: options.mirrorRoot,
+          serverBaseUrl: options.controlPlaneOptions?.baseUrl,
+          authToken: options.controlPlaneOptions?.authToken
+        };
+        return state;
+      },
+      async bootstrapFromLocalEmptyServer() {
+        bootstrapCalls += 1;
         startedTarget = {
           workspaceId: options.workspaceId,
           mirrorRoot: options.mirrorRoot,
@@ -127,7 +138,8 @@ const createMirrorClientStub = () => {
     getStartedTarget: () => startedTarget
     ,
     getResolvedConflicts: () => resolvedConflicts,
-    getResyncActions: () => resyncActions
+    getResyncActions: () => resyncActions,
+    getBootstrapCalls: () => bootstrapCalls
   };
 };
 
@@ -209,6 +221,7 @@ const seedTarget = (overrides: Partial<ClientSyncTarget> = {}): ClientSyncTarget
   workspaceId: "demo-main",
   mirrorRoot: "/tmp/demo-main",
   enabled: false,
+  initialSyncSource: "server",
   ...overrides
 });
 
@@ -500,7 +513,38 @@ test("adds a sync target and persists it", async () => {
     assert.equal(items.length, 1);
     assert.equal(items[0]?.workspaceId, "demo-main");
     assert.equal(items[0]?.enabled, false);
+    assert.equal(items[0]?.initialSyncSource, "server");
     assert.equal(mirrorClientStub.getStartedTarget(), undefined);
+  } finally {
+    await close();
+  }
+});
+
+test("adds a sync target with local bootstrap pending when requested", async () => {
+  const targetStore = new InMemoryClientSyncTargetStore();
+  const { baseUrl, close } = await startTestUi({
+    fetchImpl: createFetchStub(),
+    targetStore
+  });
+
+  try {
+    const response = await fetch(`${baseUrl}/targets`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-clio-ui-request": "1"
+      },
+      body: new URLSearchParams({
+        serverBaseUrl: "http://127.0.0.1:4020",
+        authToken: "dev-token",
+        workspaceId: "demo-main",
+        mirrorRoot: "/tmp/demo-main",
+        bootstrapEmptyServerFromLocal: "1"
+      }).toString()
+    });
+
+    assert.equal(response.status, 201);
+    assert.equal(targetStore.list()[0]?.initialSyncSource, "local_empty_server");
   } finally {
     await close();
   }
@@ -544,7 +588,8 @@ test("updates a saved sync target and pauses it until restarted", async () => {
       authToken: "next-token",
       workspaceId: "forecast-hierarchy",
       mirrorRoot: "/tmp/forecast-hierarchy",
-      enabled: false
+      enabled: false,
+      initialSyncSource: "server"
     });
     assert.equal(mirrorClientStub.getStartedTarget()?.workspaceId, "demo-main");
   } finally {
@@ -585,6 +630,30 @@ test("starts and pauses synchronization for a saved target", async () => {
     assert.equal(pauseResponse.status, 200);
     assert.equal(pausePayload.ok, true);
     assert.equal(targetStore.get("target-1")?.enabled, false);
+  } finally {
+    await close();
+  }
+});
+
+test("starts synchronization through local bootstrap when the target is marked for initial local upload", async () => {
+  const targetStore = new InMemoryClientSyncTargetStore();
+  targetStore.save(seedTarget({ initialSyncSource: "local_empty_server" }));
+  const { baseUrl, mirrorClientStub, close } = await startTestUi({
+    targetStore
+  });
+
+  try {
+    const startResponse = await fetch(`${baseUrl}/targets/target-1/start`, {
+      method: "POST",
+      headers: {
+        "x-clio-ui-request": "1"
+      }
+    });
+
+    assert.equal(startResponse.status, 200);
+    assert.equal(mirrorClientStub.getBootstrapCalls(), 1);
+    assert.equal(targetStore.get("target-1")?.enabled, true);
+    assert.equal(targetStore.get("target-1")?.initialSyncSource, "server");
   } finally {
     await close();
   }
@@ -693,6 +762,25 @@ test("renders sync target detail page", async () => {
     assert.match(html, /http:\/\/127\.0\.0\.1:4020/);
     assert.match(html, /Resync From Server/);
     assert.match(html, /Resync From Local/);
+    assert.match(html, /Initial Sync Source/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("renders bootstrap pending targets in the dashboard and details", async () => {
+  const targetStore = new InMemoryClientSyncTargetStore();
+  targetStore.save(seedTarget({ initialSyncSource: "local_empty_server" }));
+  const server = await startTestUi({ targetStore });
+
+  try {
+    const dashboardResponse = await fetch(`${server.baseUrl}/`);
+    const dashboardHtml = await dashboardResponse.text();
+    assert.match(dashboardHtml, /Bootstrap Pending/);
+
+    const detailResponse = await fetch(`${server.baseUrl}/targets/target-1`);
+    const detailHtml = await detailResponse.text();
+    assert.match(detailHtml, /Local -&gt; Empty Server \(pending\)|Local -&gt; Empty Server/);
   } finally {
     await server.close();
   }

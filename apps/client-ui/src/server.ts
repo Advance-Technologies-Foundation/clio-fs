@@ -45,6 +45,7 @@ export interface ClientSyncTarget {
   workspaceId: string;
   mirrorRoot: string;
   enabled: boolean;
+  initialSyncSource?: "server" | "local_empty_server";
 }
 
 export interface ClientSyncTargetStore {
@@ -66,6 +67,7 @@ export interface MirrorClientOptions {
 
 export interface MirrorClient {
   bind: () => Promise<MirrorClientStateSnapshot>;
+  bootstrapFromLocalEmptyServer?: () => Promise<MirrorClientStateSnapshot>;
   pollOnce: () => Promise<MirrorClientStateSnapshot>;
   resolveConflict: (
     path: string,
@@ -170,7 +172,10 @@ const isClientSyncTarget = (value: unknown): value is ClientSyncTarget => {
     typeof record.authToken === "string" &&
     typeof record.workspaceId === "string" &&
     typeof record.mirrorRoot === "string" &&
-    typeof record.enabled === "boolean"
+    typeof record.enabled === "boolean" &&
+    (typeof record.initialSyncSource === "undefined" ||
+      record.initialSyncSource === "server" ||
+      record.initialSyncSource === "local_empty_server")
   );
 };
 
@@ -411,6 +416,21 @@ const validateTargetInput = (input: {
 
 const formatTargetLabel = (target: { workspaceId: string }) => target.workspaceId;
 
+const isBootstrapPending = (target: ClientSyncTarget) =>
+  target.initialSyncSource === "local_empty_server";
+
+const getTargetStatusLabel = (target: ClientSyncTarget, status: ClientSyncManagerStatus) => {
+  if (status.running && status.targetId === target.targetId) {
+    return "Running";
+  }
+
+  if (isBootstrapPending(target)) {
+    return "Bootstrap Pending";
+  }
+
+  return target.enabled ? "Ready" : "Paused";
+};
+
 const renderTrashIcon = () => `
   <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M3 6h18"></path>
@@ -593,7 +613,7 @@ const renderTargetTable = (targets: ClientSyncTarget[], status: ClientSyncManage
               <tr data-target-row="${escapeHtml(target.targetId)}">
                 <td>${escapeHtml(formatTargetLabel(target))}</td>
                 <td>${escapeHtml(target.serverBaseUrl)}</td>
-                <td data-target-status="${escapeHtml(target.targetId)}">${isRunning ? "Running" : target.enabled ? "Ready" : "Paused"}</td>
+                <td data-target-status="${escapeHtml(target.targetId)}">${escapeHtml(getTargetStatusLabel(target, status))}</td>
                 <td data-target-revision="${escapeHtml(target.targetId)}">${isRunning ? escapeHtml(String(status.lastAppliedRevision ?? "n/a")) : "n/a"}</td>
                 <td>
                   <form action="/targets/${encodeURIComponent(target.targetId)}/${isRunning ? "pause" : "start"}" method="post" data-target-sync-form style="margin:0;">
@@ -641,6 +661,7 @@ const renderTargetTable = (targets: ClientSyncTarget[], status: ClientSyncManage
                       data-edit-auth-token="${escapeHtml(target.authToken)}"
                       data-edit-workspace-id="${escapeHtml(target.workspaceId)}"
                       data-edit-mirror-root="${escapeHtml(target.mirrorRoot)}"
+                      data-edit-initial-sync-source="${escapeHtml(target.initialSyncSource ?? "server")}"
                     >
                       Edit
                     </button>
@@ -727,6 +748,15 @@ const renderAddTargetModal = (remoteWorkspaces: ClientUiRemoteWorkspace[]) => `
               <label for="workspaceId">Workspace ID</label>
               <input id="workspaceId" name="workspaceId" type="text" required placeholder="workspace-id" />
               <span class="helper-text">Filled from the selected workspace by default. If still empty, folder selection fills it from the folder name.</span>
+            </div>
+            <div class="form-field" style="grid-column:1 / -1;">
+              <label style="display:flex;align-items:flex-start;gap:0.65rem;">
+                <input id="bootstrapEmptyServerFromLocal" name="bootstrapEmptyServerFromLocal" type="checkbox" value="1" style="margin-top:0.25rem;" />
+                <span>
+                  <strong>Initialize empty server workspace from the local folder on first start</strong><br />
+                  <span class="helper-text">Use this only when the server workspace is empty and the local folder already contains the canonical project content. The first Start Sync will upload the local tree to the server before normal two-way sync begins.</span>
+                </span>
+              </label>
             </div>
           </div>
         </div>
@@ -1028,6 +1058,7 @@ const renderClientPage = (
           const authTokenInput = document.getElementById("authToken");
           const workspaceIdInput = document.getElementById("workspaceId");
           const mirrorRootInput = document.getElementById("mirrorRoot");
+          const bootstrapInput = document.getElementById("bootstrapEmptyServerFromLocal");
           const workspaceSelect = getWorkspaceSelect();
           const targetId = trigger.getAttribute("data-edit-target-id") ?? "";
           const workspaceId = trigger.getAttribute("data-edit-workspace-id") ?? "";
@@ -1050,6 +1081,10 @@ const renderClientPage = (
           authTokenInput.value = trigger.getAttribute("data-edit-auth-token") ?? "";
           workspaceIdInput.value = workspaceId;
           mirrorRootInput.value = trigger.getAttribute("data-edit-mirror-root") ?? "";
+          if (bootstrapInput instanceof HTMLInputElement) {
+            bootstrapInput.checked =
+              (trigger.getAttribute("data-edit-initial-sync-source") ?? "server") === "local_empty_server";
+          }
 
           if (workspaceSelect instanceof HTMLSelectElement) {
             workspaceSelect.value = workspaceId;
@@ -1641,7 +1676,7 @@ const renderTargetDetail = (target: ClientSyncTarget, status: ClientSyncManagerS
     `${escapeHtml(formatTargetLabel(target))} | Clio FS Client`,
     `
       <section class="grid">
-        ${renderMetricCard("Status", status.running && status.targetId === target.targetId ? "Running" : target.enabled ? "Ready" : "Paused")}
+        ${renderMetricCard("Status", getTargetStatusLabel(target, status))}
         ${renderMetricCard("Revision", status.running && status.targetId === target.targetId ? String(status.lastAppliedRevision ?? "n/a") : "n/a")}
         ${renderMetricCard("Unsynced Objects", status.running && status.targetId === target.targetId ? String(status.unsyncedObjectCount ?? 0) : "0")}
         ${renderMetricCard("Conflicts", status.running && status.targetId === target.targetId ? String(status.conflictCount ?? 0) : "0")}
@@ -1685,6 +1720,8 @@ const renderTargetDetail = (target: ClientSyncTarget, status: ClientSyncManagerS
           <dd>${escapeHtml(target.mirrorRoot)}</dd>
           <dt>Enabled</dt>
           <dd>${String(target.enabled)}</dd>
+          <dt>Initial Sync Source</dt>
+          <dd>${escapeHtml(isBootstrapPending(target) ? "Local -> Empty Server (pending)" : "Server")}</dd>
           <dt>Last Error</dt>
           <dd>${escapeHtml(status.targetId === target.targetId ? status.lastError ?? "None" : "None")}</dd>
         </dl>
@@ -2036,7 +2073,14 @@ const createClientSyncManager = (
       }
     });
 
-    await nextClient.bind();
+    if (target.initialSyncSource === "local_empty_server") {
+      if (!nextClient.bootstrapFromLocalEmptyServer) {
+        throw new Error("This client runtime does not support initializing the server from local content.");
+      }
+      await nextClient.bootstrapFromLocalEmptyServer();
+    } else {
+      await nextClient.bind();
+    }
     logger.info("sync_started", { workspaceId: target.workspaceId, targetId: target.targetId, mirrorRoot: target.mirrorRoot, serverBaseUrl: target.serverBaseUrl });
     await nextClient.startLocalWatchLoop();
     activeClient = nextClient;
@@ -2375,7 +2419,11 @@ export const createClientUi = (options: ClientUiOptions) => {
           serverBaseUrl: form.get("serverBaseUrl")?.toString().trim() ?? "",
           authToken: form.get("authToken")?.toString().trim() ?? "",
           workspaceId: form.get("workspaceId")?.toString().trim() ?? "",
-          mirrorRoot: form.get("mirrorRoot")?.toString().trim() ?? ""
+          mirrorRoot: form.get("mirrorRoot")?.toString().trim() ?? "",
+          initialSyncSource:
+            form.get("bootstrapEmptyServerFromLocal")?.toString().trim() === "1"
+              ? ("local_empty_server" as const)
+              : ("server" as const)
         };
 
         try {
@@ -2421,7 +2469,11 @@ export const createClientUi = (options: ClientUiOptions) => {
           serverBaseUrl: form.get("serverBaseUrl")?.toString().trim() ?? "",
           authToken: form.get("authToken")?.toString().trim() ?? "",
           workspaceId: form.get("workspaceId")?.toString().trim() ?? "",
-          mirrorRoot: form.get("mirrorRoot")?.toString().trim() ?? ""
+          mirrorRoot: form.get("mirrorRoot")?.toString().trim() ?? "",
+          initialSyncSource:
+            form.get("bootstrapEmptyServerFromLocal")?.toString().trim() === "1"
+              ? ("local_empty_server" as const)
+              : ("server" as const)
         };
 
         try {
@@ -2477,10 +2529,14 @@ export const createClientUi = (options: ClientUiOptions) => {
         }
 
         try {
-          targetStore.setEnabledTarget(targetId);
           const nextTarget = { ...target, enabled: true };
-          targetStore.save(nextTarget);
           await syncManager.start(nextTarget);
+          targetStore.setEnabledTarget(targetId);
+          targetStore.save({
+            ...nextTarget,
+            initialSyncSource:
+              target.initialSyncSource === "local_empty_server" ? "server" : target.initialSyncSource
+          });
 
           if (request.headers["x-clio-ui-request"] === "1") {
             writeJson(response, 200, { ok: true, running: true });

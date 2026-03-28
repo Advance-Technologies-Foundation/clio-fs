@@ -147,14 +147,15 @@ For a fresh server install, the installer prompts for the server port and initia
    - bearer token
    - workspace on the server
    - local mirror path
+   - enable the initial local bootstrap option if the server workspace is empty and the local folder already contains the canonical project content
 8. Enter the public server UI address, for example `http://127.0.0.1:4020`. The client automatically uses `/api` on that same origin.
 
 ### Local Development
 
 ```bash
 corepack pnpm install
-corepack pnpm run server
-corepack pnpm run client-ui
+corepack pnpm --filter @clio-fs/server dev
+corepack pnpm --filter @clio-fs/client-ui dev
 ```
 
 Default local URLs:
@@ -165,6 +166,15 @@ Default local URLs:
 - development bearer token: `dev-token`
 
 For user-facing flows, prefer the single public server origin `http://127.0.0.1:4020`. Both the browser UI and client setup can use that one address.
+
+Reserved background-test helper URLs:
+
+- `corepack pnpm run server` -> `http://127.0.0.1:4025`
+- `corepack pnpm run client-ui` -> `http://127.0.0.1:4026`
+- `corepack pnpm run dev` -> headless client bound to `http://127.0.0.1:4025`
+- `./scripts/restart.sh` -> restarts the same reserved `4025/4026` pair
+
+These helper ports are intentionally separate from the default local product ports `4020/4030` so repeatable background checks do not steal the user-facing local runtime.
 
 ## Problem
 
@@ -443,23 +453,23 @@ Implemented today:
 
 ## Run The UI Locally
 
-Single-command server-side startup:
+Background helper server-side startup:
 
 `corepack pnpm run server`
 
 This starts:
 
-- `@clio-fs/server` on `http://127.0.0.1:4020`
+- `@clio-fs/server` on `http://127.0.0.1:4025`
 - the operator UI on `/`
 - the backend API on `/api`
 
-Client setup UI:
+Background helper client setup UI:
 
 `corepack pnpm run client-ui`
 
 This starts:
 
-- `@clio-fs/client-ui` on `http://127.0.0.1:4030`
+- `@clio-fs/client-ui` on `http://127.0.0.1:4026`
 
 Use it to:
 
@@ -477,6 +487,8 @@ If you prefer a direct package command:
 
 2. Open [http://127.0.0.1:4020](http://127.0.0.1:4020)
 
+The direct package command keeps the default local product port `4020`. The root helper script keeps the reserved background-test port `4025`.
+
 By default the UI is exposed on `http://127.0.0.1:4020` and the backend API is exposed on the same origin under `/api`, so users and client setup only need one server address.
 Registered workspaces are persisted to [`.clio-fs/server/workspaces.json`](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/.clio-fs/server/workspaces.json) at the repository root once you create them through the UI or API.
 On the workspace registration form, `Choose Folder` opens the native directory picker on the machine running the server process and fills `rootPath` with the selected absolute path.
@@ -493,10 +505,13 @@ CLIO_FS_MIRROR_ROOT=./tmp/forecast-hierarchy-mirror \
 corepack pnpm --filter @clio-fs/client dev
 ```
 
+For the reserved background helper stack, use `corepack pnpm run dev`. It starts the server on `4025` and points the headless client at `http://127.0.0.1:4025`.
+
 Current client behavior:
 
 - binds to one workspace
 - performs initial hydrate through `snapshot` and `snapshot-materialize`
+- supports a one-shot `local -> empty server workspace` bootstrap on first start when explicitly enabled for the sync target
 - polls `changes?since=` and applies server-originated create, update, and delete events
 - receives direct server-side workspace mutations captured by the server watcher, including file updates outside the HTTP API
 - can push a conditional utf8 file write through the control plane

@@ -40,6 +40,7 @@ export interface MirrorClientOptions {
 
 export interface MirrorClient {
   bind: () => Promise<ClientBindState>;
+  bootstrapFromLocalEmptyServer: () => Promise<ClientBindState>;
   pollOnce: () => Promise<ClientBindState>;
   pushFile: (path: string, content: string, options?: { baseFileRevision?: number }) => Promise<ClientBindState>;
   pushFileBytes: (path: string, content: Buffer, options?: { baseFileRevision?: number }) => Promise<ClientBindState>;
@@ -118,6 +119,18 @@ const shouldIgnoreResyncPath = (path: string) =>
   path.startsWith(".git/") ||
   path.includes(".conflict-server-") ||
   path.includes(".conflict-merged-");
+
+const createEmptyBindState = (
+  workspaceId: string,
+  mirrorRoot: string,
+  lastAppliedRevision: number
+): ClientBindState => ({
+  workspaceId,
+  mirrorRoot,
+  lastAppliedRevision,
+  hydrated: true,
+  trackedFiles: []
+});
 
 const ensureHydratedMirror = async (
   controlPlane: ClientControlPlane,
@@ -834,6 +847,91 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
       initialBindValidated = true;
       refreshSuppressionFromMirror(nextState.mirrorRoot);
       return nextState;
+    },
+    async bootstrapFromLocalEmptyServer() {
+      return runWithWatchLoopPaused(async () => {
+        const snapshot = await controlPlane.getSnapshot(options.workspaceId);
+        const serverPaths = snapshot.items
+          .map((item) => item.path)
+          .filter((path) => !shouldIgnoreResyncPath(path));
+
+        if (serverPaths.length > 0) {
+          throw new Error(
+            `Server workspace is not empty and cannot be initialized from local content: ${options.workspaceId}`
+          );
+        }
+
+        filesystem.ensureDirectory(options.mirrorRoot);
+
+        const localDirectories = collectDirectoryPaths(filesystem, options.mirrorRoot)
+          .filter((path) => !shouldIgnoreResyncPath(path))
+          .sort(
+            (left, right) =>
+              left.split("/").length - right.split("/").length || left.localeCompare(right)
+          );
+        const localFiles = collectFilePaths(filesystem, options.mirrorRoot)
+          .filter((path) => !shouldIgnoreResyncPath(path))
+          .sort((left, right) => left.localeCompare(right));
+
+        if (localDirectories.length === 0 && localFiles.length === 0) {
+          throw new Error(
+            `Local mirror path is empty and cannot initialize the server workspace: ${options.mirrorRoot}`
+          );
+        }
+
+        let bootstrapState = createEmptyBindState(
+          options.workspaceId,
+          options.mirrorRoot,
+          snapshot.currentRevision
+        );
+
+        for (const directoryPath of localDirectories) {
+          const result = await controlPlane.createDirectory(options.workspaceId, directoryPath, {
+            origin: "local-client"
+          });
+          bootstrapState = {
+            ...bootstrapState,
+            lastAppliedRevision: result.workspaceRevision
+          };
+          stateStore.save(bootstrapState);
+        }
+
+        for (const filePath of localFiles) {
+          const bytes = filesystem.readFileBytes(join(options.mirrorRoot, filePath));
+          const encoded = encodeTransferContent(bytes);
+          const result = await controlPlane.putFile(options.workspaceId, filePath, {
+            baseFileRevision: 0,
+            encoding: encoded.encoding,
+            content: encoded.content,
+            origin: "local-client"
+          });
+          bootstrapState = upsertTrackedFile(
+            {
+              ...bootstrapState,
+              lastAppliedRevision: result.workspaceRevision
+            },
+            {
+              path: filePath,
+              fileRevision: result.fileRevision,
+              contentHash: result.contentHash
+            }
+          );
+          stateStore.save(bootstrapState);
+        }
+
+        const nextState = await ensureHydratedMirror(
+          controlPlane,
+          filesystem,
+          stateStore,
+          options.workspaceId,
+          options.mirrorRoot,
+          "bootstrap-from-local"
+        );
+
+        initialBindValidated = true;
+        refreshSuppressionFromMirror(nextState.mirrorRoot);
+        return nextState;
+      });
     },
     async pollOnce() {
       const bound = (await client.bind()) ?? stateStore.load(options.workspaceId);

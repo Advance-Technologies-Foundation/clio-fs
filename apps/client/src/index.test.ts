@@ -339,6 +339,215 @@ test("bind hydrates the local mirror from snapshot and materialize", async () =>
   );
 });
 
+test("bootstrapFromLocalEmptyServer uploads a populated local folder into an empty server workspace", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  filesystem.ensureDirectory("/mirror/demo-workspace");
+  filesystem.ensureDirectory("/mirror/demo-workspace/packages");
+  filesystem.ensureDirectory("/mirror/demo-workspace/packages/Alpha");
+  filesystem.writeFileText("/mirror/demo-workspace/root.txt", "local-root-v1\n");
+  filesystem.writeFileText("/mirror/demo-workspace/packages/Alpha/readme.txt", "alpha-local-v1\n");
+  const stateStore = createInMemoryClientStateStore();
+  const mkdirCalls: string[] = [];
+  const putCalls: Array<{ path: string; baseFileRevision?: number }> = [];
+  let latestWorkspaceRevision = 0;
+  const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+
+    if (url.pathname === "/api/workspaces/demo-workspace/snapshot") {
+      return new Response(
+        JSON.stringify({
+          workspaceId: "demo-workspace",
+          currentRevision: latestWorkspaceRevision,
+          items:
+            latestWorkspaceRevision === 0
+              ? []
+              : [
+                  {
+                    path: "packages",
+                    kind: "directory",
+                    mtime: "2026-03-27T00:00:00.000Z",
+                    workspaceRevision: latestWorkspaceRevision
+                  },
+                  {
+                    path: "packages/Alpha",
+                    kind: "directory",
+                    mtime: "2026-03-27T00:00:00.000Z",
+                    workspaceRevision: latestWorkspaceRevision
+                  },
+                  {
+                    path: "packages/Alpha/readme.txt",
+                    kind: "file",
+                    mtime: "2026-03-27T00:00:00.000Z",
+                    size: 15,
+                    workspaceRevision: latestWorkspaceRevision,
+                    fileRevision: 2
+                  },
+                  {
+                    path: "root.txt",
+                    kind: "file",
+                    mtime: "2026-03-27T00:00:00.000Z",
+                    size: 14,
+                    workspaceRevision: latestWorkspaceRevision,
+                    fileRevision: 3
+                  }
+                ]
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    if (url.pathname === "/api/workspaces/demo-workspace/snapshot-materialize") {
+      return new Response(
+        JSON.stringify({
+          workspaceId: "demo-workspace",
+          currentRevision: latestWorkspaceRevision,
+          files: [
+            {
+              path: "packages/Alpha/readme.txt",
+              content: "alpha-local-v1\n",
+              fileRevision: 2,
+              workspaceRevision: 3
+            },
+            {
+              path: "root.txt",
+              content: "local-root-v1\n",
+              fileRevision: 3,
+              workspaceRevision: 3
+            }
+          ]
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    if (url.pathname === "/api/workspaces/demo-workspace/mkdir" && (init?.method ?? "GET") === "POST") {
+      const path = url.searchParams.get("path") ?? "";
+      mkdirCalls.push(path);
+      return new Response(
+        JSON.stringify({
+          workspaceId: "demo-workspace",
+          path,
+          workspaceRevision: 1,
+          created: true
+        }),
+        { status: 201, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    if (url.pathname === "/api/workspaces/demo-workspace/file" && (init?.method ?? "GET") === "PUT") {
+      const path = url.searchParams.get("path") ?? "";
+      const body = JSON.parse(String(init?.body ?? "{}")) as { baseFileRevision?: number };
+      putCalls.push({ path, baseFileRevision: body.baseFileRevision });
+      latestWorkspaceRevision = path === "packages/Alpha/readme.txt" ? 2 : 3;
+      return new Response(
+        JSON.stringify({
+          workspaceId: "demo-workspace",
+          path,
+          fileRevision: path === "packages/Alpha/readme.txt" ? 2 : 3,
+          workspaceRevision: latestWorkspaceRevision,
+          contentHash: `sha256:${path}`
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    if (url.pathname === "/api/settings/watch") {
+      return new Response(JSON.stringify({ settleDelayMs: 20 }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+
+    if (url.pathname === "/api/workspaces/demo-workspace/changes") {
+      return new Response(
+        JSON.stringify({
+          workspaceId: "demo-workspace",
+          fromRevision: 3,
+          toRevision: 3,
+          hasMore: false,
+          items: []
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    throw new Error(`Unexpected request: ${url.pathname}`);
+  };
+
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore,
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4020",
+      authToken: "test-token",
+      fetchImpl: fetchImpl as typeof fetch
+    }
+  });
+
+  const state = await client.bootstrapFromLocalEmptyServer();
+
+  assert.equal(state.hydrated, true);
+  assert.equal(state.lastAppliedRevision, 3);
+  assert.deepEqual(mkdirCalls, ["packages", "packages/Alpha"]);
+  assert.deepEqual(putCalls, [
+    { path: "packages/Alpha/readme.txt", baseFileRevision: 0 },
+    { path: "root.txt", baseFileRevision: 0 }
+  ]);
+  assert.equal(filesystem.readFileText("/mirror/demo-workspace/root.txt"), "local-root-v1\n");
+  assert.equal(
+    filesystem.readFileText("/mirror/demo-workspace/packages/Alpha/readme.txt"),
+    "alpha-local-v1\n"
+  );
+});
+
+test("bootstrapFromLocalEmptyServer rejects initializing a non-empty server workspace", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  filesystem.ensureDirectory("/mirror/demo-workspace");
+  filesystem.writeFileText("/mirror/demo-workspace/root.txt", "local-root-v1\n");
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore: createInMemoryClientStateStore(),
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4020",
+      authToken: "test-token",
+      fetchImpl: (async (input: string | URL | Request) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+
+        if (url.pathname === "/api/workspaces/demo-workspace/snapshot") {
+          return new Response(
+            JSON.stringify({
+              workspaceId: "demo-workspace",
+              currentRevision: 1,
+              items: [
+                {
+                  path: "already-there.txt",
+                  kind: "file",
+                  mtime: "2026-03-27T00:00:00.000Z",
+                  size: 1,
+                  workspaceRevision: 1,
+                  fileRevision: 1
+                }
+              ]
+            }),
+            { status: 200, headers: { "content-type": "application/json" } }
+          );
+        }
+
+        throw new Error(`Unexpected request: ${url.pathname}`);
+      }) as typeof fetch
+    }
+  });
+
+  await assert.rejects(
+    () => client.bootstrapFromLocalEmptyServer(),
+    /server workspace is not empty/i
+  );
+});
+
 test("pollOnce applies server-originated changes and advances bind state", async () => {
   const filesystem = createInMemoryClientFileSystem();
   const stateStore = createInMemoryClientStateStore();

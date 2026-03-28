@@ -46,6 +46,20 @@ The command is intentionally separate from:
 
 The scenario must remain opt-in because it is heavier than unit and integration tests and because it creates temporary workspaces or equivalent mocked roots and starts runnable processes.
 
+Reserved background helper ports for manual repeatability:
+
+- server helper port: `4025`
+- client UI helper port: `4026`
+
+These ports are used by the repository-level helper scripts:
+
+- `corepack pnpm run server`
+- `corepack pnpm run client-ui`
+- `corepack pnpm run dev`
+- `./scripts/restart.sh`
+
+They are intentionally different from the product-default local ports `4020/4030`.
+
 Default execution mode:
 
 - mocked filesystem and mocked persistence adapters
