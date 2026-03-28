@@ -42,6 +42,8 @@ These files are loaded before direct environment variables. Direct environment v
 
 Use [`config/server.conf.example`](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/config/server.conf.example) as the starting point.
 
+The release template binds the server to `0.0.0.0` by default so the operator UI and API are reachable from other machines. Restrict access with your firewall and auth tokens as needed.
+
 Typical settings:
 
 - `CLIO_FS_SERVER_HOST`
@@ -116,7 +118,8 @@ Client install layout:
 
 Installer behavior:
 
-- the first install copies `.example` templates into the shared config directory if no real config file exists yet
+- the first server install prompts for the server port, writes `CLIO_FS_SERVER_HOST=0.0.0.0`, and initializes `server.conf` in the shared config directory
+- the first client install copies `.example` templates into the shared config directory if no real config file exists yet
 - later installs preserve the existing config directory and only switch `current` to a new versioned release
 - runtime commands such as `version` and `healthcheck` should be executed from the `current` launcher path
 - manual update apply uses these install roots:

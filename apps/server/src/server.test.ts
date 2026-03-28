@@ -133,6 +133,14 @@ test("GET /api/version exposes runtime version metadata", async () => {
   }
 });
 
+test("compiled server runtime imports server-ui through the package entrypoint", () => {
+  const compiledServerPath = join(import.meta.dirname, "server.js");
+  const compiledSource = readFileSync(compiledServerPath, "utf8");
+
+  assert.match(compiledSource, /from "@clio-fs\/server-ui"/);
+  assert.doesNotMatch(compiledSource, /\.\.\/\.\.\/server-ui\/dist\/server\.js/);
+});
+
 test("GET /api/update/check exposes update metadata for the current platform bundle", async () => {
   const server = await startTestServer({
     fetchImpl: (async (input: RequestInfo | URL) => {

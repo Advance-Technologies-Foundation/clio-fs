@@ -99,6 +99,8 @@ Verify and start:
 
 Set `CLIO_FS_VERSION=1.2.3` before running the installer if you want a specific tagged release instead of the latest one.
 
+For a fresh server install, the installer prompts for the server port and initializes `config/server.conf` with `CLIO_FS_SERVER_HOST=0.0.0.0` so the operator UI and API can be reached from other machines. Later installs keep the existing server config unchanged.
+
 ### Server
 
 1. Download `clio-fs-server-X.Y.Z.tar.gz` from the GitHub Release page.
@@ -112,7 +114,7 @@ Set `CLIO_FS_VERSION=1.2.3` before running the installer if you want a specific 
    - macOS or Linux: `./clio-fs-server`
    - Windows Command Prompt: `clio-fs-server.cmd`
    - Windows PowerShell: `.\clio-fs-server.ps1`
-6. Open the operator UI at `http://<host>:4020` unless you changed the server port.
+6. Open the operator UI at `http://<server-address>:4020` unless you changed the server port.
 7. Use one configured token on the login page. The same public server address also exposes the API under `/api`.
 
 ### Client

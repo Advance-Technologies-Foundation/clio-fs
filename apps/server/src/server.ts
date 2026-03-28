@@ -3,9 +3,9 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { URL } from "node:url";
 import { appConfig } from "@clio-fs/config";
+import { createServerUiRequestHandler } from "@clio-fs/server-ui";
 import { healthSummary } from "@clio-fs/sync-core";
 import { checkForRuntimeUpdate, installStagedRuntimeUpdate, stageRuntimeUpdate } from "@clio-fs/sync-core";
-import { createServerUiRequestHandler } from "../../server-ui/dist/server.js";
 import {
   type ApiErrorShape,
   type AuthTokenListItem,

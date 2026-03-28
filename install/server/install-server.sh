@@ -4,6 +4,8 @@ set -eu
 REPOSITORY="${CLIO_FS_GITHUB_REPOSITORY:-Advance-Technologies-Foundation/clio-fs}"
 INSTALL_ROOT="${CLIO_FS_SERVER_INSTALL_ROOT:-/opt/clio-fs/server}"
 APP_DIR_NAME="clio-fs-server"
+DEFAULT_SERVER_HOST="${CLIO_FS_SERVER_HOST:-0.0.0.0}"
+DEFAULT_SERVER_PORT="${CLIO_FS_SERVER_PORT:-4020}"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -26,6 +28,91 @@ copy_if_missing() {
   if [ -f "$source_path" ] && [ ! -f "$destination_path" ]; then
     cp "$source_path" "$destination_path"
   fi
+}
+
+is_valid_port() {
+  case "$1" in
+    ''|*[!0-9]*)
+      return 1
+      ;;
+  esac
+
+  [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+
+prompt_for_server_port() {
+  if is_valid_port "$DEFAULT_SERVER_PORT"; then
+    default_port="$DEFAULT_SERVER_PORT"
+  else
+    default_port="4020"
+  fi
+
+  if [ -n "${CLIO_FS_SERVER_PORT:-}" ]; then
+    if is_valid_port "$CLIO_FS_SERVER_PORT"; then
+      printf '%s\n' "$CLIO_FS_SERVER_PORT"
+      return 0
+    fi
+
+    echo "Invalid CLIO_FS_SERVER_PORT: ${CLIO_FS_SERVER_PORT}" >&2
+    exit 1
+  fi
+
+  if [ ! -t 0 ]; then
+    echo "No interactive terminal detected; using default server port ${default_port}" >&2
+    printf '%s\n' "$default_port"
+    return 0
+  fi
+
+  while true; do
+    printf 'Server port [default %s]: ' "$default_port" >&2
+    IFS= read -r selected_port
+
+    if [ -z "$selected_port" ]; then
+      selected_port="$default_port"
+    fi
+
+    if is_valid_port "$selected_port"; then
+      printf '%s\n' "$selected_port"
+      return 0
+    fi
+
+    echo "Port must be an integer between 1 and 65535." >&2
+  done
+}
+
+write_initial_server_config() {
+  config_path="$1"
+  host="$2"
+  port="$3"
+  tmp_config_path="${config_path}.tmp"
+
+  awk -v host="$host" -v port="$port" '
+    BEGIN {
+      host_written = 0
+      port_written = 0
+    }
+    /^CLIO_FS_SERVER_HOST=/ {
+      print "CLIO_FS_SERVER_HOST=" host
+      host_written = 1
+      next
+    }
+    /^CLIO_FS_SERVER_PORT=/ {
+      print "CLIO_FS_SERVER_PORT=" port
+      port_written = 1
+      next
+    }
+    { print }
+    END {
+      if (!host_written) {
+        print "CLIO_FS_SERVER_HOST=" host
+      }
+      if (!port_written) {
+        print "CLIO_FS_SERVER_PORT=" port
+      }
+    }
+  ' "$config_path" > "$tmp_config_path"
+
+  mv "$tmp_config_path" "$config_path"
 }
 
 require_command curl
@@ -99,8 +186,20 @@ rm -rf "${release_root}/config" "${release_root}/.clio-fs"
 ln -s "$shared_config_dir" "${release_root}/config"
 ln -s "$shared_state_dir" "${release_root}/.clio-fs"
 
+is_fresh_install="false"
+
+if [ ! -f "${shared_config_dir}/server.conf" ]; then
+  is_fresh_install="true"
+fi
+
 copy_if_missing "$source_dir/config/shared.conf.example" "${shared_config_dir}/shared.conf"
 copy_if_missing "$source_dir/config/server.conf.example" "${shared_config_dir}/server.conf"
+
+if [ "$is_fresh_install" = "true" ]; then
+  selected_port="$(prompt_for_server_port)"
+  write_initial_server_config "${shared_config_dir}/server.conf" "$DEFAULT_SERVER_HOST" "$selected_port"
+  echo "Initialized ${shared_config_dir}/server.conf with host ${DEFAULT_SERVER_HOST} and port ${selected_port}"
+fi
 
 rm -f "$current_link"
 ln -s "$release_root" "$current_link"

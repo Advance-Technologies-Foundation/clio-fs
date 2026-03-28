@@ -3,6 +3,8 @@ $ErrorActionPreference = "Stop"
 $Repository = if ($env:CLIO_FS_GITHUB_REPOSITORY) { $env:CLIO_FS_GITHUB_REPOSITORY } else { "Advance-Technologies-Foundation/clio-fs" }
 $InstallRoot = if ($env:CLIO_FS_SERVER_INSTALL_ROOT) { $env:CLIO_FS_SERVER_INSTALL_ROOT } else { "C:\Program Files\ClioFS\server" }
 $AppDirName = "clio-fs-server"
+$DefaultServerHost = if ($env:CLIO_FS_SERVER_HOST) { $env:CLIO_FS_SERVER_HOST } else { "0.0.0.0" }
+$DefaultServerPort = if ($env:CLIO_FS_SERVER_PORT) { $env:CLIO_FS_SERVER_PORT } else { "4020" }
 
 function Normalize-Tag {
   param([string]$Value)
@@ -23,6 +25,84 @@ function Copy-IfMissing {
   if ((Test-Path -LiteralPath $SourcePath) -and -not (Test-Path -LiteralPath $DestinationPath)) {
     Copy-Item -LiteralPath $SourcePath -Destination $DestinationPath
   }
+}
+
+function Test-ValidPort {
+  param([string]$Value)
+
+  $parsed = 0
+  if (-not [int]::TryParse($Value, [ref]$parsed)) {
+    return $false
+  }
+
+  return $parsed -ge 1 -and $parsed -le 65535
+}
+
+function Read-ServerPort {
+  param([string]$DefaultPort)
+
+  if ($env:CLIO_FS_SERVER_PORT) {
+    if (-not (Test-ValidPort $env:CLIO_FS_SERVER_PORT)) {
+      throw "Invalid CLIO_FS_SERVER_PORT: $($env:CLIO_FS_SERVER_PORT)"
+    }
+
+    return $env:CLIO_FS_SERVER_PORT
+  }
+
+  if (-not [Environment]::UserInteractive) {
+    Write-Host "No interactive terminal detected; using default server port $DefaultPort"
+    return $DefaultPort
+  }
+
+  while ($true) {
+    $entered = Read-Host "Server port [default $DefaultPort]"
+    if ([string]::IsNullOrWhiteSpace($entered)) {
+      $entered = $DefaultPort
+    }
+
+    if (Test-ValidPort $entered) {
+      return $entered
+    }
+
+    Write-Host "Port must be an integer between 1 and 65535."
+  }
+}
+
+function Initialize-ServerConfig {
+  param(
+    [string]$ConfigPath,
+    [string]$Host,
+    [string]$Port
+  )
+
+  $lines = Get-Content -LiteralPath $ConfigPath
+  $hostWritten = $false
+  $portWritten = $false
+  $updatedLines = foreach ($line in $lines) {
+    if ($line -match '^CLIO_FS_SERVER_HOST=') {
+      $hostWritten = $true
+      "CLIO_FS_SERVER_HOST=$Host"
+      continue
+    }
+
+    if ($line -match '^CLIO_FS_SERVER_PORT=') {
+      $portWritten = $true
+      "CLIO_FS_SERVER_PORT=$Port"
+      continue
+    }
+
+    $line
+  }
+
+  if (-not $hostWritten) {
+    $updatedLines += "CLIO_FS_SERVER_HOST=$Host"
+  }
+
+  if (-not $portWritten) {
+    $updatedLines += "CLIO_FS_SERVER_PORT=$Port"
+  }
+
+  Set-Content -LiteralPath $ConfigPath -Value $updatedLines -Encoding utf8
 }
 
 if ($env:CLIO_FS_VERSION) {
@@ -71,8 +151,20 @@ try {
   New-Item -ItemType Junction -Path (Join-Path $ReleaseRoot "config") -Target $SharedConfigDir | Out-Null
   New-Item -ItemType Junction -Path (Join-Path $ReleaseRoot ".clio-fs") -Target $SharedStateDir | Out-Null
 
+  $IsFreshInstall = -not (Test-Path -LiteralPath (Join-Path $SharedConfigDir "server.conf"))
+
   Copy-IfMissing (Join-Path $SourceDir "config\shared.conf.example") (Join-Path $SharedConfigDir "shared.conf")
   Copy-IfMissing (Join-Path $SourceDir "config\server.conf.example") (Join-Path $SharedConfigDir "server.conf")
+
+  if ($IsFreshInstall) {
+    if (-not (Test-ValidPort $DefaultServerPort)) {
+      throw "Invalid default server port: $DefaultServerPort"
+    }
+
+    $SelectedPort = Read-ServerPort -DefaultPort $DefaultServerPort
+    Initialize-ServerConfig -ConfigPath (Join-Path $SharedConfigDir "server.conf") -Host $DefaultServerHost -Port $SelectedPort
+    Write-Host "Initialized $SharedConfigDir\server.conf with host $DefaultServerHost and port $SelectedPort"
+  }
 
   if (Test-Path -LiteralPath $CurrentPath) {
     Remove-Item -LiteralPath $CurrentPath -Recurse -Force
