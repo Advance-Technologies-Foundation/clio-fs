@@ -273,7 +273,7 @@ App-level examples:
 
 GitHub releases now publish one downloadable runnable archive per operating system on the Release page.
 
-- `.github/workflows/release.yml` runs when a GitHub release is published
+- `.github/workflows/release.yml` runs only when a semver tag such as `1.2.3` or `1.2.3-beta.1` is pushed
 - the workflow installs dependencies, runs `check`, `test`, and `build`, then builds release bundles under `.release-artifacts/`
 - the artifact version is derived from the GitHub release tag, for example `v1.2.3` -> `1.2.3`
 - release targets are the runnable `clio-fs-server` and `clio-fs-client` bundles
@@ -287,7 +287,8 @@ GitHub releases now publish one downloadable runnable archive per operating syst
   - `clio-fs-X.Y.Z-macos.tar.gz`
   - `clio-fs-X.Y.Z-linux.tar.gz`
 - the workflow also keeps matching Actions artifacts for run-level inspection
-- create GitHub releases with semver tags such as `v1.2.3` or `v1.2.3-beta.1`
+- release publication must happen only through GitHub Actions; local builds may be used for smoke validation but must not be treated as published releases
+- create a release by pushing a semver git tag such as `1.2.3` or `1.2.3-beta.1`
 - the long-term normalized release contract and manual-update model are tracked in [docs/RELEASES.md](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/docs/RELEASES.md)
 
 ## Use Release Artifacts

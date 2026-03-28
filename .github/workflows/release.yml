@@ -1,9 +1,9 @@
 name: Release
 
 on:
-  release:
-    types:
-      - published
+  push:
+    tags:
+      - "*.*.*"
 
 permissions:
   contents: write
@@ -12,7 +12,7 @@ jobs:
   release-artifacts:
     runs-on: ubuntu-latest
     env:
-      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      RELEASE_TAG: ${{ github.ref_name }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -41,7 +41,7 @@ jobs:
         run: corepack pnpm build
 
       - name: Build release bundles
-        run: node scripts/build-release-artifacts.mjs
+        run: node scripts/build-release-artifacts.mjs --version "${RELEASE_TAG}"
 
       - name: Archive Linux release bundle
         run: |
@@ -59,24 +59,39 @@ jobs:
           New-Item -ItemType Directory -Force -Path .release-assets | Out-Null
           Compress-Archive -Path ".release-artifacts/clio-fs-server-$env:RELEASE_TAG", ".release-artifacts/clio-fs-client-$env:RELEASE_TAG" -DestinationPath ".release-assets/clio-fs-$env:RELEASE_TAG-windows.zip"
 
-      - name: Generate release metadata
-        env:
-          RELEASE_PUBLISHED_AT: ${{ github.event.release.published_at }}
-        run: node scripts/generate-release-metadata.mjs --version "${RELEASE_TAG}"
-
       - name: Upload server artifact
         uses: actions/upload-artifact@v4
         with:
-          name: clio-fs-server-${{ github.event.release.tag_name }}
-          path: .release-artifacts/clio-fs-server-${{ github.event.release.tag_name }}
+          name: clio-fs-server-${{ github.ref_name }}
+          path: .release-artifacts/clio-fs-server-${{ github.ref_name }}
           if-no-files-found: error
 
       - name: Upload client artifact
         uses: actions/upload-artifact@v4
         with:
-          name: clio-fs-client-${{ github.event.release.tag_name }}
-          path: .release-artifacts/clio-fs-client-${{ github.event.release.tag_name }}
+          name: clio-fs-client-${{ github.ref_name }}
+          path: .release-artifacts/clio-fs-client-${{ github.ref_name }}
           if-no-files-found: error
+
+      - name: Create or update GitHub release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "GitHub Release $RELEASE_TAG already exists."
+          else
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes
+          fi
+
+      - name: Resolve published timestamp
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          published_at="$(gh release view "$RELEASE_TAG" --json publishedAt --jq .publishedAt)"
+          echo "RELEASE_PUBLISHED_AT=$published_at" >> "$GITHUB_ENV"
+
+      - name: Generate release metadata
+        run: node scripts/generate-release-metadata.mjs --version "${RELEASE_TAG}"
 
       - name: Upload release assets
         env:
