@@ -121,11 +121,15 @@ test("createBundleManifest rewrites workspace dependencies and keeps executable 
         "@clio-fs/contracts": "workspace:*"
       }
     },
-    new Map([["@clio-fs/contracts", "2.0.0"]]),
+    new Map([
+      ["@clio-fs/server", "2.0.0"],
+      ["@clio-fs/contracts", "2.0.0"]
+    ]),
     ["@clio-fs/contracts"]
   );
 
   assert.equal(bundleManifest.private, false);
+  assert.equal(bundleManifest.version, "2.0.0");
   assert.equal(bundleManifest.main, "./dist/cli.js");
   assert.equal(bundleManifest.types, "./dist/index.d.ts");
   assert.deepEqual(bundleManifest.dependencies, {
@@ -135,6 +139,22 @@ test("createBundleManifest rewrites workspace dependencies and keeps executable 
     "clio-fs-server": "./dist/cli.js"
   });
   assert.deepEqual(bundleManifest.bundleDependencies, ["@clio-fs/contracts"]);
+});
+
+test("createBundleManifest requires a release version for the bundled package itself", () => {
+  assert.throws(
+    () =>
+      createBundleManifest(
+        {
+          name: "@clio-fs/server",
+          version: "0.1.0",
+          type: "module"
+        },
+        new Map(),
+        []
+      ),
+    /without a release version/i
+  );
 });
 
 test("normalizeReleaseVersion accepts v-prefixed semver tags", () => {

@@ -96,6 +96,8 @@ Bundle rules:
 - launchers must work from the extracted folder without extra path rewriting
 - `config/*.conf.example` files must be present in the bundle
 - built `dist/` output and internal workspace dependencies must be vendored into the bundle
+- the bundled `package.json` for each runtime target must carry the published release version, not the workspace development version
+- vendored internal workspace packages under `node_modules` must also be rewritten to that same release version where applicable so runtime version checks stay coherent
 - no production install flow may depend on `pnpm install`
 - runtime launchers must support `version` and `healthcheck`
 
@@ -160,6 +162,7 @@ Rules:
 - semver tags are required
 - checksums are mandatory
 - manifest data must be sufficient for manual update checks in server and client UI
+- the manifest `version` and the runtime `package.json` version inside the installed release must match exactly
 - the current workflow publishes combined per-platform bundles under `bundle-linux`, `bundle-macos`, and `bundle-windows`
 - future normalized per-app assets may extend the manifest, but existing keys must remain stable once clients depend on them
 

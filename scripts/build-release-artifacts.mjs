@@ -223,13 +223,19 @@ export const createBundleManifest = (manifest, versionsByName, bundleDependencie
   const releaseTarget = RELEASE_TARGETS.get(manifest.name);
   const entrypoint = releaseTarget?.entrypoint ?? "./dist/index.js";
   const command = releaseTarget?.command;
+  const releaseVersion = versionsByName.get(manifest.name);
   const bundleManifest = Object.fromEntries(
     MANIFEST_FIELDS
       .filter((field) => manifest[field] !== undefined)
       .map((field) => [field, manifest[field]])
   );
 
+  if (!releaseVersion) {
+    throw new Error(`Cannot create bundle manifest for ${manifest.name} without a release version.`);
+  }
+
   bundleManifest.private = false;
+  bundleManifest.version = releaseVersion;
   bundleManifest.main = entrypoint;
   bundleManifest.types = "./dist/index.d.ts";
   bundleManifest.exports = {
