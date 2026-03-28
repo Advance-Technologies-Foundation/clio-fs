@@ -29,6 +29,12 @@ macOS or Linux:
 curl -fsSL https://raw.githubusercontent.com/Advance-Technologies-Foundation/clio-fs/main/install/server/install-server.sh | sh
 ```
 
+Windows Command Prompt (`cmd.exe`):
+
+```cmd
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-RestMethod https://raw.githubusercontent.com/Advance-Technologies-Foundation/clio-fs/main/install/server/install-server.ps1 | Invoke-Expression"
+```
+
 Windows PowerShell:
 
 ```powershell
@@ -65,6 +71,12 @@ macOS or Linux:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Advance-Technologies-Foundation/clio-fs/main/install/client/install-client.sh | sh
+```
+
+Windows Command Prompt (`cmd.exe`):
+
+```cmd
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-RestMethod https://raw.githubusercontent.com/Advance-Technologies-Foundation/clio-fs/main/install/client/install-client.ps1 | Invoke-Expression"
 ```
 
 Windows PowerShell:
