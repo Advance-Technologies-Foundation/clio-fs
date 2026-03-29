@@ -283,7 +283,8 @@ App-level examples:
 
 GitHub releases now publish one downloadable runnable archive per operating system on the Release page.
 
-- `.github/workflows/release.yml` runs only when a semver tag such as `1.2.3` or `1.2.3-beta.1` is pushed
+- `.github/workflows/release.yml` publishes releases when a semver tag such as `1.2.3` or `1.2.3-beta.1` is pushed
+- the same workflow also supports manual `workflow_dispatch` verification runs for a supplied semver `release_tag`; those runs build and test artifacts but do not publish a GitHub Release
 - the workflow installs dependencies, runs `check`, `test`, and `build`, then builds release bundles under `.release-artifacts/`
 - the artifact version is derived from the GitHub release tag, for example `v1.2.3` -> `1.2.3`
 - release targets are the runnable `clio-fs-server` and `clio-fs-client` bundles

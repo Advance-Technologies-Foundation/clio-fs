@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "*.*.*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Semver version used for verification artifacts. Manual runs do not publish a GitHub Release.
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -12,18 +18,20 @@ jobs:
   release-artifacts:
     runs-on: ubuntu-latest
     env:
-      RELEASE_TAG: ${{ github.ref_name }}
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+      PUBLISH_RELEASE: ${{ github.event_name == 'push' && 'true' || 'false' }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           version: 10.0.0
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
@@ -60,20 +68,21 @@ jobs:
           Compress-Archive -Path ".release-artifacts/clio-fs-server-$env:RELEASE_TAG", ".release-artifacts/clio-fs-client-$env:RELEASE_TAG" -DestinationPath ".release-assets/clio-fs-$env:RELEASE_TAG-windows.zip"
 
       - name: Upload server artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
-          name: clio-fs-server-${{ github.ref_name }}
-          path: .release-artifacts/clio-fs-server-${{ github.ref_name }}
+          name: clio-fs-server-${{ env.RELEASE_TAG }}
+          path: .release-artifacts/clio-fs-server-${{ env.RELEASE_TAG }}
           if-no-files-found: error
 
       - name: Upload client artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
-          name: clio-fs-client-${{ github.ref_name }}
-          path: .release-artifacts/clio-fs-client-${{ github.ref_name }}
+          name: clio-fs-client-${{ env.RELEASE_TAG }}
+          path: .release-artifacts/clio-fs-client-${{ env.RELEASE_TAG }}
           if-no-files-found: error
 
       - name: Create or update GitHub release
+        if: ${{ env.PUBLISH_RELEASE == 'true' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -84,6 +93,7 @@ jobs:
           fi
 
       - name: Resolve published timestamp
+        if: ${{ env.PUBLISH_RELEASE == 'true' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -91,9 +101,11 @@ jobs:
           echo "RELEASE_PUBLISHED_AT=$published_at" >> "$GITHUB_ENV"
 
       - name: Generate release metadata
+        if: ${{ env.PUBLISH_RELEASE == 'true' }}
         run: node scripts/generate-release-metadata.mjs --version "${RELEASE_TAG}"
 
       - name: Upload release assets
+        if: ${{ env.PUBLISH_RELEASE == 'true' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |

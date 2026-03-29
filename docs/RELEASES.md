@@ -29,6 +29,7 @@ Publication policy:
 
 - published releases must be created only by GitHub Actions
 - pushing a semver tag is the release trigger
+- the release workflow may also be started manually for verification with a supplied semver `release_tag`, but that manual mode must not publish a GitHub Release or release assets
 - local manual `gh release create` or manual asset upload is not part of the supported release path
 - local release builds may still be used for smoke validation before the tag is pushed
 
