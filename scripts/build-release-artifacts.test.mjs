@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { execFileSync, spawn } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -211,6 +211,7 @@ test("release server launcher works through current symlink and reads config fro
   const installRoot = join(tempRoot, "server");
   const releaseVersion = "1.0.99-test.1";
 
+  ensureWorkspaceBuildOutputs(workspaceRoot);
   await main({ rootDir: workspaceRoot, argv: ["--version", releaseVersion, "--output-dir", artifactsRoot] });
 
   const releaseDir = join(artifactsRoot, `clio-fs-server-${releaseVersion}`);
@@ -280,6 +281,7 @@ test("release client launcher works through current symlink and reads config fro
   const installRoot = join(tempRoot, "client");
   const releaseVersion = "1.0.99-test.2";
 
+  ensureWorkspaceBuildOutputs(workspaceRoot);
   await main({ rootDir: workspaceRoot, argv: ["--version", releaseVersion, "--output-dir", artifactsRoot] });
 
   const releaseDir = join(artifactsRoot, `clio-fs-client-${releaseVersion}`);
@@ -356,3 +358,14 @@ const onceProcessExit = (child) =>
 
     child.once("exit", () => resolve());
   });
+
+const ensureWorkspaceBuildOutputs = (workspaceRoot) => {
+  if (existsSync(join(workspaceRoot, "packages", "config", "dist"))) {
+    return;
+  }
+
+  execFileSync("corepack", ["pnpm", "build"], {
+    cwd: workspaceRoot,
+    stdio: "ignore"
+  });
+};
