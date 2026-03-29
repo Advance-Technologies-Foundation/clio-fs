@@ -152,6 +152,7 @@ For a fresh server install, the installer prompts for the server port and initia
    - workspace on the server
    - local mirror path
    - enable the initial local bootstrap option if the server workspace is empty and the local folder already contains the canonical project content
+   - if you forget to enable it, a normal start now stops with an explicit error instead of deleting the populated local folder, and the target detail page exposes `Initialize Empty Server From Local`
 10. Enter the public server UI address, for example `http://127.0.0.1:4020`. The client automatically uses `/api` on that same origin.
 
 ### Local Development

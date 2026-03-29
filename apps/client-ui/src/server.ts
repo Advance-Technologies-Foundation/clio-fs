@@ -457,9 +457,19 @@ const formatTargetLabel = (target: { workspaceId: string }) => target.workspaceI
 const isBootstrapPending = (target: ClientSyncTarget) =>
   target.initialSyncSource === "local_empty_server";
 
+const BOOTSTRAP_REQUIRED_ERROR_FRAGMENT =
+  "Server workspace is empty while the local folder already contains content.";
+
+const requiresBootstrapFromLocal = (message?: string) =>
+  typeof message === "string" && message.includes(BOOTSTRAP_REQUIRED_ERROR_FRAGMENT);
+
 const getTargetStatusLabel = (target: ClientSyncTarget, status: ClientSyncManagerStatus) => {
   if (status.running && status.targetId === target.targetId) {
     return "Running";
+  }
+
+  if (status.targetId === target.targetId && typeof status.lastError === "string" && status.lastError.trim().length > 0) {
+    return "Error";
   }
 
   if (isBootstrapPending(target)) {
@@ -647,6 +657,11 @@ const renderTargetTable = (targets: ClientSyncTarget[], status: ClientSyncManage
         ${targets
           .map((target) => {
             const isRunning = status.running && status.targetId === target.targetId;
+            const startLabel = isRunning
+              ? "Pause"
+              : isBootstrapPending(target)
+                ? "Initialize & Start"
+                : "Start";
             return `
               <tr data-target-row="${escapeHtml(target.targetId)}">
                 <td>${escapeHtml(formatTargetLabel(target))}</td>
@@ -662,7 +677,7 @@ const renderTargetTable = (targets: ClientSyncTarget[], status: ClientSyncManage
                       data-start-action="/targets/${encodeURIComponent(target.targetId)}/start"
                       data-pause-action="/targets/${encodeURIComponent(target.targetId)}/pause"
                     >
-                      ${isRunning ? "Pause" : "Start"}
+                      ${startLabel}
                     </button>
                   </form>
                 </td>
@@ -788,11 +803,11 @@ const renderAddTargetModal = (remoteWorkspaces: ClientUiRemoteWorkspace[]) => `
               <span class="helper-text">Filled from the selected workspace by default. If still empty, folder selection fills it from the folder name.</span>
             </div>
             <div class="form-field" style="grid-column:1 / -1;">
-              <label style="display:flex;align-items:flex-start;gap:0.65rem;">
+              <label style="display:flex;align-items:flex-start;gap:0.65rem;padding:0.95rem 1rem;border:1px solid rgba(180,83,9,0.22);border-radius:12px;background:rgba(180,83,9,0.08);">
                 <input id="bootstrapEmptyServerFromLocal" name="bootstrapEmptyServerFromLocal" type="checkbox" value="1" style="margin-top:0.25rem;" />
                 <span>
-                  <strong>Initialize empty server workspace from the local folder on first start</strong><br />
-                  <span class="helper-text">Use this only when the server workspace is empty and the local folder already contains the canonical project content. The first Start Sync will upload the local tree to the server before normal two-way sync begins.</span>
+                  <strong>Empty server workspace + local code already exists?</strong><br />
+                  <span class="helper-text" style="display:block;margin-top:0.35rem;">Enable this to make the first Start Sync upload the local tree to the empty server workspace before normal two-way sync begins. Without this option, an empty server must not replace a populated local folder.</span>
                 </span>
               </label>
             </div>
@@ -1626,6 +1641,8 @@ const renderClientPage = (
               }
 
               await refreshDashboard();
+            } catch {
+              await refreshDashboard();
             } finally {
               if (submitButton instanceof HTMLButtonElement) {
                 submitButton.disabled = false;
@@ -1713,6 +1730,46 @@ const renderTargetDetail = (target: ClientSyncTarget, status: ClientSyncManagerS
   renderPage(
     `${escapeHtml(formatTargetLabel(target))} | Clio FS Client`,
     `
+      ${
+        requiresBootstrapFromLocal(status.targetId === target.targetId ? status.lastError : undefined)
+          ? `
+            <section class="panel" style="border-color:rgba(180,83,9,0.22);background:rgba(180,83,9,0.08);">
+              <div class="stack" style="gap:0.7rem;">
+                <strong>Empty server workspace detected while the local folder already has content.</strong>
+                <p class="lede" style="margin:0;max-width:none;">Normal start is blocked to protect the local code from being replaced by an empty server snapshot. Initialize the empty server workspace from the local folder once, then continue with normal two-way sync.</p>
+                <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+                  <form action="/targets/${encodeURIComponent(target.targetId)}/initialize-from-local" method="post" style="margin:0;">
+                    <button class="primary-button" type="submit">Initialize Empty Server From Local</button>
+                  </form>
+                  <button
+                    class="secondary-button"
+                    type="button"
+                    data-open-resync-target
+                    data-resync-target-id="${escapeHtml(target.targetId)}"
+                    data-resync-target-name="${escapeHtml(formatTargetLabel(target))}"
+                    data-resync-source="server"
+                    data-resync-action="/targets/${encodeURIComponent(target.targetId)}/resync/server"
+                  >
+                    Replace Local From Server
+                  </button>
+                </div>
+              </div>
+            </section>
+          `
+          : ""
+      }
+      ${
+        isBootstrapPending(target)
+          ? `
+            <section class="panel" style="border-color:rgba(20,99,200,0.18);background:rgba(20,99,200,0.06);">
+              <div class="stack" style="gap:0.7rem;">
+                <strong>Initial local bootstrap is armed for this target.</strong>
+                <p class="lede" style="margin:0;max-width:none;">The next start will upload the local folder into the empty server workspace first. After that completes, the target switches to normal server-authoritative two-way sync.</p>
+              </div>
+            </section>
+          `
+          : ""
+      }
       <section class="grid">
         ${renderMetricCard("Status", getTargetStatusLabel(target, status))}
         ${renderMetricCard("Revision", status.running && status.targetId === target.targetId ? String(status.lastAppliedRevision ?? "n/a") : "n/a")}
@@ -1722,7 +1779,7 @@ const renderTargetDetail = (target: ClientSyncTarget, status: ClientSyncManagerS
       <section class="panel" style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap;">
         <form action="/targets/${encodeURIComponent(target.targetId)}/${status.running && status.targetId === target.targetId ? "pause" : "start"}" method="post">
           <button class="${status.running && status.targetId === target.targetId ? "secondary-button" : "primary-button"}" type="submit">
-            ${status.running && status.targetId === target.targetId ? "Pause Sync" : "Start Sync"}
+            ${status.running && status.targetId === target.targetId ? "Pause Sync" : isBootstrapPending(target) ? "Initialize & Start Sync" : "Start Sync"}
           </button>
         </form>
         <button
@@ -2111,14 +2168,32 @@ const createClientSyncManager = (
       }
     });
 
-    if (target.initialSyncSource === "local_empty_server") {
-      if (!nextClient.bootstrapFromLocalEmptyServer) {
-        throw new Error("This client runtime does not support initializing the server from local content.");
+    try {
+      if (target.initialSyncSource === "local_empty_server") {
+        if (!nextClient.bootstrapFromLocalEmptyServer) {
+          throw new Error("This client runtime does not support initializing the server from local content.");
+        }
+        await nextClient.bootstrapFromLocalEmptyServer();
+      } else {
+        await nextClient.bind();
       }
-      await nextClient.bootstrapFromLocalEmptyServer();
-    } else {
-      await nextClient.bind();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      status = {
+        running: false,
+        targetId: target.targetId,
+        workspaceId: target.workspaceId,
+        mirrorRoot: target.mirrorRoot,
+        serverBaseUrl: target.serverBaseUrl,
+        lastAppliedRevision: status.lastAppliedRevision,
+        pendingOperationCount: 0,
+        conflictCount: 0,
+        unsyncedObjectCount: 0,
+        lastError: message
+      };
+      throw error;
     }
+
     logger.info("sync_started", { workspaceId: target.workspaceId, targetId: target.targetId, mirrorRoot: target.mirrorRoot, serverBaseUrl: target.serverBaseUrl });
     await nextClient.startLocalWatchLoop();
     activeClient = nextClient;
@@ -2591,6 +2666,55 @@ export const createClientUi = (options: ClientUiOptions) => {
           }
 
           writeHtml(response, 400, await renderDashboard({ tone: "error", message }));
+          return;
+        }
+      }
+
+      if (
+        method === "POST" &&
+        url.pathname.startsWith("/targets/") &&
+        url.pathname.endsWith("/initialize-from-local")
+      ) {
+        const [, , targetId] = url.pathname.split("/");
+        const target = targetStore.get(targetId);
+
+        if (!target) {
+          writeJson(response, 404, { error: { code: "not_found", message: "Target not found" } });
+          return;
+        }
+
+        try {
+          const bootstrapTarget = {
+            ...target,
+            enabled: true,
+            initialSyncSource: "local_empty_server" as const
+          };
+
+          targetStore.save(bootstrapTarget);
+          await syncManager.start(bootstrapTarget);
+          targetStore.setEnabledTarget(targetId);
+          targetStore.save({
+            ...bootstrapTarget,
+            initialSyncSource: "server"
+          });
+
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 200, { ok: true, running: true, initializedFromLocal: true });
+            return;
+          }
+
+          redirect(response, `/targets/${encodeURIComponent(targetId)}`);
+          return;
+        } catch (error) {
+          targetStore.save(target);
+          const message = error instanceof Error ? error.message : "Failed to initialize the server from local content";
+
+          if (request.headers["x-clio-ui-request"] === "1") {
+            writeJson(response, 400, { error: { code: "target_initialize_failed", message } });
+            return;
+          }
+
+          writeHtml(response, 400, renderTargetDetail(target, syncManager.getStatus()));
           return;
         }
       }

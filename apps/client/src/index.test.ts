@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createMirrorClient } from "./index.js";
+import { EMPTY_SERVER_LOCAL_CONTENT_ERROR, createMirrorClient } from "./index.js";
 import { createInMemoryClientFileSystem } from "./filesystem.js";
 import { createInMemoryClientStateStore } from "./state.js";
 import { createManualMirrorWatcher } from "./watcher.js";
@@ -546,6 +546,41 @@ test("bootstrapFromLocalEmptyServer rejects initializing a non-empty server work
     () => client.bootstrapFromLocalEmptyServer(),
     /server workspace is not empty/i
   );
+});
+
+test("bind rejects replacing a populated local folder with an empty server workspace", async () => {
+  const filesystem = createInMemoryClientFileSystem();
+  filesystem.ensureDirectory("/mirror/demo-workspace");
+  filesystem.writeFileText("/mirror/demo-workspace/root.txt", "keep-local\n");
+  const client = createMirrorClient({
+    workspaceId: "demo-workspace",
+    mirrorRoot: "/mirror/demo-workspace",
+    filesystem,
+    stateStore: createInMemoryClientStateStore(),
+    controlPlaneOptions: {
+      baseUrl: "http://127.0.0.1:4020",
+      authToken: "test-token",
+      fetchImpl: (async (input: string | URL | Request) => {
+        const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+
+        if (url.pathname === "/api/workspaces/demo-workspace/snapshot") {
+          return new Response(
+            JSON.stringify({
+              workspaceId: "demo-workspace",
+              currentRevision: 0,
+              items: []
+            }),
+            { status: 200, headers: { "content-type": "application/json" } }
+          );
+        }
+
+        throw new Error(`Unexpected request: ${url.pathname}`);
+      }) as typeof fetch
+    }
+  });
+
+  await assert.rejects(() => client.bind(), new RegExp(EMPTY_SERVER_LOCAL_CONTENT_ERROR.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.equal(filesystem.readFileText("/mirror/demo-workspace/root.txt"), "keep-local\n");
 });
 
 test("pollOnce applies server-originated changes and advances bind state", async () => {

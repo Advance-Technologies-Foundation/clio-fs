@@ -132,16 +132,28 @@ const createEmptyBindState = (
   trackedFiles: []
 });
 
-const ensureHydratedMirror = async (
-  controlPlane: ClientControlPlane,
+const snapshotHasMeaningfulServerContent = (snapshot: { items: SnapshotEntry[] }) =>
+  snapshot.items.some((item) => !shouldIgnoreResyncPath(item.path));
+
+const hasMeaningfulLocalContent = (
+  filesystem: ClientFileSystemAdapter,
+  mirrorRoot: string
+) =>
+  collectDirectoryPaths(filesystem, mirrorRoot).some((path) => !shouldIgnoreResyncPath(path)) ||
+  collectFilePaths(filesystem, mirrorRoot).some((path) => !shouldIgnoreResyncPath(path));
+
+export const EMPTY_SERVER_LOCAL_CONTENT_ERROR =
+  "Server workspace is empty while the local folder already contains content. Use 'Initialize empty server workspace from the local folder on first start' or the explicit initialize-from-local action instead of a normal start.";
+
+const hydrateMirrorFromSnapshot = async (
   filesystem: ClientFileSystemAdapter,
   stateStore: ClientStateStore,
   workspaceId: string,
   mirrorRoot: string,
+  snapshot: { currentRevision: number; items: SnapshotEntry[] },
+  controlPlane: ClientControlPlane,
   origin = "local-client"
 ) => {
-  const snapshot = await controlPlane.getSnapshot(workspaceId);
-
   filesystem.ensureDirectory(mirrorRoot);
   filesystem.removeDirectoryContents(mirrorRoot);
 
@@ -171,6 +183,26 @@ const ensureHydratedMirror = async (
 
   stateStore.save(state);
   return state;
+};
+
+const ensureHydratedMirror = async (
+  controlPlane: ClientControlPlane,
+  filesystem: ClientFileSystemAdapter,
+  stateStore: ClientStateStore,
+  workspaceId: string,
+  mirrorRoot: string,
+  origin = "local-client"
+) => {
+  const snapshot = await controlPlane.getSnapshot(workspaceId);
+  return hydrateMirrorFromSnapshot(
+    filesystem,
+    stateStore,
+    workspaceId,
+    mirrorRoot,
+    snapshot,
+    controlPlane,
+    origin
+  );
 };
 
 const materializedFileRecords = (materialized: { files: Array<SnapshotMaterializeFile> }) =>
@@ -836,12 +868,23 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
         return existing;
       }
 
-      const nextState = await ensureHydratedMirror(
-        controlPlane,
+      const snapshot = await controlPlane.getSnapshot(options.workspaceId);
+
+      if (
+        !snapshotHasMeaningfulServerContent(snapshot) &&
+        hasMeaningfulLocalContent(filesystem, options.mirrorRoot)
+      ) {
+        throw new Error(EMPTY_SERVER_LOCAL_CONTENT_ERROR);
+      }
+
+      const nextState = await hydrateMirrorFromSnapshot(
         filesystem,
         stateStore,
         options.workspaceId,
-        options.mirrorRoot
+        options.mirrorRoot,
+        snapshot,
+        controlPlane,
+        "local-client"
       );
 
       initialBindValidated = true;
@@ -851,11 +894,8 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
     async bootstrapFromLocalEmptyServer() {
       return runWithWatchLoopPaused(async () => {
         const snapshot = await controlPlane.getSnapshot(options.workspaceId);
-        const serverPaths = snapshot.items
-          .map((item) => item.path)
-          .filter((path) => !shouldIgnoreResyncPath(path));
 
-        if (serverPaths.length > 0) {
+        if (snapshotHasMeaningfulServerContent(snapshot)) {
           throw new Error(
             `Server workspace is not empty and cannot be initialized from local content: ${options.workspaceId}`
           );
@@ -919,12 +959,14 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
           stateStore.save(bootstrapState);
         }
 
-        const nextState = await ensureHydratedMirror(
-          controlPlane,
+        const refreshedSnapshot = await controlPlane.getSnapshot(options.workspaceId);
+        const nextState = await hydrateMirrorFromSnapshot(
           filesystem,
           stateStore,
           options.workspaceId,
           options.mirrorRoot,
+          refreshedSnapshot,
+          controlPlane,
           "bootstrap-from-local"
         );
 

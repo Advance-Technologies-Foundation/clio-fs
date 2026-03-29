@@ -75,6 +75,7 @@ Rules:
 
 - this flow must fail explicitly if the server workspace is not empty
 - this flow must not begin by hydrating from the server into the populated local folder
+- if the operator starts normal sync by mistake against an empty server workspace while the local folder is already populated, the client must stop with an explicit bootstrap-required error and must not delete local files
 - the local bootstrap option is one-shot and must be cleared after a successful seed
 - after the seed completes, the server remains the source of truth
 

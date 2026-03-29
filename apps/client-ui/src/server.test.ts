@@ -679,6 +679,83 @@ test("starts synchronization through local bootstrap when the target is marked f
   }
 });
 
+test("start sync returns an explicit bootstrap-required error instead of replacing local content from an empty server", async () => {
+  const targetStore = new InMemoryClientSyncTargetStore();
+  targetStore.save(seedTarget());
+  const { baseUrl, close } = await startTestUi({
+    targetStore,
+    createMirrorClientImpl: () => ({
+      async bind() {
+        throw new Error(
+          "Server workspace is empty while the local folder already contains content. Use 'Initialize empty server workspace from the local folder on first start' or the explicit initialize-from-local action instead of a normal start."
+        );
+      },
+      async bootstrapFromLocalEmptyServer() {
+        throw new Error("unexpected bootstrap");
+      },
+      async pollOnce() {
+        throw new Error("unexpected poll");
+      },
+      async resolveConflict() {
+        throw new Error("unexpected resolve");
+      },
+      async resyncFromServer() {
+        throw new Error("unexpected resync");
+      },
+      async resyncFromLocal() {
+        throw new Error("unexpected resync");
+      },
+      async startLocalWatchLoop() {},
+      stopLocalWatchLoop() {},
+      getState() {
+        return undefined;
+      }
+    })
+  });
+
+  try {
+    const response = await fetch(`${baseUrl}/targets/target-1/start`, {
+      method: "POST",
+      headers: {
+        "x-clio-ui-request": "1"
+      }
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(payload.error.message, /local folder already contains content/i);
+    assert.equal(targetStore.get("target-1")?.enabled, false);
+  } finally {
+    await close();
+  }
+});
+
+test("initialize-from-local starts bootstrap without editing the target first", async () => {
+  const targetStore = new InMemoryClientSyncTargetStore();
+  targetStore.save(seedTarget());
+  const { baseUrl, mirrorClientStub, close } = await startTestUi({
+    targetStore
+  });
+
+  try {
+    const response = await fetch(`${baseUrl}/targets/target-1/initialize-from-local`, {
+      method: "POST",
+      headers: {
+        "x-clio-ui-request": "1"
+      }
+    });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.initializedFromLocal, true);
+    assert.equal(mirrorClientStub.getBootstrapCalls(), 1);
+    assert.equal(targetStore.get("target-1")?.enabled, true);
+    assert.equal(targetStore.get("target-1")?.initialSyncSource, "server");
+  } finally {
+    await close();
+  }
+});
+
 test("reports live sync status including unsynced object count", async () => {
   const targetStore = new InMemoryClientSyncTargetStore();
   targetStore.save(seedTarget());
@@ -904,6 +981,58 @@ test("renders conflict resolution actions on target detail page for active confl
     assert.match(html, /Accept Server/);
     assert.match(html, /Accept Local/);
     assert.match(html, /README\.md/);
+  } finally {
+    await close();
+  }
+});
+
+test("target details surface an initialize-from-local action after bootstrap-required start failure", async () => {
+  const targetStore = new InMemoryClientSyncTargetStore();
+  targetStore.save(seedTarget());
+  const { baseUrl, close } = await startTestUi({
+    targetStore,
+    createMirrorClientImpl: () => ({
+      async bind() {
+        throw new Error(
+          "Server workspace is empty while the local folder already contains content. Use 'Initialize empty server workspace from the local folder on first start' or the explicit initialize-from-local action instead of a normal start."
+        );
+      },
+      async bootstrapFromLocalEmptyServer() {
+        throw new Error("unexpected bootstrap");
+      },
+      async pollOnce() {
+        throw new Error("unexpected poll");
+      },
+      async resolveConflict() {
+        throw new Error("unexpected resolve");
+      },
+      async resyncFromServer() {
+        throw new Error("unexpected resync");
+      },
+      async resyncFromLocal() {
+        throw new Error("unexpected resync");
+      },
+      async startLocalWatchLoop() {},
+      stopLocalWatchLoop() {},
+      getState() {
+        return undefined;
+      }
+    })
+  });
+
+  try {
+    await fetch(`${baseUrl}/targets/target-1/start`, {
+      method: "POST",
+      headers: {
+        "x-clio-ui-request": "1"
+      }
+    });
+
+    const dashboardHtml = await fetch(baseUrl).then((response) => response.text());
+    const detailHtml = await fetch(`${baseUrl}/targets/target-1`).then((response) => response.text());
+    assert.match(dashboardHtml, />Error</);
+    assert.match(detailHtml, /Initialize Empty Server From Local/);
+    assert.match(detailHtml, /empty server workspace detected/i);
   } finally {
     await close();
   }
