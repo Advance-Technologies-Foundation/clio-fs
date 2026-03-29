@@ -416,6 +416,7 @@ Configuration:
 - copy config/*.conf.example to config/*.conf
 - edit the values before first start
 - launch the command from this extracted directory so config/*.conf is discovered automatically
+- the client launcher opens the local client UI and the configured server origin in the default browser after startup
 
 Run on macOS or Linux:
 

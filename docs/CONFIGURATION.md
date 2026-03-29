@@ -71,8 +71,10 @@ Typical settings:
 - `CLIO_FS_CLIENT_UPDATE_MANIFEST_URL`
 - `CLIO_FS_CLIENT_UI_HOST`
 - `CLIO_FS_CLIENT_UI_PORT`
+- `CLIO_FS_CLIENT_OPEN_BROWSER`
 
 `CLIO_FS_CLIENT_CONTROL_PLANE_BASE_URL` must point to the public server origin. The runtime resolves API calls through `/api` on that same origin.
+When `CLIO_FS_CLIENT_OPEN_BROWSER` is not set or is any value other than `0`, the client launcher opens both the local client UI and the public server origin in the default browser after startup.
 
 ## Recommended Pattern
 

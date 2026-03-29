@@ -8,6 +8,7 @@ import test from "node:test";
 import {
   createClientUi,
   InMemoryClientSyncTargetStore,
+  startClientUi,
   type ClientSyncTarget
 } from "./server.js";
 
@@ -253,6 +254,25 @@ test("returns a public healthcheck payload", async () => {
     assert.match(payload.summary, /client-ui ready/i);
   } finally {
     await server.close();
+  }
+});
+
+test("startClientUi opens the local client ui and public server origin on startup", async () => {
+  const openedUrls: string[] = [];
+  const started = await startClientUi({
+    host: "127.0.0.1",
+    port: 0,
+    createMirrorClientImpl: createMirrorClientStub().factory as Parameters<typeof createClientUi>[0]["createMirrorClientImpl"],
+    openExternalUrlImpl: async (url) => {
+      openedUrls.push(url);
+    }
+  });
+
+  try {
+    assert.equal(openedUrls[0], `http://127.0.0.1:${started.port}`);
+    assert.equal(openedUrls[1], "http://127.0.0.1:4020");
+  } finally {
+    await started.close();
   }
 });
 

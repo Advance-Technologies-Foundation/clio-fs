@@ -141,14 +141,16 @@ For a fresh server install, the installer prompts for the server port and initia
    - macOS or Linux: `./clio-fs-client`
    - Windows Command Prompt: `clio-fs-client.cmd`
    - Windows PowerShell: `.\clio-fs-client.ps1`
-6. Open the client UI at `http://127.0.0.1:4030` unless you changed the client UI port.
-7. Add a sync target:
+6. The launcher opens the client UI at `http://127.0.0.1:4030` unless you changed the client UI port.
+7. The same launcher also opens the public server origin configured through `CLIO_FS_CLIENT_CONTROL_PLANE_BASE_URL` so the operator can immediately see both sides.
+8. If you need to suppress browser auto-open, start the process with `CLIO_FS_CLIENT_OPEN_BROWSER=0`.
+9. Add a sync target:
    - server URL
    - bearer token
    - workspace on the server
    - local mirror path
    - enable the initial local bootstrap option if the server workspace is empty and the local folder already contains the canonical project content
-8. Enter the public server UI address, for example `http://127.0.0.1:4020`. The client automatically uses `/api` on that same origin.
+10. Enter the public server UI address, for example `http://127.0.0.1:4020`. The client automatically uses `/api` on that same origin.
 
 ### Local Development
 

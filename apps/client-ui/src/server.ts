@@ -27,6 +27,7 @@ export interface ClientUiOptions {
   targetStore?: ClientSyncTargetStore;
   createMirrorClientImpl: (options: MirrorClientOptions) => MirrorClient;
   logger?: Logger;
+  openExternalUrlImpl?: (url: string) => Promise<void>;
 }
 
 const CLIENT_UI_PACKAGE_MANIFEST = JSON.parse(
@@ -36,6 +37,43 @@ const CLIENT_UI_RUNTIME_VERSION: RuntimeVersionResponse = {
   service: "clio-fs-client-ui",
   version: CLIENT_UI_PACKAGE_MANIFEST.version ?? "0.0.0",
   channel: (CLIENT_UI_PACKAGE_MANIFEST.version ?? "").includes("-") ? "beta" : "stable"
+};
+
+const shouldAutoOpenExternalUrls = (env: NodeJS.ProcessEnv = process.env) =>
+  env.CLIO_FS_CLIENT_OPEN_BROWSER !== "0";
+
+const derivePublicServerOrigin = (baseUrl: string) => {
+  try {
+    return new URL(baseUrl).origin;
+  } catch {
+    return undefined;
+  }
+};
+
+const defaultOpenExternalUrl = async (url: string) => {
+  const command =
+    process.platform === "win32"
+      ? "cmd.exe"
+      : process.platform === "darwin"
+        ? "open"
+        : "xdg-open";
+  const args =
+    process.platform === "win32"
+      ? ["/c", "start", "", url]
+      : [url];
+
+  try {
+    const child = execFile(command, args, { windowsHide: true }, (error) => {
+      if (error) {
+        console.error(`[client-ui] failed to open ${url}: ${error.message}`);
+      }
+    });
+    child.unref();
+  } catch (error) {
+    console.error(
+      `[client-ui] failed to launch browser opener for ${url}: ${error instanceof Error ? error.message : error}`
+    );
+  }
 };
 
 export interface ClientSyncTarget {
@@ -2791,6 +2829,18 @@ export const startClientUi = async (options: ClientUiOptions) => {
     typeof address === "object" && address && "port" in address ? address.port : options.port;
 
   console.log(`[client-ui] listening on http://${options.host}:${resolvedPort}`);
+
+  if (shouldAutoOpenExternalUrls()) {
+    const openExternalUrl = options.openExternalUrlImpl ?? defaultOpenExternalUrl;
+    const localClientUiUrl = `http://${options.host}:${resolvedPort}`;
+    const publicServerOrigin = derivePublicServerOrigin(appConfig.client.controlPlaneBaseUrl);
+
+    void openExternalUrl(localClientUiUrl);
+
+    if (publicServerOrigin && publicServerOrigin !== localClientUiUrl) {
+      void openExternalUrl(publicServerOrigin);
+    }
+  }
 
   return {
     host: options.host,
