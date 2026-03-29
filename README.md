@@ -109,7 +109,7 @@ Verify and start:
   - `C:\Program Files\ClioFS\client\current\clio-fs-client.cmd healthcheck`
   - `C:\Program Files\ClioFS\client\current\clio-fs-client.cmd`
 
-Set `CLIO_FS_VERSION=1.2.3` before running the installer if you want a specific tagged release instead of the latest one.
+Set `CLIO_FS_VERSION=1.2.3` before running the installer if you want a specific tagged release instead of the latest one. The installers normalize `v1.2.3` to `1.2.3`, so either form works.
 
 For a fresh server install, the installer prompts for the server port and initializes `config/server.conf` with `CLIO_FS_SERVER_HOST=0.0.0.0` so the operator UI and API can be reached from other machines. Later installs keep the existing server config unchanged.
 
@@ -126,6 +126,7 @@ For a fresh server install, the installer prompts for the server port and initia
    - macOS or Linux: `./clio-fs-server`
    - Windows Command Prompt: `clio-fs-server.cmd`
    - Windows PowerShell: `.\clio-fs-server.ps1`
+   - release launchers switch into the bundle root before starting Node so `config/*.conf` is found even when you invoke them through `current`
 6. Open the operator UI at `http://<server-address>:4020` unless you changed the server port.
 7. Use one configured token on the login page. The same public server address also exposes the API under `/api`.
 
@@ -141,6 +142,7 @@ For a fresh server install, the installer prompts for the server port and initia
    - macOS or Linux: `./clio-fs-client`
    - Windows Command Prompt: `clio-fs-client.cmd`
    - Windows PowerShell: `.\clio-fs-client.ps1`
+   - release launchers switch into the bundle root before starting Node so `config/*.conf` is found even when you invoke them through `current`
 6. The launcher opens the client UI at `http://127.0.0.1:4030` unless you changed the client UI port.
 7. The same launcher also opens the public server origin configured through `CLIO_FS_CLIENT_CONTROL_PLANE_BASE_URL` so the operator can immediately see both sides.
 8. If you need to suppress browser auto-open, start the process with `CLIO_FS_CLIENT_OPEN_BROWSER=0`.

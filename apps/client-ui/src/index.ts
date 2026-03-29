@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
 import { appConfig } from "@clio-fs/config";
+import { isRuntimeEntrypoint } from "./runtime-entrypoint.js";
 import { startClientUi } from "./server.js";
 import { createLogger } from "./logger.js";
 
@@ -91,7 +91,7 @@ const main = async () => {
   });
 };
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isRuntimeEntrypoint(process.argv[1], import.meta.url)) {
   main().catch((error) => {
     console.error(error instanceof Error ? error.message : error);
     process.exit(1);

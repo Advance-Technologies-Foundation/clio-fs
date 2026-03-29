@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import { appConfig } from "@clio-fs/config";
 import {
   createFileChangeJournal,
@@ -10,6 +9,7 @@ import {
 } from "@clio-fs/database";
 import { nodeFileSystem } from "./filesystem.js";
 import { createLogger } from "./logger.js";
+import { isRuntimeEntrypoint } from "./runtime-entrypoint.js";
 import { startWorkspaceServer } from "./server.js";
 import { detectServerPlatform } from "./workspace.js";
 import { createPollingWorkspaceChangeWatcher } from "./workspace-watcher.js";
@@ -53,7 +53,7 @@ export const startDefaultWorkspaceServer = () => {
   });
 };
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isRuntimeEntrypoint(process.argv[1], import.meta.url)) {
   startDefaultWorkspaceServer().catch((error) => {
     console.error("[server] failed to start:", error);
     process.exitCode = 1;

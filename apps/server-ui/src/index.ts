@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { pathToFileURL } from "node:url";
 import { appConfig } from "@clio-fs/config";
+import { isRuntimeEntrypoint } from "./runtime-entrypoint.js";
 import { startServerUi } from "./server.js";
 
 export { createServerUi, createServerUiRequestHandler, startServerUi } from "./server.js";
@@ -13,7 +13,7 @@ export const startDefaultServerUi = () =>
     allowedUiTokens: appConfig.server.authTokens
   });
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isRuntimeEntrypoint(process.argv[1], import.meta.url)) {
   startDefaultServerUi().catch((error) => {
     console.error("[server-ui] failed to start:", error);
     process.exitCode = 1;

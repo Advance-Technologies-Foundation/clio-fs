@@ -391,20 +391,30 @@ const stageWorkspacePackage = ({
   return destinationDir;
 };
 
-const createUnixLauncher = (command, relativeEntrypoint) => `#!/usr/bin/env sh
+export const createUnixLauncher = (command, relativeEntrypoint) => `#!/usr/bin/env sh
 set -eu
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-exec node "$SCRIPT_DIR/${relativeEntrypoint}" "$@"
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+cd "$SCRIPT_DIR"
+INIT_CWD="$SCRIPT_DIR" exec node "./${relativeEntrypoint.replace(/^\.\//, "")}" "$@"
 `;
 
-const createWindowsLauncher = (relativeEntrypoint) => `@echo off
+export const createWindowsLauncher = (relativeEntrypoint) => `@echo off
 set SCRIPT_DIR=%~dp0
-node "%SCRIPT_DIR%${relativeEntrypoint.replaceAll("/", "\\")}" %*
+pushd "%SCRIPT_DIR%" >nul
+set INIT_CWD=%CD%
+node ".\\${relativeEntrypoint.replaceAll("/", "\\").replace(/^\.\\/, "")}" %*
+set EXIT_CODE=%ERRORLEVEL%
+popd >nul
+exit /b %EXIT_CODE%
 `;
 
-const createPowerShellLauncher = (relativeEntrypoint) => `$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-& node (Join-Path $scriptDir "${relativeEntrypoint.replaceAll("/", "\\")}") @args
-exit $LASTEXITCODE
+export const createPowerShellLauncher = (relativeEntrypoint) => `$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+Push-Location $scriptDir
+$env:INIT_CWD = (Get-Location).Path
+& node ".\\${relativeEntrypoint.replaceAll("/", "\\").replace(/^\.\\/, "")}" @args
+$exitCode = $LASTEXITCODE
+Pop-Location
+exit $exitCode
 `;
 
 const createBundleReadme = (packageName, command, version) => `# ${packageName}

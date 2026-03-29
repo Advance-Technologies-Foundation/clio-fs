@@ -14,10 +14,10 @@ require_command() {
   fi
 }
 
-normalize_tag() {
+normalize_version() {
   case "$1" in
-    v*) printf '%s\n' "$1" ;;
-    *) printf 'v%s\n' "$1" ;;
+    v*) printf '%s\n' "${1#v}" ;;
+    *) printf '%s\n' "$1" ;;
   esac
 }
 
@@ -131,7 +131,7 @@ case "$platform" in
 esac
 
 if [ "${CLIO_FS_VERSION:-}" ]; then
-  release_tag="$(normalize_tag "$CLIO_FS_VERSION")"
+  release_tag="$(normalize_version "$CLIO_FS_VERSION")"
 else
   release_tag="$(
     curl -fsSL "https://api.github.com/repos/$REPOSITORY/releases/latest" |
@@ -145,13 +145,14 @@ else
   fi
 fi
 
-release_version="${release_tag#v}"
-asset_name="clio-fs-${release_tag}-${asset_platform}.tar.gz"
+release_version="$(normalize_version "$release_tag")"
+release_tag="$release_version"
+asset_name="clio-fs-${release_version}-${asset_platform}.tar.gz"
 download_url="https://github.com/${REPOSITORY}/releases/download/${release_tag}/${asset_name}"
 tmp_dir="$(mktemp -d)"
 archive_path="${tmp_dir}/${asset_name}"
 extract_dir="${tmp_dir}/extract"
-source_dir="${extract_dir}/${APP_DIR_NAME}-${release_tag}"
+source_dir="${extract_dir}/${APP_DIR_NAME}-${release_version}"
 release_root="${INSTALL_ROOT}/releases/${release_version}"
 current_link="${INSTALL_ROOT}/current"
 shared_config_dir="${INSTALL_ROOT}/config"

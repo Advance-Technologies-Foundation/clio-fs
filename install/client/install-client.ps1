@@ -4,14 +4,14 @@ $Repository = if ($env:CLIO_FS_GITHUB_REPOSITORY) { $env:CLIO_FS_GITHUB_REPOSITO
 $InstallRoot = if ($env:CLIO_FS_CLIENT_INSTALL_ROOT) { $env:CLIO_FS_CLIENT_INSTALL_ROOT } else { "C:\Program Files\ClioFS\client" }
 $AppDirName = "clio-fs-client"
 
-function Normalize-Tag {
+function Normalize-Version {
   param([string]$Value)
 
   if ($Value.StartsWith("v")) {
-    return $Value
+    return $Value.Substring(1)
   }
 
-  return "v$Value"
+  return $Value
 }
 
 function Copy-IfMissing {
@@ -26,7 +26,7 @@ function Copy-IfMissing {
 }
 
 if ($env:CLIO_FS_VERSION) {
-  $ReleaseTag = Normalize-Tag $env:CLIO_FS_VERSION
+  $ReleaseTag = Normalize-Version $env:CLIO_FS_VERSION
 } else {
   $LatestRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repository/releases/latest"
   if (-not $LatestRelease.tag_name) {
@@ -35,13 +35,14 @@ if ($env:CLIO_FS_VERSION) {
   $ReleaseTag = [string]$LatestRelease.tag_name
 }
 
-$ReleaseVersion = $ReleaseTag.TrimStart("v")
-$AssetName = "clio-fs-$ReleaseTag-windows.zip"
+$ReleaseVersion = Normalize-Version $ReleaseTag
+$ReleaseTag = $ReleaseVersion
+$AssetName = "clio-fs-$ReleaseVersion-windows.zip"
 $DownloadUrl = "https://github.com/$Repository/releases/download/$ReleaseTag/$AssetName"
 $TempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("clio-fs-client-install-" + [System.Guid]::NewGuid().ToString("N"))
 $ArchivePath = Join-Path $TempRoot $AssetName
 $ExtractRoot = Join-Path $TempRoot "extract"
-$SourceDir = Join-Path $ExtractRoot "$AppDirName-$ReleaseTag"
+$SourceDir = Join-Path $ExtractRoot "$AppDirName-$ReleaseVersion"
 $ReleaseRoot = Join-Path $InstallRoot "releases\$ReleaseVersion"
 $CurrentPath = Join-Path $InstallRoot "current"
 $SharedConfigDir = Join-Path $InstallRoot "config"

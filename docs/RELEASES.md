@@ -102,6 +102,8 @@ clio-fs-client-<version>/
 Bundle rules:
 
 - launchers must work from the extracted folder without extra path rewriting
+- launchers must `cd` into the bundle root before they start Node so runtime config discovery remains stable
+- launchers must keep working when executed through the installed `current` symlink or junction
 - `config/*.conf.example` files must be present in the bundle
 - built `dist/` output and internal workspace dependencies must be vendored into the bundle
 - the bundled `package.json` for each runtime target must carry the published release version, not the workspace development version
@@ -148,10 +150,10 @@ Current manifest fields:
   "channel": "stable",
   "version": "1.0.0",
   "publishedAt": "2026-03-27T12:00:00Z",
-  "notesUrl": "https://github.com/<org>/<repo>/releases/tag/v1.0.0",
+  "notesUrl": "https://github.com/<org>/<repo>/releases/tag/1.0.0",
   "assets": {
     "bundle-linux": {
-      "fileName": "clio-fs-v1.0.0-linux.tar.gz",
+      "fileName": "clio-fs-1.0.0-linux.tar.gz",
       "platform": "linux",
       "format": "tar.gz",
       "url": "https://...",
@@ -168,6 +170,7 @@ Current manifest fields:
 Rules:
 
 - semver tags are required
+- semver tags are published without a mandatory `v` prefix, and installers normalize either `1.2.3` or `v1.2.3` to the published `1.2.3` asset names
 - checksums are mandatory
 - manifest data must be sufficient for manual update checks in server and client UI
 - the manifest `version` and the runtime `package.json` version inside the installed release must match exactly

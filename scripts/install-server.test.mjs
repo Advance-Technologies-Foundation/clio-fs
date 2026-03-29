@@ -11,7 +11,7 @@ const serverInstallPs1Script = join(workspaceRoot, "install", "server", "install
 const serverConfigExample = join(workspaceRoot, "config", "server.conf.example");
 
 const createFakeReleaseArchive = ({ rootDir, version, platform }) => {
-  const releaseTag = `v${version}`;
+  const releaseTag = version;
   const packageDirName = `clio-fs-server-${releaseTag}`;
   const sourceRoot = join(rootDir, "release-src");
   const packageDir = join(sourceRoot, packageDirName);
@@ -103,6 +103,28 @@ test("unix server installer initializes host and selected port on first install 
   serverConfig = readFileSync(serverConfigPath, "utf8");
   assert.match(serverConfig, /CLIO_FS_SERVER_HOST=0\.0\.0\.0/);
   assert.match(serverConfig, /CLIO_FS_SERVER_PORT=4888/);
+});
+
+test("unix server installer accepts a v-prefixed CLIO_FS_VERSION but downloads the normalized release asset", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "clio-fs-install-server-v-prefix-"));
+  const installRoot = join(tempRoot, "install-root");
+  const archivePath = createFakeReleaseArchive({ rootDir: tempRoot, version: "1.2.3", platform: "linux" });
+  const fakeBinDir = createFakeCurl({ rootDir: tempRoot, archivePath });
+
+  execFileSync("sh", [serverInstallScript], {
+    cwd: workspaceRoot,
+    env: {
+      ...process.env,
+      PATH: `${fakeBinDir}${delimiter}${process.env.PATH ?? ""}`,
+      CLIO_FS_VERSION: "v1.2.3",
+      CLIO_FS_SERVER_INSTALL_ROOT: installRoot,
+      CLIO_FS_SERVER_PORT: "4555"
+    },
+    stdio: "pipe"
+  });
+
+  const versionFile = readFileSync(join(installRoot, "current", "VERSION.txt"), "utf8");
+  assert.equal(versionFile.trim(), "1.2.3");
 });
 
 test("windows server installer script initializes public host and prompts for port on first install", () => {

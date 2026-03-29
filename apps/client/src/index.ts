@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { basename, dirname, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 import type { ChangeEvent, SnapshotEntry, SnapshotMaterializeFile } from "@clio-fs/contracts";
 import { appConfig } from "@clio-fs/config";
 import {
@@ -26,6 +25,7 @@ import {
   type MirrorWatcherEvent
 } from "./watcher.js";
 import { decodeTransferContent, encodeTransferContent, hashBytes } from "./file-content.js";
+import { isRuntimeEntrypoint } from "./runtime-entrypoint.js";
 
 export interface MirrorClientOptions {
   workspaceId: string;
@@ -1472,7 +1472,7 @@ export const runClientDaemon = async () => {
   }, appConfig.client.reconcileIntervalMs);
 };
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isRuntimeEntrypoint(process.argv[1], import.meta.url)) {
   runClientDaemon().catch((error) => {
     console.error("[client] bind failed:", error);
     process.exit(1);
