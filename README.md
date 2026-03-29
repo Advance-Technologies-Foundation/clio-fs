@@ -155,6 +155,21 @@ For a fresh server install, the installer prompts for the server port and initia
    - if you forget to enable it, a normal start now stops with an explicit error instead of deleting the populated local folder, and the target detail page exposes `Initialize Empty Server From Local`
 10. Enter the public server UI address, for example `http://127.0.0.1:4020`. The client automatically uses `/api` on that same origin.
 
+Safe first-sync flow for `empty server workspace + populated local folder`:
+
+1. Create or choose the empty workspace on the server.
+2. Open the client UI and add a sync target for that workspace.
+3. Point `Local Mirror Path` to the existing local project folder.
+4. Enable `Empty server workspace + local code already exists?`.
+5. Start the target with `Initialize & Start`.
+6. The first run uploads the local tree to the empty server workspace.
+7. After that one-time seed, the target switches to normal server-authoritative two-way sync.
+
+Safety rule:
+
+- a normal `Start Sync` is no longer allowed to replace a populated local folder from an empty server workspace
+- if you start the wrong flow by mistake, the client stops with an explicit error and the target detail page offers `Initialize Empty Server From Local`
+
 ### Local Development
 
 ```bash
