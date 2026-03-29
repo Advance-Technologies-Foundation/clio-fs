@@ -255,14 +255,26 @@ const resolveControlPlaneBaseUrl = (
   request: { headers: Record<string, unknown> | Headers | undefined },
   options: Pick<ServerUiOptions, "host" | "port">
 ) => {
-  const hostHeader =
+  const readHeader = (name: string) =>
     request.headers instanceof Headers
-      ? request.headers.get("host") ?? undefined
-      : typeof request.headers?.host === "string"
-        ? request.headers.host
+      ? request.headers.get(name) ?? undefined
+      : typeof request.headers?.[name] === "string"
+        ? request.headers[name]
         : undefined;
+  const hostHeader =
+    readHeader("x-forwarded-host")?.split(",")[0]?.trim() ||
+    readHeader("host");
+  const forwardedHeader = readHeader("forwarded");
+  const forwardedProtoMatch = forwardedHeader?.match(/(?:^|[;,]\s*)proto=([^;,\s]+)/i);
+  const forwardedHostMatch = forwardedHeader?.match(/(?:^|[;,]\s*)host=([^;,\s]+)/i);
+  const protocol =
+    forwardedProtoMatch?.[1]?.replace(/^"|"$/g, "") ||
+    readHeader("x-forwarded-proto")?.split(",")[0]?.trim() ||
+    "http";
+  const forwardedHost = forwardedHostMatch?.[1]?.replace(/^"|"$/g, "");
+  const originHost = forwardedHost || hostHeader || `${options.host}:${options.port}`;
 
-  return new URL("/api/", `http://${hostHeader ?? `${options.host}:${options.port}`}`).toString();
+  return new URL("/api/", `${protocol}://${originHost}`).toString();
 };
 
 const createControlPlaneClient = (

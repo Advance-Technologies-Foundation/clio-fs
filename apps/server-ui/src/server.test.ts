@@ -57,6 +57,7 @@ const createFetchStub = (
       readonly?: boolean;
       enabled?: boolean;
     }>;
+    requestUrls?: string[];
   } = {}
 ) => {
   const workspaces = options.workspaces ?? [
@@ -100,6 +101,7 @@ const createFetchStub = (
 
   return async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url);
+    options.requestUrls?.push(url.href);
     const pathname =
       url.pathname === "/api"
         ? "/"
@@ -355,6 +357,29 @@ test("renders dashboard with workspace content", async () => {
     assert.doesNotMatch(html, /onsubmit="return confirm/);
     assert.doesNotMatch(html, /Platform is determined by the server/i);
     assert.doesNotMatch(html, /<label for="platformDisplay">Platform<\/label>/);
+  } finally {
+    await server.close();
+  }
+});
+
+test("renders dashboard through an https forwarded proxy origin", async () => {
+  const requestUrls: string[] = [];
+  const server = await startTestServer({ requestUrls });
+
+  try {
+    const { cookie } = await server.login();
+    const response = await fetch(`${server.baseUrl}/`, {
+      headers: withCookie(cookie, {
+        "x-forwarded-host": "t1-cliofs.krylov.cloud",
+        "x-forwarded-proto": "https"
+      })
+    });
+    const html = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(html, /Workspaces/i);
+    assert.ok(requestUrls.some((value) => value.startsWith("https://t1-cliofs.krylov.cloud/api/health")));
+    assert.ok(requestUrls.some((value) => value.startsWith("https://t1-cliofs.krylov.cloud/api/workspaces")));
   } finally {
     await server.close();
   }
