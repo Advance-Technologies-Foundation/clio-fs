@@ -92,6 +92,8 @@ Because the process reads `config/*.conf` from its working directory, this gives
 
 The installer scripts under [install/server/install-server.sh](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/server/install-server.sh), [install/server/install-server.ps1](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/server/install-server.ps1), [install/client/install-client.sh](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/client/install-client.sh), and [install/client/install-client.ps1](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/client/install-client.ps1) create a shared config directory outside the versioned release folder and link it into `current`.
 
+Matching uninstall scripts under [install/server/uninstall-server.sh](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/server/uninstall-server.sh), [install/server/uninstall-server.ps1](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/server/uninstall-server.ps1), [install/client/uninstall-client.sh](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/client/uninstall-client.sh), and [install/client/uninstall-client.ps1](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/client/uninstall-client.ps1) remove only the managed install content under those same roots: `current`, `releases`, `config`, and `data`.
+
 Server install layout:
 
 - macOS or Linux:
@@ -123,6 +125,7 @@ Installer behavior:
 - the first server install prompts for the server port, writes `CLIO_FS_SERVER_HOST=0.0.0.0`, and initializes `server.conf` in the shared config directory
 - the first client install copies `.example` templates into the shared config directory if no real config file exists yet
 - later installs preserve the existing config directory and only switch `current` to a new versioned release
+- uninstall keeps unrelated extra files under the install root untouched and removes the install root itself only when it becomes empty
 - runtime commands such as `version` and `healthcheck` should be executed from the `current` launcher path
 - manual update apply uses these install roots:
   - server: `CLIO_FS_SERVER_INSTALL_ROOT`

@@ -134,6 +134,9 @@ Rules:
 - configuration files must live outside versioned install directories
 - logs and mutable runtime state must live outside versioned install directories
 - switching versions must not overwrite config or data
+- uninstall scripts must remove only the managed install-root content: `current`, `releases`, `config`, and `data`
+- uninstall scripts must not recursively delete unrelated files added directly under the install root
+- uninstall scripts may remove the install root itself only after it becomes empty
 
 ## Release Metadata
 
@@ -217,6 +220,13 @@ Future installers must:
 - register a service or startup entry
 - avoid mutating existing user configuration unexpectedly
 
+Matching uninstallers must:
+
+- target the same install root variables and default locations as installers
+- require explicit confirmation unless force mode is enabled
+- remove the managed config and state directories together with versioned releases
+- leave unrelated sibling files in place if the install root contains anything not owned by `clio-fs`
+
 ## Current Repository State
 
 At the time this document was introduced:
@@ -228,6 +238,7 @@ At the time this document was introduced:
 - staged update download, install, and active-release switching now live in [packages/sync-core/src/index.ts](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/packages/sync-core/src/index.ts)
 - the GitHub Release workflow is defined in [.github/workflows/release.yml](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/.github/workflows/release.yml)
 - install scripts now live under [install/server/install-server.sh](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/server/install-server.sh), [install/server/install-server.ps1](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/server/install-server.ps1), [install/client/install-client.sh](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/client/install-client.sh), and [install/client/install-client.ps1](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/client/install-client.ps1)
+- uninstall scripts now live under [install/server/uninstall-server.sh](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/server/uninstall-server.sh), [install/server/uninstall-server.ps1](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/server/uninstall-server.ps1), [install/client/uninstall-client.sh](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/client/uninstall-client.sh), and [install/client/uninstall-client.ps1](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/install/client/uninstall-client.ps1)
 - Linux service unit templates now live under [deploy/systemd/clio-fs-server.service](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/deploy/systemd/clio-fs-server.service) and [deploy/systemd/clio-fs-client.service](/Users/v.nikonov/Documents/Projects/creatio_remotre_ssh_fs/deploy/systemd/clio-fs-client.service)
 - release publication now includes `SHA256SUMS` and `manifest.json`
 - manual update-check endpoints and dashboard widgets are now implemented

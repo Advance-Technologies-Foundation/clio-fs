@@ -41,6 +41,22 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/Advance-Technologies-Foundation/clio-fs/main/install/server/install-server.ps1 | iex
 ```
 
+Uninstall:
+
+- macOS or Linux:
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/Advance-Technologies-Foundation/clio-fs/main/install/server/uninstall-server.sh | CLIO_FS_FORCE_UNINSTALL=1 sh
+  ```
+- Windows Command Prompt (`cmd.exe`):
+  ```cmd
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:CLIO_FS_FORCE_UNINSTALL='1'; Invoke-RestMethod https://raw.githubusercontent.com/Advance-Technologies-Foundation/clio-fs/main/install/server/uninstall-server.ps1 | Invoke-Expression"
+  ```
+- Windows PowerShell:
+  ```powershell
+  $env:CLIO_FS_FORCE_UNINSTALL="1"
+  irm https://raw.githubusercontent.com/Advance-Technologies-Foundation/clio-fs/main/install/server/uninstall-server.ps1 | iex
+  ```
+
 Installed layout:
 
 - macOS or Linux:
@@ -85,6 +101,22 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/Advance-Technologies-Foundation/clio-fs/main/install/client/install-client.ps1 | iex
 ```
 
+Uninstall:
+
+- macOS or Linux:
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/Advance-Technologies-Foundation/clio-fs/main/install/client/uninstall-client.sh | CLIO_FS_FORCE_UNINSTALL=1 sh
+  ```
+- Windows Command Prompt (`cmd.exe`):
+  ```cmd
+  powershell -NoProfile -ExecutionPolicy Bypass -Command "$env:CLIO_FS_FORCE_UNINSTALL='1'; Invoke-RestMethod https://raw.githubusercontent.com/Advance-Technologies-Foundation/clio-fs/main/install/client/uninstall-client.ps1 | Invoke-Expression"
+  ```
+- Windows PowerShell:
+  ```powershell
+  $env:CLIO_FS_FORCE_UNINSTALL="1"
+  irm https://raw.githubusercontent.com/Advance-Technologies-Foundation/clio-fs/main/install/client/uninstall-client.ps1 | iex
+  ```
+
 Installed layout:
 
 - macOS or Linux:
@@ -110,6 +142,15 @@ Verify and start:
   - `C:\Program Files\ClioFS\client\current\clio-fs-client.cmd`
 
 Set `CLIO_FS_VERSION=1.2.3` before running the installer if you want a specific tagged release instead of the latest one. The installers normalize `v1.2.3` to `1.2.3`, so either form works.
+
+Uninstall scripts remove the managed install content under the selected install root:
+
+- `current`
+- `releases`
+- `config`
+- `data`
+
+They do not recursively delete unrelated files you added directly under the install root. If the install root becomes empty after those managed paths are removed, the uninstall script removes the now-empty root as well.
 
 For a fresh server install, the installer prompts for the server port and initializes `config/server.conf` with `CLIO_FS_SERVER_HOST=0.0.0.0` so the operator UI and API can be reached from other machines. Later installs keep the existing server config unchanged.
 
