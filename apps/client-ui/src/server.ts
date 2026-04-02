@@ -671,7 +671,10 @@ const renderTargetTable = (targets: ClientSyncTarget[], status: ClientSyncManage
               <tr data-target-row="${escapeHtml(target.targetId)}">
                 <td>${escapeHtml(formatTargetLabel(target))}</td>
                 <td>${escapeHtml(target.serverBaseUrl)}</td>
-                <td data-target-status="${escapeHtml(target.targetId)}">${escapeHtml(getTargetStatusLabel(target, status))}</td>
+                <td>
+                  <span data-target-status="${escapeHtml(target.targetId)}">${escapeHtml(getTargetStatusLabel(target, status))}</span>
+                  <div data-target-error="${escapeHtml(target.targetId)}" style="color:#b91c1c;font-size:0.78rem;margin-top:2px;line-height:1.3;max-width:260px;word-break:break-word;"${status.targetId === target.targetId && status.lastError ? "" : " hidden"}>${escapeHtml(status.targetId === target.targetId && status.lastError ? status.lastError : "")}</div>
+                </td>
                 <td data-target-revision="${escapeHtml(target.targetId)}">${isRunning ? escapeHtml(String(status.lastAppliedRevision ?? "n/a")) : "n/a"}</td>
                 <td>
                   <form action="/targets/${encodeURIComponent(target.targetId)}/${isRunning ? "pause" : "start"}" method="post" data-target-sync-form style="margin:0;">
@@ -1229,7 +1232,31 @@ const renderClientPage = (
             }
 
             const targetId = node.getAttribute("data-target-status");
-            node.textContent = activeTargetId && targetId === activeTargetId && payload?.running ? "Running" : "Paused";
+            const isActive = activeTargetId && targetId === activeTargetId;
+            if (isActive && payload?.running) {
+              node.textContent = "Running";
+              node.style.color = "";
+            } else if (isActive && payload?.lastError) {
+              node.textContent = "Error";
+              node.style.color = "#b91c1c";
+            } else {
+              node.textContent = "Paused";
+              node.style.color = "";
+            }
+          });
+
+          document.querySelectorAll("[data-target-error]").forEach((node) => {
+            if (!(node instanceof HTMLElement)) return;
+            const targetId = node.getAttribute("data-target-error");
+            const isActive = activeTargetId && targetId === activeTargetId;
+            const err = isActive && !payload?.running && payload?.lastError ? payload.lastError : null;
+            if (err) {
+              node.textContent = err;
+              node.removeAttribute("hidden");
+            } else {
+              node.textContent = "";
+              node.setAttribute("hidden", "");
+            }
           });
 
           document.querySelectorAll("[data-target-revision]").forEach((node) => {
@@ -2039,6 +2066,12 @@ const renderLogViewerPage = () =>
             <span id="log-status-text">Connecting…</span>
           </span>
           <div class="log-toolbar-spacer"></div>
+          <div id="log-level-filters" style="display:flex;gap:0.3rem;align-items:center;">
+            <button type="button" class="log-action log-level-toggle log-level-active" data-level="debug" style="font-size:0.78rem;padding:0.2rem 0.55rem;">DEBUG</button>
+            <button type="button" class="log-action log-level-toggle log-level-active" data-level="info" style="font-size:0.78rem;padding:0.2rem 0.55rem;">INFO</button>
+            <button type="button" class="log-action log-level-toggle log-level-active" data-level="warn" style="font-size:0.78rem;padding:0.2rem 0.55rem;">WARN</button>
+            <button type="button" class="log-action log-level-toggle log-level-active" data-level="error" style="font-size:0.78rem;padding:0.2rem 0.55rem;background:#fef2f2;color:#b91c1c;border-color:rgba(239,68,68,0.25);">ERROR</button>
+          </div>
           <label>
             <input type="checkbox" id="log-audit-only" /> Audit only
           </label>
@@ -2060,6 +2093,18 @@ const renderLogViewerPage = () =>
         const autoscroll = document.getElementById('log-autoscroll');
 
         const LEVEL_COLORS = { debug: '#475569', info: '#0369a1', warn: '#b45309', error: '#b91c1c' };
+        const LEVEL_ROW_BG = {
+          debug: 'rgba(255,255,255,0.88)',
+          info: 'rgba(255,255,255,0.88)',
+          warn: 'rgba(254,243,199,0.70)',
+          error: 'rgba(254,226,226,0.80)'
+        };
+        const LEVEL_ROW_BORDER = {
+          debug: 'rgba(148,163,184,0.14)',
+          info: 'rgba(148,163,184,0.14)',
+          warn: 'rgba(245,158,11,0.28)',
+          error: 'rgba(239,68,68,0.30)'
+        };
         const LEVEL_BG = {
           debug: 'rgba(148,163,184,0.16)',
           info: 'rgba(14,165,233,0.14)',
@@ -2068,24 +2113,51 @@ const renderLogViewerPage = () =>
         };
         const AUDIT_BG = 'rgba(219,234,254,0.85)';
 
+        // Level filter state
+        const activeFilters = new Set(['debug','info','warn','error']);
+
+        document.querySelectorAll('.log-level-toggle').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const level = btn.getAttribute('data-level');
+            if (activeFilters.has(level)) {
+              activeFilters.delete(level);
+              btn.classList.remove('log-level-active');
+              btn.style.opacity = '0.45';
+            } else {
+              activeFilters.add(level);
+              btn.classList.add('log-level-active');
+              btn.style.opacity = '';
+            }
+            // Show/hide existing rows
+            document.querySelectorAll('.log-row[data-level]').forEach(row => {
+              row.style.display = activeFilters.has(row.getAttribute('data-level')) ? '' : 'none';
+            });
+            const visible = entries.querySelector('.log-row:not([style*="display: none"]):not([style*="display:none"])');
+            emptyState.style.display = visible ? 'none' : 'flex';
+          });
+        });
+
         function appendEntry(data) {
           if (auditOnly.checked && !data.audit) return;
+          const level = data.level || 'info';
           emptyState.style.display = 'none';
           const row = document.createElement('div');
           row.className = 'log-row';
+          row.dataset.level = level;
           row.tabIndex = 0;
+          if (!activeFilters.has(level)) row.style.display = 'none';
           const isAudit = !!data.audit;
-          const color = LEVEL_COLORS[data.level] || '#0f172a';
-          const levelBg = LEVEL_BG[data.level] || 'rgba(148,163,184,0.10)';
-          row.style.background = isAudit ? AUDIT_BG : 'rgba(255,255,255,0.88)';
-          row.style.borderColor = isAudit ? 'rgba(96,165,250,0.30)' : 'rgba(148,163,184,0.14)';
+          const color = LEVEL_COLORS[level] || '#0f172a';
+          const levelBg = LEVEL_BG[level] || 'rgba(148,163,184,0.10)';
+          row.style.background = isAudit ? AUDIT_BG : (LEVEL_ROW_BG[level] || 'rgba(255,255,255,0.88)');
+          row.style.borderColor = isAudit ? 'rgba(96,165,250,0.30)' : (LEVEL_ROW_BORDER[level] || 'rgba(148,163,184,0.14)');
           const ts = data.timestamp ? data.timestamp.replace('T', ' ').replace('Z', '') : '';
           const badge = isAudit ? '<span style="display:inline-flex;align-items:center;padding:0.05rem 0.4rem;border-radius:999px;background:rgba(37,99,235,0.12);color:#1d4ed8;font-size:0.76rem;font-weight:700;letter-spacing:0.04em;">AUDIT</span> ' : '';
           const rest = Object.entries(data).filter(([k]) => !['timestamp','level','event','audit'].includes(k));
           const fields = rest.length ? ' ' + rest.map(([k,v]) => '<span style="color:#334155;font-weight:600;">' + k + '=</span><span style="color:#0f172a;">' + JSON.stringify(v) + '</span>').join(' ') : '';
-          row.innerHTML = '<span style="color:#64748b;">' + ts + '</span> <span style="display:inline-flex;align-items:center;padding:0.04rem 0.42rem;border-radius:999px;background:' + levelBg + ';color:' + color + ';font-size:0.8rem;font-weight:800;letter-spacing:0.04em;">' + data.level.toUpperCase() + '</span> ' + badge + '<span style="color:#0f172a;font-weight:700;">' + (data.event || '') + '</span>' + fields;
+          row.innerHTML = '<span style="color:#64748b;">' + ts + '</span> <span style="display:inline-flex;align-items:center;padding:0.04rem 0.42rem;border-radius:999px;background:' + levelBg + ';color:' + color + ';font-size:0.8rem;font-weight:800;letter-spacing:0.04em;">' + level.toUpperCase() + '</span> ' + badge + '<span style="color:#0f172a;font-weight:700;">' + (data.event || '') + '</span>' + fields;
           entries.appendChild(row);
-          if (autoscroll.checked) entries.scrollTop = entries.scrollHeight;
+          if (autoscroll.checked && activeFilters.has(level)) entries.scrollTop = entries.scrollHeight;
         }
 
         fetch('/logs/recent')
