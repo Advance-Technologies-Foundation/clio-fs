@@ -694,8 +694,29 @@ const renderServerRuntimeControls = (input: {
   updateApplyUrl: "/api/update/apply"
 });
 
-const renderServerShutdownButton = () =>
-  `<form action="/shutdown" method="post" style="margin:0;"><button type="submit" class="secondary-button">Stop</button></form>`;
+const renderServerShutdownButton = () => `
+  <button type="button" class="secondary-button" onclick="document.getElementById('server-shutdown-confirm-dialog').showModal()">Stop</button>
+  <dialog id="server-shutdown-confirm-dialog" class="dialog">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <p class="table-card-label" style="margin-bottom:0.35rem;">Confirm</p>
+          <h2 class="modal-title">Stop Process</h2>
+        </div>
+        <button class="modal-close" type="button" onclick="document.getElementById('server-shutdown-confirm-dialog').close()" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="lede" style="margin-top:0;">Stop the server UI process and close it?</p>
+      </div>
+      <div class="modal-actions">
+        <button class="secondary-button" type="button" onclick="document.getElementById('server-shutdown-confirm-dialog').close()">Cancel</button>
+        <form action="/shutdown" method="post" style="display:contents;">
+          <button class="danger-button" type="submit">Stop</button>
+        </form>
+      </div>
+    </div>
+  </dialog>
+`;
 
 const renderServerTopbarActions = () =>
   `${renderHomeLink()}${renderAdminLink()}${renderLogsLink()}${renderAboutLink()}${renderServerSettingsButton()}${renderLogoutButton()}${renderServerShutdownButton()}`;
