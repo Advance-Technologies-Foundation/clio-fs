@@ -1852,8 +1852,11 @@ const deriveStatusFromClientState = (
 const topbarBtn = (href: string, label: string) =>
   `<a href="${href}" class="topbar-button">${label}</a>`;
 
+const renderShutdownButton = () =>
+  `<form action="/shutdown" method="post" style="margin:0;"><button type="submit" class="secondary-button">Stop</button></form>`;
+
 const clientTopbarActions = () =>
-  `${topbarBtn("/", "Home")}${topbarBtn("/logs", "Logs")}${topbarBtn("/about", "About")}`;
+  `${topbarBtn("/", "Home")}${topbarBtn("/logs", "Logs")}${topbarBtn("/about", "About")}${renderShutdownButton()}`;
 
 const renderClientRuntimeControls = (targets: ClientSyncTarget[], status: ClientSyncManagerStatus) => ({
   aboutLabel: "About",
@@ -2941,6 +2944,16 @@ export const createClientUi = (options: ClientUiOptions) => {
         request.on("close", () => {
           unsubscribe();
         });
+        return;
+      }
+
+      if (method === "POST" && url.pathname === "/shutdown") {
+        writeHtml(
+          response,
+          200,
+          renderPage("Stopping | Clio FS Client", renderNotice("success", "The client UI is shutting down."))
+        );
+        setTimeout(() => process.exit(0), 200);
         return;
       }
 

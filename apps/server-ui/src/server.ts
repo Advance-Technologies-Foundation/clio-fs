@@ -694,8 +694,11 @@ const renderServerRuntimeControls = (input: {
   updateApplyUrl: "/api/update/apply"
 });
 
+const renderServerShutdownButton = () =>
+  `<form action="/shutdown" method="post" style="margin:0;"><button type="submit" class="secondary-button">Stop</button></form>`;
+
 const renderServerTopbarActions = () =>
-  `${renderHomeLink()}${renderAdminLink()}${renderLogsLink()}${renderAboutLink()}${renderServerSettingsButton()}${renderLogoutButton()}`;
+  `${renderHomeLink()}${renderAdminLink()}${renderLogsLink()}${renderAboutLink()}${renderServerSettingsButton()}${renderLogoutButton()}${renderServerShutdownButton()}`;
 
 const renderHomeLink = () =>
   `<a href="/" class="topbar-button">Home</a>`;
@@ -1959,6 +1962,20 @@ export const createServerUiRequestHandler = (options: ServerUiOptions) => {
         }
 
         writeHtml(response, 200, renderWorkspaceDetail(workspace, diagnostics, watchSettings));
+        return;
+      }
+
+      if (method === "POST" && url.pathname === "/shutdown") {
+        writeHtml(
+          response,
+          200,
+          renderPage(
+            "Stopping | Clio FS Server",
+            `<section class="panel"><div class="metric">Shutting Down</div><div class="metric-value">The server UI is stopping.</div></section>`,
+            { topbarSubtitle: "Server", topbarStatus: "ok", topbarStatusPollUrl: "/topbar-status", topbarActions: renderServerTopbarActions() }
+          )
+        );
+        setTimeout(() => process.exit(0), 200);
         return;
       }
 
