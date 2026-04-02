@@ -27,11 +27,15 @@ export const nodeClientFileSystem: ClientFileSystemAdapter = {
   },
   writeFileBytes(path, content) {
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, content);
+    const tmp = `${path}.clio-tmp`;
+    writeFileSync(tmp, content);
+    renameSync(tmp, path);
   },
   writeFileText(path, content) {
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, content, "utf8");
+    const tmp = `${path}.clio-tmp`;
+    writeFileSync(tmp, content, "utf8");
+    renameSync(tmp, path);
   },
   movePath(fromPath, toPath) {
     mkdirSync(dirname(toPath), { recursive: true });

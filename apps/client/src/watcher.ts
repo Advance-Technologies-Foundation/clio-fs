@@ -46,7 +46,7 @@ interface MatchedMovePair {
   contentHash: string;
 }
 
-const shouldIgnoreName = (name: string) => name === ".git";
+const shouldIgnoreName = (name: string) => name === ".git" || name.endsWith(".clio-tmp");
 
 const splitPathSegments = (path: string) => path.split("/").filter(Boolean);
 
@@ -178,7 +178,14 @@ const scanFiles = (
       continue;
     }
 
-    const bytes = filesystem.readFileBytes(absolutePath);
+    let bytes: Buffer;
+    try {
+      bytes = filesystem.readFileBytes(absolutePath);
+    } catch {
+      // file temporarily unavailable (being written, locked, or deleted mid-scan)
+      // skip this cycle; the next poll will pick it up once it stabilises
+      continue;
+    }
     const relativePath = relative(rootPath, absolutePath).replaceAll("\\", "/");
     const encoded = encodeTransferContent(bytes);
 

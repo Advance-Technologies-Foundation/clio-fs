@@ -1,4 +1,6 @@
-import { execFile } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { execFile, spawn } from "node:child_process";
+import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { promisify } from "node:util";
@@ -99,6 +101,30 @@ const readFormBody = async (request: AsyncIterable<Buffer | string>) => {
   }
 
   return new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
+};
+
+const readJsonBody = async (request: AsyncIterable<Buffer | string>) => {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+};
+
+const resolveConfFilePath = (name: string): string => {
+  let dir = process.cwd();
+  for (let i = 0; i < 6; i++) {
+    const candidate = join(dir, "config", name);
+    if (existsSync(candidate)) return candidate;
+    const example = `${candidate}.example`;
+    if (existsSync(example)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return resolve(process.cwd(), "config", name);
 };
 
 const execFileAsync = promisify(execFile);
@@ -694,6 +720,145 @@ const renderServerRuntimeControls = (input: {
   updateApplyUrl: "/api/update/apply"
 });
 
+const renderServerConfigButton = () => `
+  <button type="button" class="topbar-button" onclick="serverOpenConfigDialog()">Config</button>
+  <dialog id="server-config-dialog" class="dialog" style="width:80vw;height:80vh;max-width:80vw;max-height:80vh;margin:auto;padding:0;border:none;border-radius:16px;overflow:hidden;box-shadow:0 8px 40px rgba(0,0,0,0.18);">
+    <div style="width:100%;height:100%;display:flex;flex-direction:column;background:#fff;border-radius:16px;overflow:hidden;">
+      <div class="modal-header" style="flex-shrink:0;">
+        <div>
+          <p class="table-card-label" style="margin-bottom:0.35rem;">Edit</p>
+          <h2 class="modal-title">Configuration</h2>
+        </div>
+        <button class="modal-close" type="button" onclick="serverConfigCancel()" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body" style="flex:1;overflow:hidden;display:flex;flex-direction:column;padding-bottom:0;">
+        <p id="server-config-file-path" style="margin:0 0 0.5rem;font-size:0.78rem;color:#64748b;font-family:monospace;word-break:break-all;flex-shrink:0;"></p>
+        <div id="server-config-load-error" style="display:none;color:#b91c1c;margin-bottom:0.5rem;font-size:0.85rem;flex-shrink:0;"></div>
+        <textarea id="server-config-textarea" style="flex:1;width:100%;font-family:monospace;font-size:0.84rem;line-height:1.55;border:1px solid #e2e8f0;border-radius:8px;padding:0.75rem;resize:none;box-sizing:border-box;background:#f8fafc;overflow:auto;white-space:pre;word-wrap:normal;overflow-wrap:normal;" spellcheck="false"></textarea>
+        <div id="server-config-save-status" style="margin-top:0.45rem;font-size:0.78rem;min-height:1.2em;flex-shrink:0;padding-bottom:0.25rem;"></div>
+      </div>
+      <div class="modal-actions" style="flex-shrink:0;">
+        <button class="secondary-button" type="button" onclick="serverConfigCancel()">Cancel</button>
+        <button class="primary-button" type="button" onclick="serverSaveConfig()">Save</button>
+      </div>
+    </div>
+  </dialog>
+  <dialog id="server-config-discard-dialog" class="dialog">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <p class="table-card-label" style="margin-bottom:0.35rem;">Confirm</p>
+          <h2 class="modal-title">Discard Changes</h2>
+        </div>
+        <button class="modal-close" type="button" onclick="document.getElementById('server-config-discard-dialog').close()" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="lede" style="margin-top:0;">You have unsaved changes. Discard them and close the editor?</p>
+      </div>
+      <div class="modal-actions">
+        <button class="secondary-button" type="button" onclick="document.getElementById('server-config-discard-dialog').close()">Keep editing</button>
+        <button class="danger-button" type="button" onclick="serverDiscardAndClose()">Discard</button>
+      </div>
+    </div>
+  </dialog>
+  <script>
+    var _serverOriginalConfig = '';
+    function serverOpenConfigDialog() {
+      var dialog = document.getElementById('server-config-dialog');
+      var textarea = document.getElementById('server-config-textarea');
+      var filePath = document.getElementById('server-config-file-path');
+      var loadError = document.getElementById('server-config-load-error');
+      var saveStatus = document.getElementById('server-config-save-status');
+      _serverOriginalConfig = '';
+      textarea.value = '';
+      filePath.textContent = 'Loading\u2026';
+      loadError.style.display = 'none';
+      saveStatus.textContent = '';
+      dialog.showModal();
+      fetch('/config').then(function(r){ return r.json(); }).then(function(data) {
+        textarea.value = data.content || '';
+        _serverOriginalConfig = textarea.value;
+        filePath.textContent = data.path || '';
+      }).catch(function() {
+        loadError.textContent = 'Failed to load configuration file.';
+        loadError.style.display = 'block';
+        filePath.textContent = '';
+      });
+    }
+    function serverConfigCancel() {
+      var textarea = document.getElementById('server-config-textarea');
+      if (textarea.value !== _serverOriginalConfig) {
+        document.getElementById('server-config-discard-dialog').showModal();
+        return;
+      }
+      document.getElementById('server-config-dialog').close();
+    }
+    function serverDiscardAndClose() {
+      document.getElementById('server-config-discard-dialog').close();
+      document.getElementById('server-config-dialog').close();
+    }
+    function serverSaveConfig() {
+      var textarea = document.getElementById('server-config-textarea');
+      var saveStatus = document.getElementById('server-config-save-status');
+      saveStatus.textContent = 'Saving\u2026';
+      saveStatus.style.color = '#64748b';
+      fetch('/config', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ content: textarea.value })
+      }).then(function(r){ return r.json().then(function(d){ return { ok: r.ok, data: d }; }); }).then(function(result) {
+        if (result.ok) {
+          _serverOriginalConfig = textarea.value;
+          saveStatus.textContent = 'Saved. Restart to apply changes.';
+          saveStatus.style.color = '#16a34a';
+        } else {
+          saveStatus.textContent = (result.data && result.data.error && result.data.error.message) || 'Failed to save.';
+          saveStatus.style.color = '#b91c1c';
+        }
+      }).catch(function() {
+        saveStatus.textContent = 'Failed to save configuration.';
+        saveStatus.style.color = '#b91c1c';
+      });
+    }
+  </script>
+`;
+
+const renderServerRestartButton = () => `
+  <button type="button" class="secondary-button" onclick="document.getElementById('server-restart-confirm-dialog').showModal()">Restart</button>
+  <dialog id="server-restart-confirm-dialog" class="dialog">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <p class="table-card-label" style="margin-bottom:0.35rem;">Confirm</p>
+          <h2 class="modal-title">Restart Process</h2>
+        </div>
+        <button class="modal-close" type="button" onclick="document.getElementById('server-restart-confirm-dialog').close()" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="lede" style="margin-top:0;">Restart the server UI process? The page will reload automatically.</p>
+      </div>
+      <div class="modal-actions">
+        <button class="secondary-button" type="button" onclick="document.getElementById('server-restart-confirm-dialog').close()">Cancel</button>
+        <button class="primary-button" type="button" onclick="serverRestartProcess()">Restart</button>
+      </div>
+    </div>
+  </dialog>
+  <script>
+    function serverRestartProcess() {
+      document.getElementById('server-restart-confirm-dialog').close();
+      fetch('/restart', { method: 'POST' }).then(function() {
+        var poll = function() {
+          fetch('/').then(function(r) {
+            if (r.ok) { window.location.reload(); }
+            else { setTimeout(poll, 800); }
+          }).catch(function() { setTimeout(poll, 800); });
+        };
+        setTimeout(poll, 1000);
+      });
+    }
+  </script>
+`;
+
 const renderServerShutdownButton = () => `
   <button type="button" class="secondary-button" onclick="document.getElementById('server-shutdown-confirm-dialog').showModal()">Stop</button>
   <dialog id="server-shutdown-confirm-dialog" class="dialog">
@@ -719,7 +884,7 @@ const renderServerShutdownButton = () => `
 `;
 
 const renderServerTopbarActions = () =>
-  `${renderHomeLink()}${renderAdminLink()}${renderLogsLink()}${renderAboutLink()}${renderServerSettingsButton()}${renderLogoutButton()}${renderServerShutdownButton()}`;
+  `${renderHomeLink()}${renderAdminLink()}${renderLogsLink()}${renderAboutLink()}${renderServerSettingsButton()}${renderLogoutButton()}${renderServerConfigButton()}${renderServerRestartButton()}${renderServerShutdownButton()}`;
 
 const renderHomeLink = () =>
   `<a href="/" class="topbar-button">Home</a>`;
@@ -1983,6 +2148,53 @@ export const createServerUiRequestHandler = (options: ServerUiOptions) => {
         }
 
         writeHtml(response, 200, renderWorkspaceDetail(workspace, diagnostics, watchSettings));
+        return;
+      }
+
+      if (method === "GET" && url.pathname === "/config") {
+        const configPath = resolveConfFilePath("server.conf");
+        const examplePath = `${configPath}.example`;
+        const content = existsSync(configPath)
+          ? readFileSync(configPath, "utf8")
+          : existsSync(examplePath)
+            ? readFileSync(examplePath, "utf8")
+            : "";
+        writeJson(response, 200, { path: configPath, content });
+        return;
+      }
+
+      if (method === "POST" && url.pathname === "/config") {
+        try {
+          const body = await readJsonBody(request);
+          if (typeof body.content !== "string") {
+            writeJson(response, 400, { error: { code: "invalid_body", message: "content must be a string" } });
+            return;
+          }
+          const configPath = resolveConfFilePath("server.conf");
+          mkdirSync(dirname(configPath), { recursive: true });
+          const tmp = `${configPath}.tmp`;
+          writeFileSync(tmp, body.content, "utf8");
+          renameSync(tmp, configPath);
+          writeJson(response, 200, { ok: true });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Failed to save configuration";
+          writeJson(response, 500, { error: { code: "save_failed", message } });
+        }
+        return;
+      }
+
+      if (method === "POST" && url.pathname === "/restart") {
+        writeJson(response, 200, { ok: true });
+        setTimeout(() => {
+          const child = spawn(process.execPath, process.argv.slice(1), {
+            detached: true,
+            stdio: "inherit",
+            env: process.env,
+            cwd: process.cwd()
+          });
+          child.unref();
+          process.exit(0);
+        }, 200);
         return;
       }
 
