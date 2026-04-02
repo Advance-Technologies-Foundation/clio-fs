@@ -1,11 +1,13 @@
 import { spawnSync, spawn } from "node:child_process";
-import { createBackgroundTestEnv, BACKGROUND_TEST_CLIENT_UI_PORT } from "./test-runtime-ports.mjs";
+import { createBackgroundTestEnv, BACKGROUND_TEST_SERVER_PORT, BACKGROUND_TEST_CLIENT_UI_PORT } from "./test-runtime-ports.mjs";
 import { killPort } from "./kill-port.mjs";
 
 const shell = process.platform === "win32";
 const env = createBackgroundTestEnv();
-const url = `http://127.0.0.1:${BACKGROUND_TEST_CLIENT_UI_PORT}`;
+const serverUrl = `http://127.0.0.1:${BACKGROUND_TEST_SERVER_PORT}`;
+const clientUrl = `http://127.0.0.1:${BACKGROUND_TEST_CLIENT_UI_PORT}`;
 
+killPort(BACKGROUND_TEST_SERVER_PORT);
 killPort(BACKGROUND_TEST_CLIENT_UI_PORT);
 
 const run = (command, args) => {
@@ -25,16 +27,15 @@ const openBrowser = (target) => {
   }
 };
 
+// Build client before starting both
 run("corepack", ["pnpm", "--filter", "@clio-fs/client", "build"]);
 
-const child = spawn("corepack", ["pnpm", "--filter", "@clio-fs/client-ui", "dev"], {
-  env,
-  stdio: "inherit",
-  shell
-});
+const children = [
+  spawn("corepack", ["pnpm", "--filter", "@clio-fs/server", "dev"], { env, stdio: "inherit", shell }),
+  spawn("corepack", ["pnpm", "--filter", "@clio-fs/client-ui", "dev"], { env, stdio: "inherit", shell })
+];
 
-// Wait for the server to be ready, then open the browser
-const waitAndOpen = async () => {
+const waitAndOpen = async (url) => {
   const maxAttempts = 30;
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -52,8 +53,17 @@ const waitAndOpen = async () => {
   console.error(`\nCould not reach ${url} after ${maxAttempts} attempts — open it manually.\n`);
 };
 
-waitAndOpen();
+waitAndOpen(serverUrl);
+waitAndOpen(clientUrl);
 
-child.on("exit", (code) => process.exit(code ?? 0));
-process.on("SIGINT", () => { child.kill("SIGTERM"); process.exit(0); });
-process.on("SIGTERM", () => { child.kill("SIGTERM"); process.exit(0); });
+const shutdown = (code = 0) => {
+  for (const child of children) child.kill("SIGTERM");
+  process.exit(code);
+};
+
+for (const child of children) {
+  child.on("exit", (code) => { if (code && code !== 0) shutdown(code); });
+}
+
+process.on("SIGINT", () => shutdown(0));
+process.on("SIGTERM", () => shutdown(0));

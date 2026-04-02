@@ -16,8 +16,10 @@
     "client-ui": "node scripts/dev-client-ui.mjs",
     "client-ui:open": "node scripts/dev-client-ui-open.mjs",
     "dev": "node scripts/dev.mjs",
+    "dev:open": "node scripts/dev-open.mjs",
     "release:artifacts": "node scripts/build-release-artifacts.mjs",
     "server": "node scripts/dev-server.mjs",
+    "server:open": "node scripts/dev-server-open.mjs",
     "scenario:local-sync": "node scripts/run-local-sync-scenario.mjs",
     "test": "corepack pnpm -r test && node --test scripts/*.test.mjs",
     "format": "corepack pnpm -r format"

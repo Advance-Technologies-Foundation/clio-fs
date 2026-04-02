@@ -138,15 +138,17 @@ Always ask:
 
 ## Dev Commands
 
-To start the client UI and open it in the browser:
+Each command kills any existing process on the target port before starting.
 
-```bash
-corepack pnpm run client-ui:open
-```
+| Command | What it starts | URL |
+|---------|---------------|-----|
+| `corepack pnpm run server:open` | Server only | http://127.0.0.1:4025 |
+| `corepack pnpm run client-ui:open` | Client UI only | http://127.0.0.1:4026 |
+| `corepack pnpm run dev:open` | Server + Client UI | both of the above |
 
-This builds `@clio-fs/client`, starts the client UI on `http://127.0.0.1:4026`, and opens the browser automatically.
+All three open the browser automatically once the app is ready.
 
-For Claude Code users this is also available as the `/run-client` slash command.
+For Claude Code users these are also available as slash commands: `/run-server`, `/run-client`, `/run-dev`.
 
 ## Speed Heuristics
 

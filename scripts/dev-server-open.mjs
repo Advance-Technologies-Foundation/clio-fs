@@ -1,19 +1,12 @@
-import { spawnSync, spawn } from "node:child_process";
-import { createBackgroundTestEnv, BACKGROUND_TEST_CLIENT_UI_PORT } from "./test-runtime-ports.mjs";
+import { spawn } from "node:child_process";
+import { createBackgroundTestEnv, BACKGROUND_TEST_SERVER_PORT } from "./test-runtime-ports.mjs";
 import { killPort } from "./kill-port.mjs";
 
 const shell = process.platform === "win32";
 const env = createBackgroundTestEnv();
-const url = `http://127.0.0.1:${BACKGROUND_TEST_CLIENT_UI_PORT}`;
+const url = `http://127.0.0.1:${BACKGROUND_TEST_SERVER_PORT}`;
 
-killPort(BACKGROUND_TEST_CLIENT_UI_PORT);
-
-const run = (command, args) => {
-  const result = spawnSync(command, args, { env, stdio: "inherit", shell });
-  if (result.status && result.status !== 0) {
-    process.exit(result.status);
-  }
-};
+killPort(BACKGROUND_TEST_SERVER_PORT);
 
 const openBrowser = (target) => {
   if (process.platform === "darwin") {
@@ -25,15 +18,12 @@ const openBrowser = (target) => {
   }
 };
 
-run("corepack", ["pnpm", "--filter", "@clio-fs/client", "build"]);
-
-const child = spawn("corepack", ["pnpm", "--filter", "@clio-fs/client-ui", "dev"], {
+const child = spawn("corepack", ["pnpm", "--filter", "@clio-fs/server", "dev"], {
   env,
   stdio: "inherit",
   shell
 });
 
-// Wait for the server to be ready, then open the browser
 const waitAndOpen = async () => {
   const maxAttempts = 30;
   for (let i = 0; i < maxAttempts; i++) {
