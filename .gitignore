@@ -26,3 +26,4 @@ tmp/
 .clio-fs/
 .release-artifacts/
 .claude/
+!.claude/commands/
