@@ -136,6 +136,18 @@ Always ask:
 - can one broken workspace stall another?
 - can one workspace escape into another through path resolution or shared metadata?
 
+## Dev Commands
+
+To start the client UI and open it in the browser:
+
+```bash
+corepack pnpm run client-ui:open
+```
+
+This builds `@clio-fs/client`, starts the client UI on `http://127.0.0.1:4026`, and opens the browser automatically.
+
+For Claude Code users this is also available as the `/run-client` slash command.
+
 ## Speed Heuristics
 
 To move fast without breaking the design:
