@@ -27,6 +27,11 @@ import {
 import { decodeTransferContent, encodeTransferContent, hashBytes } from "./file-content.js";
 import { isRuntimeEntrypoint } from "./runtime-entrypoint.js";
 
+export interface ClientLogger {
+  info: (event: string, fields?: Record<string, unknown>) => void;
+  error: (event: string, fields?: Record<string, unknown>) => void;
+}
+
 export interface MirrorClientOptions {
   workspaceId: string;
   mirrorRoot: string;
@@ -36,6 +41,7 @@ export interface MirrorClientOptions {
   stateStore?: ClientStateStore;
   watcher?: MirrorWatcher;
   pollLimit?: number;
+  logger?: ClientLogger;
 }
 
 export interface MirrorClient {
@@ -53,6 +59,7 @@ export interface MirrorClient {
   ) => Promise<ClientBindState>;
   resyncFromServer: () => Promise<ClientBindState>;
   resyncFromLocal: () => Promise<ClientBindState>;
+  forceResyncFromLocal: () => Promise<ClientBindState>;
   startLocalWatchLoop: () => Promise<void>;
   stopLocalWatchLoop: () => void;
   getState: () => ClientBindState | undefined;
@@ -152,24 +159,29 @@ const hydrateMirrorFromSnapshot = async (
   mirrorRoot: string,
   snapshot: { currentRevision: number; items: SnapshotEntry[] },
   controlPlane: ClientControlPlane,
-  origin = "local-client"
+  origin = "local-client",
+  logger?: ClientLogger
 ) => {
   filesystem.ensureDirectory(mirrorRoot);
   filesystem.removeDirectoryContents(mirrorRoot);
 
-  for (const entry of snapshot.items.filter((item) => item.kind === "directory")) {
+  const directories = snapshot.items.filter((item) => item.kind === "directory");
+  for (const entry of directories) {
     filesystem.ensureDirectory(join(mirrorRoot, entry.path));
+    logger?.info("sync_directory_materialized", { workspaceId, path: entry.path, origin });
   }
 
   const filePaths = snapshot.items.filter(isFileEntry).map((item) => item.path);
   let materializedFiles: SnapshotMaterializeFile[] = [];
 
   if (filePaths.length > 0) {
+    logger?.info("sync_files_materializing", { workspaceId, count: filePaths.length, origin });
     const materialized = await controlPlane.materialize(workspaceId, { paths: filePaths }, origin);
     materializedFiles = materialized.files;
 
     for (const file of materializedFiles) {
       filesystem.writeFileBytes(join(mirrorRoot, file.path), decodeTransferContent(file.content, file.encoding));
+      logger?.info("sync_file_materialized", { workspaceId, path: file.path, origin });
     }
   }
 
@@ -201,7 +213,8 @@ const ensureHydratedMirror = async (
     mirrorRoot,
     snapshot,
     controlPlane,
-    origin
+    origin,
+    undefined
   );
 };
 
@@ -404,6 +417,7 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
   const suppressedDirectories = new Set<string>();
   const suppressedDeletes = new Set<string>();
   const suppressedMoves = new Set<string>();
+  const logger = options.logger;
   let watcher = options.watcher;
   let initialBindValidated = false;
   let localWatchLoopActive = false;
@@ -884,7 +898,8 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
         options.mirrorRoot,
         snapshot,
         controlPlane,
-        "local-client"
+        "local-client",
+        logger
       );
 
       initialBindValidated = true;
@@ -919,6 +934,13 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
           );
         }
 
+        logger?.info("bootstrap_started", {
+          workspaceId: options.workspaceId,
+          mirrorRoot: options.mirrorRoot,
+          directoryCount: localDirectories.length,
+          fileCount: localFiles.length
+        });
+
         let bootstrapState = createEmptyBindState(
           options.workspaceId,
           options.mirrorRoot,
@@ -929,6 +951,7 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
           const result = await controlPlane.createDirectory(options.workspaceId, directoryPath, {
             origin: "local-client"
           });
+          logger?.info("bootstrap_directory_uploaded", { workspaceId: options.workspaceId, path: directoryPath });
           bootstrapState = {
             ...bootstrapState,
             lastAppliedRevision: result.workspaceRevision
@@ -945,6 +968,7 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
             content: encoded.content,
             origin: "local-client"
           });
+          logger?.info("bootstrap_file_uploaded", { workspaceId: options.workspaceId, path: filePath, fileRevision: result.fileRevision });
           bootstrapState = upsertTrackedFile(
             {
               ...bootstrapState,
@@ -967,7 +991,8 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
           options.mirrorRoot,
           refreshedSnapshot,
           controlPlane,
-          "bootstrap-from-local"
+          "bootstrap-from-local",
+          logger
         );
 
         initialBindValidated = true;
@@ -1436,6 +1461,87 @@ export const createMirrorClient = (options: MirrorClientOptions): MirrorClient =
 
         refreshSuppressionFromMirror(nextState.mirrorRoot);
         initialBindValidated = true;
+        return nextState;
+      });
+    },
+    async forceResyncFromLocal() {
+      return runWithWatchLoopPaused(async () => {
+        // Read local content BEFORE any server fetch so local files are not overwritten
+        filesystem.ensureDirectory(options.mirrorRoot);
+        const localDirectories = collectDirectoryPaths(filesystem, options.mirrorRoot)
+          .filter((p) => !shouldIgnoreResyncPath(p))
+          .sort((l, r) => l.split("/").length - r.split("/").length || l.localeCompare(r));
+        const localFiles = collectFilePaths(filesystem, options.mirrorRoot)
+          .filter((p) => !shouldIgnoreResyncPath(p))
+          .sort((l, r) => l.localeCompare(r));
+        const localFileSet = new Set(localFiles);
+        const localDirectorySet = new Set(localDirectories);
+
+        logger?.info("force_resync_from_local_started", {
+          workspaceId: options.workspaceId,
+          mirrorRoot: options.mirrorRoot,
+          directoryCount: localDirectories.length,
+          fileCount: localFiles.length
+        });
+
+        // Fetch snapshot to know what directories/files exist on server (for deletions)
+        const snapshot = await controlPlane.getSnapshot(options.workspaceId);
+        const serverDirectories = new Set(
+          snapshot.items.filter((i) => i.kind === "directory").map((i) => i.path)
+        );
+        const serverFilePaths = new Set(snapshot.items.filter(isFileEntry).map((i) => i.path));
+
+        for (const directoryPath of localDirectories) {
+          if (!serverDirectories.has(directoryPath)) {
+            await controlPlane.createDirectory(options.workspaceId, directoryPath, { origin: "local-client" });
+            logger?.info("force_resync_directory_created", { workspaceId: options.workspaceId, path: directoryPath });
+          }
+        }
+
+        // Upload all local files WITHOUT baseFileRevision — server skips the revision
+        // check when the field is absent, so this always overwrites regardless of state.
+        for (const filePath of localFiles) {
+          const bytes = filesystem.readFileBytes(join(options.mirrorRoot, filePath));
+          const encoded = encodeTransferContent(bytes);
+          await controlPlane.putFile(options.workspaceId, filePath, {
+            encoding: encoded.encoding,
+            content: encoded.content,
+            origin: "local-client"
+          });
+          logger?.info("force_resync_file_uploaded", { workspaceId: options.workspaceId, path: filePath });
+        }
+
+        // Delete server-only files (no baseFileRevision needed either)
+        const serverFilesToDelete = [...serverFilePaths]
+          .filter((p) => !shouldIgnoreResyncPath(p) && !localFileSet.has(p))
+          .sort((l, r) => r.localeCompare(l));
+        for (const filePath of serverFilesToDelete) {
+          await controlPlane.deleteFile(options.workspaceId, filePath, { origin: "local-client" });
+          logger?.info("force_resync_server_file_deleted", { workspaceId: options.workspaceId, path: filePath });
+        }
+
+        // Delete server-only directories (deepest first)
+        const serverDirectoriesToDelete = [...serverDirectories]
+          .filter((d) => !shouldIgnoreResyncPath(d) && !localDirectorySet.has(d))
+          .sort((l, r) => r.split("/").length - l.split("/").length || r.localeCompare(l));
+        for (const directoryPath of serverDirectoriesToDelete) {
+          await controlPlane.deleteFile(options.workspaceId, directoryPath, { origin: "local-client" });
+          logger?.info("force_resync_server_directory_deleted", { workspaceId: options.workspaceId, path: directoryPath });
+        }
+
+        const refreshedSnapshot = await controlPlane.getSnapshot(options.workspaceId);
+        const nextState = await hydrateMirrorFromSnapshot(
+          filesystem,
+          stateStore,
+          options.workspaceId,
+          options.mirrorRoot,
+          refreshedSnapshot,
+          controlPlane,
+          "force-resync-from-local",
+          logger
+        );
+        initialBindValidated = true;
+        refreshSuppressionFromMirror(nextState.mirrorRoot);
         return nextState;
       });
     },

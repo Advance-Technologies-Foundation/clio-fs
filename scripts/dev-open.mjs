@@ -1,12 +1,12 @@
 import { spawnSync, spawn } from "node:child_process";
 import { createBackgroundTestEnv, BACKGROUND_TEST_SERVER_PORT, BACKGROUND_TEST_CLIENT_UI_PORT } from "./test-runtime-ports.mjs";
-import { killPort } from "./kill-port.mjs";
+import { killPort, isPortListening } from "./kill-port.mjs";
 
 const shell = process.platform === "win32";
 const env = createBackgroundTestEnv();
-const serverUrl = `http://127.0.0.1:${BACKGROUND_TEST_SERVER_PORT}`;
 const clientUrl = `http://127.0.0.1:${BACKGROUND_TEST_CLIENT_UI_PORT}`;
 
+const clientAlreadyRunning = isPortListening(BACKGROUND_TEST_CLIENT_UI_PORT);
 killPort(BACKGROUND_TEST_SERVER_PORT);
 killPort(BACKGROUND_TEST_CLIENT_UI_PORT);
 
@@ -35,15 +35,19 @@ const children = [
   spawn("corepack", ["pnpm", "--filter", "@clio-fs/client-ui", "dev"], { env, stdio: "inherit", shell })
 ];
 
-const waitAndOpen = async (url) => {
+const waitAndOpen = async (url, skipOpen = false) => {
   const maxAttempts = 30;
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise((resolve) => setTimeout(resolve, 500));
     try {
       const res = await fetch(url);
       if (res.ok || res.status < 500) {
-        openBrowser(url);
-        console.log(`\nOpened browser at ${url}\n`);
+        if (skipOpen) {
+          console.log(`\nClient UI restarted at ${url} (tab already open — not opening a new one)\n`);
+        } else {
+          openBrowser(url);
+          console.log(`\nOpened browser at ${url}\n`);
+        }
         return;
       }
     } catch {
@@ -53,8 +57,7 @@ const waitAndOpen = async (url) => {
   console.error(`\nCould not reach ${url} after ${maxAttempts} attempts — open it manually.\n`);
 };
 
-waitAndOpen(serverUrl);
-waitAndOpen(clientUrl);
+waitAndOpen(clientUrl, clientAlreadyRunning);
 
 const shutdown = (code = 0) => {
   for (const child of children) child.kill("SIGTERM");

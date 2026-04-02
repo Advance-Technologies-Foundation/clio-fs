@@ -101,6 +101,10 @@ export interface MirrorClientOptions {
     baseUrl: string;
     authToken: string;
   };
+  logger?: {
+    info: (event: string, fields?: Record<string, unknown>) => void;
+    error: (event: string, fields?: Record<string, unknown>) => void;
+  };
 }
 
 export interface MirrorClient {
@@ -113,6 +117,7 @@ export interface MirrorClient {
   ) => Promise<MirrorClientStateSnapshot>;
   resyncFromServer: () => Promise<MirrorClientStateSnapshot>;
   resyncFromLocal: () => Promise<MirrorClientStateSnapshot>;
+  forceResyncFromLocal?: () => Promise<MirrorClientStateSnapshot>;
   startLocalWatchLoop: () => Promise<void>;
   stopLocalWatchLoop: () => void;
   getState: () => MirrorClientStateSnapshot | undefined;
@@ -155,7 +160,7 @@ interface ClientSyncManager {
     resolution: "accept_server" | "accept_local"
   ) => Promise<ClientSyncManagerStatus>;
   resyncTarget: (
-    targetId: string,
+    target: ClientSyncTarget,
     source: "server" | "local"
   ) => Promise<ClientSyncManagerStatus>;
   restore: (target?: ClientSyncTarget) => Promise<void>;
@@ -2165,7 +2170,8 @@ const createClientSyncManager = (
       controlPlaneOptions: {
         baseUrl: normalizeClientUiControlPlaneBaseUrl(target.serverBaseUrl),
         authToken: target.authToken
-      }
+      },
+      logger
     });
 
     try {
@@ -2179,6 +2185,7 @@ const createClientSyncManager = (
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      logger.error("sync_start_error", { workspaceId: target.workspaceId, targetId: target.targetId, mirrorRoot: target.mirrorRoot, serverBaseUrl: target.serverBaseUrl, error: message });
       status = {
         running: false,
         targetId: target.targetId,
@@ -2282,9 +2289,37 @@ const createClientSyncManager = (
 
       return { ...status };
     },
-    async resyncTarget(targetId, source) {
+    async resyncTarget(target, source) {
+      const targetId = target.targetId;
+
+      // If the target is not currently running, create a temporary client to run the
+      // resync directly, then auto-start the watch loop afterwards.
       if (!activeClient || status.targetId !== targetId) {
-        throw new Error("Start this sync target before running a full resync.");
+        logger.info("resync_force_start", { workspaceId: target.workspaceId, targetId, source });
+
+        const freshClient = createMirrorClientImpl({
+          workspaceId: target.workspaceId,
+          mirrorRoot: target.mirrorRoot,
+          controlPlaneOptions: {
+            baseUrl: normalizeClientUiControlPlaneBaseUrl(target.serverBaseUrl),
+            authToken: target.authToken
+          },
+          logger
+        });
+
+        if (source === "local") {
+          if (freshClient.forceResyncFromLocal) {
+            await freshClient.forceResyncFromLocal();
+          } else {
+            await freshClient.resyncFromLocal();
+          }
+        } else {
+          await freshClient.resyncFromServer();
+        }
+
+        // Auto-start sync after resync completes.
+        // Always use "server" as the sync source — data is already on the server now.
+        return await start({ ...target, initialSyncSource: "server" });
       }
 
       logger.info("resync_requested", { workspaceId: status.workspaceId, targetId, source });
@@ -2836,7 +2871,12 @@ export const createClientUi = (options: ClientUiOptions) => {
         const mode = source === "local" ? "local" : "server";
 
         try {
-          await syncManager.resyncTarget(targetId, mode);
+          await syncManager.resyncTarget(target, mode);
+
+          // Persist initialSyncSource reset so future restarts don't try to bootstrap again
+          if (target.initialSyncSource === "local_empty_server") {
+            targetStore.save({ ...target, initialSyncSource: "server" });
+          }
 
           if (request.headers["x-clio-ui-request"] === "1") {
             writeJson(response, 200, { ok: true });
